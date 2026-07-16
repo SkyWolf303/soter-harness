@@ -70,6 +70,10 @@ export function contextSnapshotStatePath(root, snapshotId) {
   return stateFile(root, 'context-snapshots', safeId(snapshotId, 'context snapshot id'));
 }
 
+export function automationDecisionStatePath(root, decisionId) {
+  return stateFile(root, 'automation-decisions', safeId(decisionId, 'automation decision id'));
+}
+
 export function hasHostCallCheckpoint(root, checkpointId) {
   return fs.existsSync(hostCallCheckpointPath(root, checkpointId));
 }
@@ -80,6 +84,10 @@ export function hasRunState(root, runId) {
 
 export function hasContextSnapshotState(root, snapshotId) {
   return fs.existsSync(contextSnapshotStatePath(root, snapshotId));
+}
+
+export function hasAutomationDecisionState(root, decisionId) {
+  return fs.existsSync(automationDecisionStatePath(root, decisionId));
 }
 
 export function readRunState(root, runId) {
@@ -105,6 +113,20 @@ export function readContextSnapshotState(root, snapshotId) {
 export function writeContextSnapshotState(root, snapshot) {
   const file = contextSnapshotStatePath(root, snapshot.id);
   atomicWriteJson(file, snapshot);
+  return { file, path: repoRelativePath(root, file) };
+}
+
+export function readAutomationDecisionState(root, decisionId) {
+  const file = automationDecisionStatePath(root, decisionId);
+  if (!fs.existsSync(file)) {
+    throw new Error('Durable automation decision does not exist: ' + decisionId + '.');
+  }
+  return { file, decision: readJson(file) };
+}
+
+export function writeAutomationDecisionState(root, decision) {
+  const file = automationDecisionStatePath(root, decision.id);
+  atomicWriteJson(file, decision);
   return { file, path: repoRelativePath(root, file) };
 }
 

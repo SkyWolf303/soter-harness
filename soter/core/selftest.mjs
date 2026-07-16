@@ -67,6 +67,7 @@ import {
   proposeMeetingIntakeChangeSet,
   runContainedMeetingIntakeTransaction
 } from '../automations/meeting-intake/transaction.mjs';
+import { createMeetingIntakeDecision } from '../automations/meeting-intake/decision.mjs';
 
 const FIXTURE_TIME = '2026-07-15T12:00:00.000Z';
 
@@ -848,6 +849,7 @@ export async function selftest(root) {
       scenarioPath: 'soter/scenarios/meeting-intake/happy-path.scenario.json',
       runId: 'run.meeting-intake.transaction-fixture',
       snapshotId: 'context.meeting-intake.transaction-fixture',
+      decisionId: 'decision.meeting-intake.transaction-fixture',
       changeSetId: 'changeset.meeting-intake.transaction-fixture',
       approvalId: 'approval.meeting-intake.transaction-fixture',
       createdAt: FIXTURE_TIME,
@@ -861,16 +863,139 @@ export async function selftest(root) {
     const transactionEvidence = createContainedTransactionEvidence({
       lock,
       envelope: transaction.envelope,
+      decision: transaction.decision,
       changeSet: transaction.changeSet,
       approval: transaction.approval,
       id: 'evidence.meeting-intake.transaction.fixture',
       createdAt: FIXTURE_TIME
     });
+    const tamperedDecision = structuredClone(transaction.decision);
+    tamperedDecision.payload.summary.segmentReferences[0].segmentFingerprint
+      = fingerprintJson({ planted: 'tamper' });
+    let tamperedDecisionRejected = false;
+    try {
+      proposeMeetingIntakeChangeSet({
+        root: temp,
+        lock,
+        snapshot: transaction.snapshot,
+        decision: tamperedDecision,
+        id: 'changeset.meeting-intake.tampered-decision',
+        runId: transaction.envelope.id,
+        createdAt: FIXTURE_TIME
+      });
+    } catch (error) {
+      tamperedDecisionRejected = error.message.includes('exact context records')
+        || error.message.includes('decision fingerprint');
+    }
+    const ambiguousSnapshot = structuredClone(transaction.snapshot);
+    const instanceEntry = ambiguousSnapshot.entries.find((entry) => {
+      return entry.id === 'context.crm.instances';
+    });
+    instanceEntry.value.records.push({
+      type: 'task',
+      id: 'soter-fixture://crm/task/secondary-deck',
+      version: '1',
+      fields: {
+        title: 'Archive prior launch deck',
+        status: 'open',
+        projectUris: ['soter-fixture://crm/project/launch']
+      }
+    });
+    instanceEntry.valueFingerprint = fingerprintJson(instanceEntry.value);
+    const ambiguousDecision = createMeetingIntakeDecision({
+      root: temp,
+      lock,
+      snapshot: ambiguousSnapshot,
+      id: 'decision.meeting-intake.ambiguous-selftest',
+      createdAt: FIXTURE_TIME,
+      producer: { kind: 'fixture', id: 'fixture.ambiguous-selftest', host: null },
+      input: {
+        state: 'ready',
+        meetingRecordId: transaction.decision.payload.meeting.recordId,
+        summarySegmentIndexes: [0, 1],
+        tasks: [
+          {
+            recordId: transaction.decision.payload.tasks[0].recordId,
+            disposition: 'fold',
+            reason: 'The cited request is the existing launch-deck delivery task, so it should be folded.',
+            segmentIndexes: [0]
+          },
+          {
+            recordId: 'soter-fixture://crm/task/secondary-deck',
+            disposition: 'ignore',
+            reason: 'The cited request concerns sending the updated deck, not archiving a prior deck.',
+            segmentIndexes: [0]
+          }
+        ],
+        policies: [],
+        issues: [],
+        limitations: [
+          'This contained ambiguity trial proves explicit candidate disposition, not connected host judgment quality.'
+        ]
+      }
+    });
+    const ambiguousProposal = proposeMeetingIntakeChangeSet({
+      root: temp,
+      lock,
+      snapshot: ambiguousSnapshot,
+      decision: ambiguousDecision,
+      id: 'changeset.meeting-intake.ambiguous-selftest',
+      runId: ambiguousSnapshot.runId,
+      createdAt: FIXTURE_TIME
+    });
+    const abstainingDecision = createMeetingIntakeDecision({
+      root: temp,
+      lock,
+      snapshot: ambiguousSnapshot,
+      id: 'decision.meeting-intake.abstaining-selftest',
+      createdAt: FIXTURE_TIME,
+      producer: { kind: 'fixture', id: 'fixture.abstaining-selftest', host: null },
+      input: {
+        state: 'needs-input',
+        meetingRecordId: transaction.decision.payload.meeting.recordId,
+        summarySegmentIndexes: [0],
+        tasks: ambiguousDecision.payload.tasks.map((task) => ({
+          recordId: task.recordId,
+          disposition: 'review',
+          reason: 'The bounded candidates remain ambiguous and require an explicit user choice before writes.',
+          segmentIndexes: [0]
+        })),
+        policies: [],
+        issues: ['Two bounded task candidates remain plausible and require user selection.'],
+        limitations: [
+          'No task selection or write proposal is valid until the ambiguity is resolved.'
+        ]
+      }
+    });
+    let abstentionProposalRejected = false;
+    try {
+      proposeMeetingIntakeChangeSet({
+        root: temp,
+        lock,
+        snapshot: ambiguousSnapshot,
+        decision: abstainingDecision,
+        id: 'changeset.meeting-intake.abstaining-selftest',
+        runId: ambiguousSnapshot.runId,
+        createdAt: FIXTURE_TIME
+      });
+    } catch (error) {
+      abstentionProposalRejected = error.message.includes('requires a ready');
+    }
+    if (!tamperedDecisionRejected
+      || ambiguousProposal.operations.length !== 2
+      || ambiguousProposal.operations[1].input.id
+        !== transaction.decision.payload.tasks[0].recordId
+      || ambiguousProposal.basis.fingerprint !== ambiguousDecision.decisionFingerprint
+      || !abstentionProposalRejected) {
+      failures.push('Automation decision boundary did not bind exact grounding, explicit ambiguity resolution, and abstention');
+    }
     const connectedProposal = proposeMeetingIntakeChangeSet({
+      root: temp,
       lock,
       snapshot: transaction.snapshot,
+      decision: transaction.decision,
       id: 'changeset.meeting-intake.connected-compile-selftest',
-      runId: 'run.meeting-intake.connected-compile-selftest',
+      runId: transaction.decision.runId,
       createdAt: FIXTURE_TIME
     });
     const connectedMeetingIntakeBatch = compileConnectedOperationBatch({
@@ -889,6 +1014,8 @@ export async function selftest(root) {
       failures.push('connected compiler did not represent the portable meeting-intake batch and isolate its create compensation blocker');
     }
     const updateProposal = structuredClone(connectedProposal);
+    updateProposal.runId = 'run.meeting-intake.connected-update-selftest';
+    delete updateProposal.basis;
     const updateRecordId = 'https://www.notion.so/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
     const updatePriorFields = {
       title: 'Connected transaction selftest task',
@@ -1705,6 +1832,7 @@ export async function selftest(root) {
     writeJson(path.join(temp, 'soter/fixtures/meeting-intake/contained.evidence.json'), contextEvidence);
     writeJson(path.join(temp, 'soter/fixtures/meeting-intake/transaction.run.json'), transaction.envelope);
     writeJson(path.join(temp, 'soter/fixtures/meeting-intake/transaction.context.json'), transaction.snapshot);
+    writeJson(path.join(temp, 'soter/fixtures/meeting-intake/transaction.decision.json'), transaction.decision);
     writeJson(path.join(temp, 'soter/fixtures/meeting-intake/transaction.changeset.json'), transaction.changeSet);
     writeJson(path.join(temp, 'soter/fixtures/meeting-intake/transaction.approval.json'), transaction.approval);
     writeJson(path.join(temp, 'soter/fixtures/meeting-intake/transaction.evidence.json'), transactionEvidence);
@@ -1716,7 +1844,9 @@ export async function selftest(root) {
     if (verifiedFixtures.health.valid !== 'passed') {
       failures.push(
         'generated Core artifacts failed contracts: '
-          + verifiedFixtures.violations.map((item) => item.code + ':' + item.what).join(', ')
+          + verifiedFixtures.violations.map((item) => {
+            return item.code + ':' + path.relative(temp, item.file) + ':' + item.what;
+          }).join(', ')
       );
     }
     if (doctor.report.states.valid !== 'passed'
@@ -2765,8 +2895,10 @@ export async function selftest(root) {
       failures.push('operation plan widened authorization or emitted a blocked write request');
     }
     const conflicting = proposeMeetingIntakeChangeSet({
+      root: temp,
       lock,
       snapshot: transaction.snapshot,
+      decision: transaction.decision,
       id: 'changeset.meeting-intake.rollback-fixture',
       runId: transaction.envelope.id,
       createdAt: FIXTURE_TIME
@@ -3252,7 +3384,7 @@ export async function selftest(root) {
     return false;
   }
   process.stdout.write(
-    'CORE SELFTEST PASS: deterministic source-bound lock, typed fixture reads/writes, exact-scope approval, deduplication, expected-version conflicts, rollback, read-after-write verification, resumable fixed and bound sequential operation plans, approval-bound connected update transactions with reverse compensation and read-only ambiguity reconciliation, bounded connected context finalization with exact applicable policy bodies, resumable MCP host dispatch, exact-lock single and multi-step provider probes including minimized document reads, schema and identity drift rejection, connected readiness, expiry, honest states, and stale-lock detection.\n'
+    'CORE SELFTEST PASS: deterministic source-bound lock, typed fixture reads/writes, grounded Automation decisions with explicit ambiguity and abstention, exact-scope approval, deduplication, expected-version conflicts, rollback, read-after-write verification, resumable fixed and bound sequential operation plans, approval-bound connected update transactions with reverse compensation and read-only ambiguity reconciliation, bounded connected context finalization with exact applicable policy bodies, resumable MCP host dispatch, exact-lock single and multi-step provider probes including minimized document reads, schema and identity drift rejection, connected readiness, expiry, honest states, and stale-lock detection.\n'
   );
   return true;
 }

@@ -257,6 +257,7 @@ export function createContextAssemblyEvidence({ lock, envelope, snapshot, id, cr
 export function createContainedTransactionEvidence({
   lock,
   envelope,
+  decision,
   changeSet,
   approval,
   id,
@@ -290,6 +291,11 @@ export function createContainedTransactionEvidence({
       { id: 'external-provider-effect', state: 'not-applicable' }
     ],
     artifacts: [
+      {
+        role: 'automation-decision',
+        id: decision.id,
+        fingerprint: decision.decisionFingerprint
+      },
       { role: 'change-set', id: changeSet.id, fingerprint: fingerprintJson(changeSet) },
       { role: 'approval', id: approval.id, fingerprint: fingerprintJson(approval) }
     ],

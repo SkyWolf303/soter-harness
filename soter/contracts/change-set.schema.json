@@ -16,6 +16,30 @@
     "runId": { "type": "string", "pattern": "^run\\.[a-z0-9]+(?:[.-][a-z0-9]+)*$" },
     "createdAt": { "type": "string", "minLength": 20 },
     "configurationLockFingerprint": { "$ref": "#/$defs/fingerprint" },
+    "basis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "id",
+        "fingerprint",
+        "contextSnapshotId",
+        "contextSnapshotFingerprint"
+      ],
+      "properties": {
+        "kind": { "const": "automation-decision" },
+        "id": {
+          "type": "string",
+          "pattern": "^decision\\.[a-z0-9]+(?:[.-][a-z0-9]+)*$"
+        },
+        "fingerprint": { "$ref": "#/$defs/fingerprint" },
+        "contextSnapshotId": {
+          "type": "string",
+          "pattern": "^context\\.[a-z0-9]+(?:[.-][a-z0-9]+)*$"
+        },
+        "contextSnapshotFingerprint": { "$ref": "#/$defs/fingerprint" }
+      }
+    },
     "state": { "enum": ["proposed", "approved", "executing", "committed", "rolled-back", "failed"] },
     "scopeFingerprint": { "$ref": "#/$defs/fingerprint" },
     "operations": {

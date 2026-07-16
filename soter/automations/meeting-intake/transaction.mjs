@@ -7,6 +7,11 @@ import {
   changeSetScopeFingerprint,
   executeContainedChangeSet
 } from '../../core/transaction.mjs';
+import {
+  assertMeetingIntakeDecision,
+  createMeetingIntakeDecision,
+  loadMeetingIntakeDecision
+} from './decision.mjs';
 
 function records(snapshot, type) {
   const matches = [];
@@ -14,17 +19,6 @@ function records(snapshot, type) {
     matches.push(...(entry.value.records || []).filter((item) => item.type === type));
   }
   return matches;
-}
-
-function singleRecord(snapshot, type) {
-  const matches = records(snapshot, type);
-  if (matches.length !== 1) {
-    throw new Error(
-      'Meeting-intake proposal requires exactly one bounded ' + type
-        + ' candidate; found ' + matches.length + '.'
-    );
-  }
-  return matches[0];
 }
 
 function singleTranscript(snapshot) {
@@ -40,28 +34,49 @@ function singleTranscript(snapshot) {
   return matches[0];
 }
 
-export function proposeMeetingIntakeChangeSet({ lock, snapshot, id, runId, createdAt }) {
-  const meeting = singleRecord(snapshot, 'meeting');
-  const task = singleRecord(snapshot, 'task');
-  const transcript = singleTranscript(snapshot);
+export function proposeMeetingIntakeChangeSet({
+  root,
+  lock,
+  snapshot,
+  decision,
+  id,
+  runId,
+  createdAt
+}) {
+  assertMeetingIntakeDecision({ root, lock, snapshot, decision });
+  if (decision.state !== 'ready') {
+    throw new Error('Meeting-intake proposal requires a ready grounded Automation decision.');
+  }
+  if (decision.runId !== runId) {
+    throw new Error('Meeting-intake proposal run does not match its exact Automation decision.');
+  }
+  const meeting = records(snapshot, 'meeting').find((record) => {
+    return record.id === decision.payload.meeting.recordId;
+  });
+  const transcriptEntry = snapshot.entries.find((entry) => {
+    return entry.id === decision.payload.transcript.contextEntryId;
+  });
+  const transcript = transcriptEntry?.value;
+  if (!meeting || !transcript) {
+    throw new Error('Meeting-intake decision references context that is not present in the snapshot.');
+  }
   const speakerNames = new Map(transcript.speakers.map((speaker) => {
     return [speaker.id, speaker.displayName];
   }));
-  const transcriptText = transcript.segments.map((segment) => segment.text).join(' ');
-  const taskTokens = task.fields.title.toLowerCase().split(/[^a-z0-9]+/)
-    .filter((token) => token.length >= 4);
-  if (taskTokens.some((token) => !transcriptText.toLowerCase().includes(token))) {
-    throw new Error('The sole bounded task candidate is not textually grounded in the transcript fixture.');
-  }
-  const summaryBody = transcript.segments.map((segment) => {
+  const summarySegments = decision.payload.summary.segmentReferences.map((reference) => {
+    return transcript.segments[reference.index];
+  });
+  const transcriptText = summarySegments.map((segment) => segment.text).join(' ');
+  const summaryBody = summarySegments.map((segment) => {
     return (speakerNames.get(segment.speakerId) || segment.speakerId) + ': ' + segment.text;
   }).join('\n\n');
+  const foldedTasks = decision.payload.tasks.filter((task) => task.disposition === 'fold');
   const operations = [
     {
       id: 'operation.summary.create',
       capability: 'crm.records.create',
       authority: 'authority.crm.instance',
-      reason: 'Create one transcript-grounded meeting summary attributed to the canonical recording.',
+      reason: 'Create the exact transcript-cited summary selected by ' + decision.id + '.',
       input: {
         recordType: 'meeting-summary',
         deduplicationKey: meeting.fields.recordingUri,
@@ -70,7 +85,7 @@ export function proposeMeetingIntakeChangeSet({ lock, snapshot, id, runId, creat
           value: meeting.fields.recordingUri
         },
         fields: {
-          title: meeting.fields.title + ' summary',
+          title: decision.payload.summary.title,
           documentType: 'Meeting Summary',
           description: transcriptText,
           link: meeting.fields.recordingUri
@@ -78,20 +93,22 @@ export function proposeMeetingIntakeChangeSet({ lock, snapshot, id, runId, creat
         body: summaryBody
       }
     },
-    {
+    ...foldedTasks.map((task) => ({
       id: 'operation.task.update',
       capability: 'crm.records.update',
       authority: 'authority.crm.instance',
-      reason: 'Classify the existing overlapping task as meeting-derived instead of creating a duplicate.',
+      reason: task.reason,
       input: {
         recordType: 'task',
-        id: task.id,
-        expectedVersion: task.version,
+        id: task.recordId,
+        expectedVersion: records(snapshot, 'task').find((record) => {
+          return record.id === task.recordId;
+        }).version,
         patch: {
           context: 'Meeting'
         }
       }
-    }
+    }))
   ].map((operation) => ({
     ...operation,
     inputFingerprint: fingerprintJson(operation.input),
@@ -107,6 +124,13 @@ export function proposeMeetingIntakeChangeSet({ lock, snapshot, id, runId, creat
     runId,
     createdAt,
     configurationLockFingerprint: fingerprintLock(lock),
+    basis: {
+      kind: 'automation-decision',
+      id: decision.id,
+      fingerprint: decision.decisionFingerprint,
+      contextSnapshotId: decision.context.snapshotId,
+      contextSnapshotFingerprint: decision.context.snapshotFingerprint
+    },
     state: 'proposed',
     scopeFingerprint: fingerprintJson(null),
     operations,
@@ -130,6 +154,31 @@ export function proposeMeetingIntakeChangeSet({ lock, snapshot, id, runId, creat
   };
   changeSet.scopeFingerprint = changeSetScopeFingerprint(changeSet);
   return changeSet;
+}
+
+export function proposeDurableMeetingIntakeChangeSet({
+  root,
+  lockPath,
+  decisionId,
+  id,
+  createdAt,
+  expectedHost
+}) {
+  const exact = loadMeetingIntakeDecision({
+    root,
+    lockPath,
+    decisionId,
+    expectedHost
+  });
+  return proposeMeetingIntakeChangeSet({
+    root,
+    lock: exact.lock,
+    snapshot: exact.snapshot,
+    decision: exact.decision,
+    id,
+    runId: exact.decision.runId,
+    createdAt
+  });
 }
 
 async function verifyContainedOutcome({ root, lock, changeSet, runtimeState, at }) {
@@ -182,6 +231,7 @@ export async function runContainedMeetingIntakeTransaction({
   scenarioPath,
   runId,
   snapshotId,
+  decisionId,
   changeSetId,
   approvalId,
   createdAt,
@@ -201,12 +251,69 @@ export async function runContainedMeetingIntakeTransaction({
     recordingUri: 'otter://fixture/meeting.fixture-001',
     evidenceIds
   });
-  const proposed = proposeMeetingIntakeChangeSet({
+  const transcript = singleTranscript(contained.snapshot);
+  const boundedTasks = records(contained.snapshot, 'task');
+  if (boundedTasks.length !== 1) {
+    throw new Error(
+      'Contained meeting-intake fixture decision requires exactly one task candidate; found '
+        + boundedTasks.length + '.'
+    );
+  }
+  const boundedMeetings = records(contained.snapshot, 'meeting');
+  if (boundedMeetings.length !== 1) {
+    throw new Error(
+      'Contained meeting-intake fixture decision requires exactly one meeting; found '
+        + boundedMeetings.length + '.'
+    );
+  }
+  const decision = createMeetingIntakeDecision({
+    root,
     lock,
     snapshot: contained.snapshot,
+    id: decisionId,
+    createdAt,
+    producer: { kind: 'fixture', id: 'fixture.meeting-intake', host: null },
+    input: {
+      state: 'ready',
+      meetingRecordId: boundedMeetings[0].id,
+      summarySegmentIndexes: transcript.segments.map((_, index) => index),
+      tasks: [{
+        recordId: boundedTasks[0].id,
+        disposition: 'fold',
+        reason: 'The bounded fixture transcript explicitly requests the existing launch-deck work.',
+        segmentIndexes: transcript.segments.map((_, index) => index)
+      }],
+      policies: [],
+      issues: [],
+      limitations: [
+        'Contained fixture context does not load external policy bodies and cannot establish connected policy interpretation.'
+      ]
+    }
+  });
+  const proposed = proposeMeetingIntakeChangeSet({
+    root,
+    lock,
+    snapshot: contained.snapshot,
+    decision,
     id: changeSetId,
     runId,
     createdAt
+  });
+  contained.envelope.checkpoints.push({
+    id: 'automation-decision.' + decision.id.slice('decision.'.length),
+    kind: 'automation-decision',
+    state: 'passed',
+    snapshotId: decision.context.snapshotId,
+    snapshotFingerprint: decision.context.snapshotFingerprint,
+    decisionId: decision.id,
+    decisionFingerprint: decision.decisionFingerprint,
+    updatedAt: decision.createdAt,
+    details: 'The contained Automation decision covers its exact meeting, transcript segments, and sole task candidate without claiming connected policy interpretation.'
+  });
+  contained.envelope.outputs.push({
+    id: decision.id,
+    type: 'automation-decision',
+    fingerprint: decision.decisionFingerprint
   });
   if (!approved) {
     contained.envelope.outputs.push({
@@ -214,7 +321,13 @@ export async function runContainedMeetingIntakeTransaction({
       type: 'change-set-preview',
       fingerprint: proposed.scopeFingerprint
     });
-    return { ...contained, changeSet: proposed, approval: null, verificationOutput: null };
+    return {
+      ...contained,
+      decision,
+      changeSet: proposed,
+      approval: null,
+      verificationOutput: null
+    };
   }
   const approval = approveChangeSet({
     changeSet: proposed,
@@ -259,6 +372,7 @@ export async function runContainedMeetingIntakeTransaction({
   return {
     envelope: contained.envelope,
     snapshot: contained.snapshot,
+    decision,
     changeSet: executed.changeSet,
     approval,
     verificationOutput: executed.verificationOutput

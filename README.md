@@ -194,10 +194,15 @@ The main remaining gaps are structural and behavioral:
   fields and compiles into a representable batch; the batch remains blocked
   because its create has no automatic compensation route.
   Meeting-intake Automation—not Core—now owns construction and acceptance of
-  that outcome. Its contained proposer deterministically quotes the bounded
-  fixture transcript and accepts exactly one textually overlapping task; a
-  durable host-judgment contract for ambiguous or multiple candidates remains
-  intentionally unimplemented.
+  that outcome. Its versioned grounded-decision contract binds the exact lock,
+  run, context snapshot, meeting, transcript segments, every bounded task
+  candidate, and every explicitly applicable policy excerpt. A host may return
+  `ready` only after covering all of them, or `needs-input` with explicit issues
+  rather than guessing. Core persists the private decision and registers its
+  fingerprint on the same run; the resulting change set binds that exact
+  decision and snapshot. The contained fixture and MCP selftests prove contract
+  mechanics, explicit multiple-candidate disposition, abstention, tamper
+  rejection, and Codex projection—not the quality of live host judgment.
   Executable mapped updates now run through a private durable checkpoint with
   compare-before-write, exact approval validation, read-after-write
   verification, reverse compensation of verified prior updates, restart-safe
@@ -474,6 +479,49 @@ authority `loaded`, and pauses before writes. Loading proves bounded provenance
 and applicability; interpreting or enforcing the policy prose is a separate
 host-judgment boundary.
 
+Meeting intake makes that boundary explicit. The host submits a bounded
+decision input naming the selected meeting, transcript segment indexes, one
+disposition for every task candidate, and one cited outcome for every
+applicable policy. `ready` requires exactly one grounded task fold, cited allow
+outcomes for every connected policy, and no unresolved issues. `needs-input`
+records an abstention and cannot produce a change set. The Core-derived durable
+decision adds all record, entry, segment, quote, snapshot, lock, graph, run, and
+producer fingerprints before it is stored under
+`.soter/state/automation-decisions`.
+
+After compaction or in a later session, recover the exact normalized snapshot
+and a safe `needs-input` template instead of reconstructing candidates from
+memory:
+
+    node soter/core/cli.mjs meeting-intake-decision-inspect \
+      --lock soter/fixtures/meeting-intake/meeting-intake.lock.json \
+      --snapshot context.meeting-intake.connected.example \
+      --json > /private/meeting-intake-decision-workspace.json
+
+Commit a user-authored decision input through the CLI:
+
+    node soter/core/cli.mjs meeting-intake-decision-commit \
+      --lock soter/fixtures/meeting-intake/meeting-intake.lock.json \
+      --snapshot context.meeting-intake.connected.example \
+      --decision-input /private/meeting-intake-decision-input.json \
+      --decision-id decision.meeting-intake.example \
+      --actor USER_ID
+
+Then project only a `ready` durable decision into a reviewable change set:
+
+    node soter/core/cli.mjs meeting-intake-proposal \
+      --lock soter/fixtures/meeting-intake/meeting-intake.lock.json \
+      --decision decision.meeting-intake.example \
+      --change-set-id changeset.meeting-intake.example \
+      --json > /private/meeting-intake.changeset.json
+
+The Codex or Claude host projection uses
+`soter_inspect_meeting_intake_decision`,
+`soter_commit_meeting_intake_decision`, and
+`soter_propose_meeting_intake_change_set`. Neither interface approves a write
+or calls a provider. A changed decision input creates a different fingerprint;
+one context snapshot cannot silently acquire a competing decision.
+
 `.soter/state` is private user runtime state and is ignored by Git. It may
 contain portable inputs and normalized provider outputs needed to resume work;
 do not copy it into packs, fixtures, commits, or shared configurations.
@@ -520,8 +568,8 @@ runtime is connected or ready.
    compensation route or explicit prohibition for creates, and add the
    separately authorized canary doctor level.
 4. Prove the full judgment and orchestration slice through both Claude and
-   Codex host adapters rather than treating deterministic fixture mechanics as
-   agent behavior evidence.
+   Codex host adapters with repeatable decision-quality evaluations rather than
+   treating the now-enforced decision mechanics as agent behavior evidence.
 5. Expand configuration, bundles, sharing, progressive autonomy, and UI only on
    top of the proven contracts.
 

@@ -25,7 +25,7 @@
       "evidenceMaturity": "declared",
       "source": "base",
       "reason": "Required kernel foundation: Governs how Soter systems are defined, validated, evaluated, changed, versioned, and packaged.",
-      "manifestFingerprint": "sha256:acf30ad7cc8e64d11a9ef39aa8b17e018fecc162db8e489b655d23ee500d3122",
+      "manifestFingerprint": "sha256:8f47da2f6d155adafff51d07c6f28c801943c3fe5a94add06a2ff16edcda15c6",
       "artifacts": [
         {
           "path": "soter/contracts/approval-v2.schema.json",
@@ -36,6 +36,11 @@
           "path": "soter/contracts/approval.schema.json",
           "role": "definition",
           "fingerprint": "sha256:e5479a33306dbaba733a0dfb3d65663de2657d78e045efddbb887460b806ce31"
+        },
+        {
+          "path": "soter/contracts/automation-decision.schema.json",
+          "role": "definition",
+          "fingerprint": "sha256:334b911e00786ad82aa7b6dcb11c9bd800b85b37fc0c89b97017d0d8a40b4c35"
         },
         {
           "path": "soter/contracts/capability-provider.schema.json",
@@ -50,7 +55,7 @@
         {
           "path": "soter/contracts/change-set.schema.json",
           "role": "definition",
-          "fingerprint": "sha256:aa2c138acbdfb85ff59e3be9ff61c4181c37118b4c4d6fde6e58fd3a133a8a62"
+          "fingerprint": "sha256:f9b07bcfee87814d8ca1bbee5784011f40f0df66cbfea2eb3a47e3bac821076a"
         },
         {
           "path": "soter/contracts/configuration.schema.json",
@@ -200,7 +205,7 @@
         {
           "path": "soter/kernel/verify.mjs",
           "role": "implementation",
-          "fingerprint": "sha256:b33964e3cb430c79f7520c921e9b426552c8c8c792290d94c8b14d0b017d9ea8"
+          "fingerprint": "sha256:4ecf6b337366c61666668f9b3e53ef13ffa27feb82a7514d75bff643a06d14c0"
         }
       ]
     },
@@ -232,7 +237,7 @@
         {
           "path": "soter/core/cli.mjs",
           "role": "implementation",
-          "fingerprint": "sha256:5fa5b5c565c5692974d2942b37e3a412ebcc04c1342062fd19719149d1926f41"
+          "fingerprint": "sha256:4e066dc9b2b4bc072a9b26c837d3ccb1c429a9335c0b9b884e623abb0984d30c"
         },
         {
           "path": "soter/core/connected-transaction-runtime.mjs",
@@ -262,12 +267,12 @@
         {
           "path": "soter/core/evidence.mjs",
           "role": "implementation",
-          "fingerprint": "sha256:b3ef42ba021153f2476c37c36f5d11faf6b3064c9b851d663af04c8985ce36ea"
+          "fingerprint": "sha256:b99de7a73f7e6e352f2a1b7062c721659a3d767c40d9abea5603026d7701459c"
         },
         {
           "path": "soter/core/fixtures.mjs",
           "role": "implementation",
-          "fingerprint": "sha256:8cdfa4ffd2bb4786771f0fcec137aff5c56ebcdabff1febd38a5664fe104414e"
+          "fingerprint": "sha256:7219158a49b38a83dd806d4abd3938954791a83c114cbfc5f2f8fe55bb6222bb"
         },
         {
           "path": "soter/core/host-runtime.mjs",
@@ -287,7 +292,7 @@
         {
           "path": "soter/core/mcp/selftest.mjs",
           "role": "evaluation",
-          "fingerprint": "sha256:6b461342ea077bad83fe2a8f8eb740d92f162d8a6564d9b2df9d4c20b11fd67b"
+          "fingerprint": "sha256:88975890b5955ec4558d9626c7e6015471f336ae8b36af4663508d895f5b1e35"
         },
         {
           "path": "soter/core/mcp/server.mjs",
@@ -297,7 +302,7 @@
         {
           "path": "soter/core/mcp/tools.mjs",
           "role": "implementation",
-          "fingerprint": "sha256:8c93ef91a84071c8a92c041e9c7f59f0c41c5e08fe1dbda895d6d7365851bc0f"
+          "fingerprint": "sha256:0b72e5ca66cc1d9e1b698e7f38e74daedd8632800d9ce49dcc6bf5a6af95f242"
         },
         {
           "path": "soter/core/operation-plans.mjs",
@@ -327,22 +332,22 @@
         {
           "path": "soter/core/runtime-state.mjs",
           "role": "implementation",
-          "fingerprint": "sha256:9a10497bc8a19156f2007038a921f01b96060eea87bb895208126df52cae7dae"
+          "fingerprint": "sha256:617c92188d55f328c39add4f2fb91d7966d56b3ede1331c01ec3e0ebef64ae8a"
         },
         {
           "path": "soter/core/selftest.mjs",
           "role": "evaluation",
-          "fingerprint": "sha256:56e48a31be937d8a74dac15f44ad96111fba9f5b6a2914f66650abd92cc8f6e0"
+          "fingerprint": "sha256:99d8d0b00737d37a1d365441cee4a5d6c1056a15eebb102434d0e82599478746"
         },
         {
           "path": "soter/core/service.mjs",
           "role": "implementation",
-          "fingerprint": "sha256:38df30caf8786ab7ee02989782c0d5b4e2ce036d7bd25ff0d5043beed7045f3a"
+          "fingerprint": "sha256:f0c13333b6345bb67bfcd73ae303716fa78cfc8f5a10fa168c2683a0091c561c"
         },
         {
           "path": "soter/core/transaction.mjs",
           "role": "implementation",
-          "fingerprint": "sha256:2694cc7f4dac401f8cd4b9f8a721fd8989eb28dfe1615f67433440f524b10d4b"
+          "fingerprint": "sha256:2577824bcdd64213f1d548192f23f7bfa95833506de46e323746ba9b6bc82b19"
         }
       ]
     },
@@ -371,12 +376,22 @@
       "evidenceMaturity": "declared",
       "source": "user",
       "reason": "The user selected the meeting-intake outcome for this named harness configuration.",
-      "manifestFingerprint": "sha256:6b45c06cf5a170fe002521393adcb8fdb5a60cfaf0b9d6811bb07295087bea79",
+      "manifestFingerprint": "sha256:46dc84fbb9c5b8ee851ba739a24273bdc466bc8c88b9e516cc34b3fa13e6120a",
       "artifacts": [
         {
           "path": "soter/automations/meeting-intake/context.mjs",
           "role": "implementation",
           "fingerprint": "sha256:fb3e8f806e31a2f41001ab89185d52bd4bb39691bc35075a19aebb9e8dee19ae"
+        },
+        {
+          "path": "soter/automations/meeting-intake/decision.mjs",
+          "role": "implementation",
+          "fingerprint": "sha256:f3c0e418e710eccbe042f139ed71c273105513487ce3d4cdc7b827865e70775c"
+        },
+        {
+          "path": "soter/automations/meeting-intake/decision.schema.json",
+          "role": "definition",
+          "fingerprint": "sha256:b435dd640faeec58897a14457220a5913e61a476d5952b299a4004d90e847620"
         },
         {
           "path": "soter/automations/meeting-intake/settings.json",
@@ -386,7 +401,7 @@
         {
           "path": "soter/automations/meeting-intake/transaction.mjs",
           "role": "implementation",
-          "fingerprint": "sha256:769016c21dc409e3cb04f4f2b9866c6e0a156b4abe44ab70362c94301d0c8d82"
+          "fingerprint": "sha256:cc1389ff1a0ac64718d1925620a218f37a2c8e0aaaa21f90f4412a08596a528e"
         },
         {
           "path": "soter/scenarios/meeting-intake/grounded-and-gated.scenario.json",
@@ -837,5 +852,5 @@
       "fingerprint": "sha256:76ee7cf92f64ea6a927008daa4cf80dff943769d749b9bd9d27737a1420f57be"
     }
   ],
-  "graphFingerprint": "sha256:e98f155c68b3368a7af56ddb119e6fb18a8e0d22f5efe37f04551a5aad4433e7"
+  "graphFingerprint": "sha256:4a1b1357e868dba761a79674075bb2f3793266385557131cbd3bd644398f41cd"
 }

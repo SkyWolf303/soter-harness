@@ -95,6 +95,7 @@ export async function buildMeetingIntakeFixtures(root) {
     scenarioPath: 'soter/scenarios/meeting-intake/happy-path.scenario.json',
     runId: 'run.meeting-intake.transaction-fixture',
     snapshotId: 'context.meeting-intake.transaction-fixture',
+    decisionId: 'decision.meeting-intake.transaction-fixture',
     changeSetId: 'changeset.meeting-intake.transaction-fixture',
     approvalId: 'approval.meeting-intake.transaction-fixture',
     createdAt: MEETING_INTAKE_FIXTURE_TIME,
@@ -105,6 +106,7 @@ export async function buildMeetingIntakeFixtures(root) {
   const transactionEvidence = createContainedTransactionEvidence({
     lock,
     envelope: transaction.envelope,
+    decision: transaction.decision,
     changeSet: transaction.changeSet,
     approval: transaction.approval,
     id: transactionEvidenceId,
@@ -123,6 +125,7 @@ export async function buildMeetingIntakeFixtures(root) {
     ['soter/fixtures/meeting-intake/contained.evidence.json', contextEvidence],
     ['soter/fixtures/meeting-intake/transaction.run.json', transaction.envelope],
     ['soter/fixtures/meeting-intake/transaction.context.json', transaction.snapshot],
+    ['soter/fixtures/meeting-intake/transaction.decision.json', transaction.decision],
     ['soter/fixtures/meeting-intake/transaction.changeset.json', transaction.changeSet],
     ['soter/fixtures/meeting-intake/transaction.approval.json', transaction.approval],
     ['soter/fixtures/meeting-intake/transaction.evidence.json', transactionEvidence]

@@ -84,6 +84,14 @@
       "role": "implementation"
     },
     {
+      "path": "soter/automations/meeting-intake/decision.mjs",
+      "role": "implementation"
+    },
+    {
+      "path": "soter/automations/meeting-intake/decision.schema.json",
+      "role": "definition"
+    },
+    {
       "path": "soter/automations/meeting-intake/settings.json",
       "role": "definition"
     },

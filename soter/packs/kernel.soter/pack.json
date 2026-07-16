@@ -43,6 +43,7 @@
     { "path": "soter/contracts/operation-plan-v2.schema.json", "role": "definition" },
     { "path": "soter/contracts/operation-plan-checkpoint-v2.schema.json", "role": "definition" },
     { "path": "soter/contracts/context-snapshot.schema.json", "role": "definition" },
+    { "path": "soter/contracts/automation-decision.schema.json", "role": "definition" },
     { "path": "soter/contracts/provider-fixture.schema.json", "role": "definition" },
     { "path": "soter/contracts/approval.schema.json", "role": "definition" },
     { "path": "soter/contracts/approval-v2.schema.json", "role": "definition" },

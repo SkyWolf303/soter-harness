@@ -13,9 +13,9 @@
   },
   "configurationLock": {
     "path": "soter/fixtures/meeting-intake/meeting-intake.lock.json",
-    "fingerprint": "sha256:df73e4b7c573b5e73c0a4475a52b49ab69f810055521aebe9dbf5316e8c433d8"
+    "fingerprint": "sha256:7bd80295d6cbdf765bd07318889cb6c7467ffaa8e476ffc4f9190372ce7584a2"
   },
-  "graphFingerprint": "sha256:e98f155c68b3368a7af56ddb119e6fb18a8e0d22f5efe37f04551a5aad4433e7",
+  "graphFingerprint": "sha256:4a1b1357e868dba761a79674075bb2f3793266385557131cbd3bd644398f41cd",
   "context": [
     {
       "subject": "crm.records",
@@ -44,7 +44,7 @@
       "uri": "notion://configured-user",
       "declarationFingerprint": "sha256:0567ff10843e26a53e85ffa7d609867226b00615288193983c4e6f9384050032",
       "status": "declared",
-      "provenance": "configuration-lock:sha256:df73e4b7c573b5e73c0a4475a52b49ab69f810055521aebe9dbf5316e8c433d8",
+      "provenance": "configuration-lock:sha256:7bd80295d6cbdf765bd07318889cb6c7467ffaa8e476ffc4f9190372ce7584a2",
       "freshness": "unknown"
     },
     {
@@ -64,7 +64,7 @@
       "uri": "soter-state://runs",
       "declarationFingerprint": "sha256:6f39e99f1ebc86fe11ee09cc7170824ac4c11a6fc88371edb673bd2379dacdc8",
       "status": "declared",
-      "provenance": "configuration-lock:sha256:df73e4b7c573b5e73c0a4475a52b49ab69f810055521aebe9dbf5316e8c433d8",
+      "provenance": "configuration-lock:sha256:7bd80295d6cbdf765bd07318889cb6c7467ffaa8e476ffc4f9190372ce7584a2",
       "freshness": "unknown"
     }
   ],
@@ -178,7 +178,7 @@
       "decision": "approved",
       "scope": {
         "changeSetId": "changeset.meeting-intake.transaction-fixture",
-        "fingerprint": "sha256:5d470d5c97bbea42fee91f15d147bc6ebbd5858f7e051338ebdb266bbb93ab7e",
+        "fingerprint": "sha256:5b87707d66a5037db836837b5d6fec41c3a83d06b253ccc7ee3c36986a25dcdc",
         "effects": [
           "write"
         ]
@@ -203,6 +203,17 @@
       "details": "The run paused before automation execution, provider writes, or external effects."
     },
     {
+      "id": "automation-decision.meeting-intake.transaction-fixture",
+      "kind": "automation-decision",
+      "state": "passed",
+      "snapshotId": "context.meeting-intake.transaction-fixture",
+      "snapshotFingerprint": "sha256:20b63ced15f12504c152de5797ed7c4559d4f3a14645313cd4d2574298a59e11",
+      "decisionId": "decision.meeting-intake.transaction-fixture",
+      "decisionFingerprint": "sha256:4b7ded4f21de53ecbfd716dd3d00f41a73e91b242965663457f839cae71d7cb7",
+      "updatedAt": "2026-07-15T12:00:00.000Z",
+      "details": "The contained Automation decision covers its exact meeting, transcript segments, and sole task candidate without claiming connected policy interpretation."
+    },
+    {
       "id": "write-batch-approved",
       "state": "passed",
       "details": "Approval fingerprint matched the exact proposed operation scope."
@@ -222,12 +233,17 @@
     {
       "id": "context.meeting-intake.transaction-fixture",
       "type": "context-snapshot",
-      "fingerprint": "sha256:1fd4658d7a973fe28d268bf16d8d7a1166ae46edb67de7224eb98b378c90f741"
+      "fingerprint": "sha256:20b63ced15f12504c152de5797ed7c4559d4f3a14645313cd4d2574298a59e11"
+    },
+    {
+      "id": "decision.meeting-intake.transaction-fixture",
+      "type": "automation-decision",
+      "fingerprint": "sha256:4b7ded4f21de53ecbfd716dd3d00f41a73e91b242965663457f839cae71d7cb7"
     },
     {
       "id": "changeset.meeting-intake.transaction-fixture",
       "type": "change-set",
-      "fingerprint": "sha256:c1f30ac3281d663a90efa4673fc44c653b1a5d5c5a5cc407faed5dfae9177a5c"
+      "fingerprint": "sha256:6aface41317dfabec0b9f55da7912b8634d9ca51e13596e943f5dbe4e89f5bba"
     }
   ],
   "effects": [

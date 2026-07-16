@@ -33,6 +33,7 @@ const RUNTIME_ARTIFACT_CONTRACTS = new Set([
   'soter://contracts/host-tool-call/v1',
   'soter://contracts/host-call-checkpoint/v1',
   'soter://contracts/context-snapshot/v1',
+  'soter://contracts/automation-decision/v1',
   'soter://contracts/approval/v1',
   'soter://contracts/approval/v2',
   'soter://contracts/change-set/v1',
@@ -327,11 +328,10 @@ function addSchemaViolations(file, failures, out) {
 
 function collectDocuments(root, out, census, options = {}) {
   const soterRoot = path.join(root, 'soter');
-  const contractDir = path.join(soterRoot, 'contracts');
   const schemas = new Map();
   const documents = [];
 
-  for (const file of walkFiles(contractDir, (candidate) => candidate.endsWith('.schema.json'))) {
+  for (const file of walkFiles(soterRoot, (candidate) => candidate.endsWith('.schema.json'))) {
     const schema = parseJson(file, out);
     if (!schema) continue;
     census.contracts += 1;
@@ -359,7 +359,7 @@ function collectDocuments(root, out, census, options = {}) {
   }
 
   const instanceFiles = walkFiles(soterRoot, (candidate) => {
-    return candidate.endsWith('.json') && !candidate.startsWith(contractDir + path.sep);
+    return candidate.endsWith('.json') && !candidate.endsWith('.schema.json');
   });
   for (const file of instanceFiles) {
     const doc = parseJson(file, out);
@@ -403,6 +403,7 @@ function checkPackGraph(root, documents, out, census) {
   const contextModels = new Map();
   const providerMappings = new Map();
   const snapshots = new Map();
+  const automationDecisions = new Map();
   const providerFixtures = new Map();
   const providerProbes = new Map();
   const providerProbeCalls = new Map();
@@ -502,6 +503,9 @@ function checkPackGraph(root, documents, out, census) {
     } else if (entry.contractId === 'soter://contracts/context-snapshot/v1') {
       census.contextSnapshots += 1;
       addUniqueRuntimeArtifact(snapshots, entry, 'context');
+    } else if (entry.contractId === 'soter://contracts/automation-decision/v1') {
+      census.automationDecisions += 1;
+      addUniqueRuntimeArtifact(automationDecisions, entry, 'automation-decision');
     } else if (entry.contractId === 'soter://contracts/provider-fixture/v1') {
       census.providerFixtures += 1;
       addUniqueRuntimeArtifact(providerFixtures, entry, 'fixture');
@@ -881,6 +885,7 @@ function checkPackGraph(root, documents, out, census) {
     evidence,
     doctors,
     snapshots,
+    automationDecisions,
     contextModels,
     providers,
     providerProbes,
@@ -908,6 +913,7 @@ function checkPackGraph(root, documents, out, census) {
     contextModels,
     providerMappings,
     snapshots,
+    automationDecisions,
     providerFixtures,
     providerProbes,
     providerProbeCalls,
@@ -1635,6 +1641,7 @@ function checkRuntimeArtifacts(
   evidence,
   doctors,
   snapshots,
+  automationDecisions,
   contextModels,
   providers,
   providerProbes,
@@ -2097,6 +2104,59 @@ function checkRuntimeArtifacts(
     }
   }
 
+  for (const entry of automationDecisions.values()) {
+    const lock = requireLock(
+      entry,
+      entry.doc.configurationLockFingerprint,
+      'automation decision'
+    );
+    const snapshot = snapshots.get(entry.doc.context.snapshotId);
+    const run = runs.get(entry.doc.runId);
+    const unsigned = structuredClone(entry.doc);
+    delete unsigned.decisionFingerprint;
+    if (entry.doc.decisionFingerprint !== fingerprintJson(unsigned)) {
+      out.push(violation(
+        entry.file,
+        'SOTER_AUTOMATION_DECISION_FINGERPRINT',
+        'automation decision fingerprint is stale',
+        'a proposal must bind the exact durable judgment and grounding artifact',
+        'regenerate the decision from the exact bounded context'
+      ));
+    }
+    if (!snapshot
+      || snapshot.doc.runId !== entry.doc.runId
+      || fingerprintJson(snapshot.doc) !== entry.doc.context.snapshotFingerprint) {
+      out.push(violation(
+        entry.file,
+        'SOTER_AUTOMATION_DECISION_CONTEXT',
+        'automation decision does not bind its exact context snapshot',
+        'host judgment is reusable only for the exact bounded context it interpreted',
+        'include the matching snapshot or regenerate the decision'
+      ));
+    }
+    const selectedAutomation = lock?.doc.packs.filter((pack) => {
+      return pack.id === entry.doc.automation.id && pack.layer === 'automation';
+    }) || [];
+    if (!run
+      || run.doc.automation.id !== entry.doc.automation.id
+      || run.doc.automation.version !== entry.doc.automation.version
+      || selectedAutomation.length !== 1
+      || selectedAutomation[0].version !== entry.doc.automation.version
+      || !run.doc.outputs.some((output) => {
+        return output.id === entry.doc.id
+          && output.type === 'automation-decision'
+          && output.fingerprint === entry.doc.decisionFingerprint;
+      })) {
+      out.push(violation(
+        entry.file,
+        'SOTER_AUTOMATION_DECISION_LINK',
+        'automation decision does not match its exact run and selected Automation pack',
+        'domain judgment must remain attributable to one run and one versioned Automation owner',
+        'regenerate the run and decision together'
+      ));
+    }
+  }
+
   for (const entry of changeSets.values()) {
     const changeSetLock = requireLock(
       entry,
@@ -2112,6 +2172,24 @@ function checkRuntimeArtifacts(
       return selectedContextPackIds.has(model.doc.pack);
     }));
     const run = runs.get(entry.doc.runId);
+    if (entry.doc.basis?.kind === 'automation-decision') {
+      const decision = automationDecisions.get(entry.doc.basis.id);
+      if (!decision
+        || decision.doc.runId !== entry.doc.runId
+        || decision.doc.state !== 'ready'
+        || decision.doc.decisionFingerprint !== entry.doc.basis.fingerprint
+        || decision.doc.context.snapshotId !== entry.doc.basis.contextSnapshotId
+        || decision.doc.context.snapshotFingerprint
+          !== entry.doc.basis.contextSnapshotFingerprint) {
+        out.push(violation(
+          entry.file,
+          'SOTER_TRANSACTION_DECISION_BASIS',
+          'change set does not bind one exact ready Automation decision and context snapshot',
+          'review and approval must cover the same grounded judgment that produced the operations',
+          'regenerate the change set from the exact ready decision'
+        ));
+      }
+    }
     if (!run) {
       out.push(violation(
         entry.file,
@@ -2170,6 +2248,7 @@ function checkRuntimeArtifacts(
       id: entry.doc.id,
       runId: entry.doc.runId,
       configurationLockFingerprint: entry.doc.configurationLockFingerprint,
+      basis: entry.doc.basis || null,
       operations: entry.doc.operations.map((operation) => ({
         id: operation.id,
         capability: operation.capability,
@@ -2782,6 +2861,7 @@ export function verifySoter(root = defaultRoot, options = {}) {
     contextModels: 0,
     providerMappings: 0,
     contextSnapshots: 0,
+    automationDecisions: 0,
     providerFixtures: 0,
     providerProbes: 0,
     providerProbeCalls: 0,
@@ -2939,6 +3019,7 @@ function report(resultValue, json) {
       + c.locks + ' locks, ' + c.runEnvelopes + ' run envelopes, '
       + c.evidence + ' evidence records, ' + c.doctorResults + ' doctor results, '
       + c.providers + ' providers, ' + c.contextSnapshots + ' context snapshots, '
+      + c.automationDecisions + ' automation decisions, '
       + c.packSettings + ' pack settings definitions, '
       + c.contextModels + ' context record models, '
       + c.providerMappings + ' provider mappings, '

@@ -6,6 +6,11 @@ import {
   prepareMeetingIntakeConnectedContext
 } from '../../automations/meeting-intake/context.mjs';
 import {
+  commitMeetingIntakeDecision,
+  inspectMeetingIntakeDecisionContext
+} from '../../automations/meeting-intake/decision.mjs';
+import { proposeDurableMeetingIntakeChangeSet } from '../../automations/meeting-intake/transaction.mjs';
+import {
   completeDurableCapabilityExecution,
   completeDurableConnectedTransactionExecution,
   completeDurableOperationPlanExecution,
@@ -51,7 +56,7 @@ export function createSoterMcpServer({ root, host }) {
   const server = new McpServer(
     { name: 'soter-core', version: '0.1.0' },
     {
-      instructions: 'Soter Core validates exact locks and runs for the active ' + host + ' host projection, then saves a private durable checkpoint before emitting a provider-neutral operation resolved to an exact native host tool. After compaction or restart, use soter_list_host_calls and soter_get_host_call to recover pending work. Invoke exactly currentCall.transport.tool when currentCall is present; otherwise invoke the legacy checkpoint.call.transport.tool. Return both checkpoint.id and currentCall.id for sequential plans and connected transactions because a successful completion may emit the next exact call. A needs-attention connected transaction may use soter_reconcile_connected_transaction to emit one exact read-only observation; reconciliation never retries a write and remains paused for missing or divergent state. A completed meeting-intake context plan must be finalized with soter_finalize_meeting_intake_context before its snapshot is used. Always pass the requested arguments through the separately configured provider MCP route and return the native result unchanged. Never fabricate a provider response. Soter does not invoke providers or persist raw responses. MCP cannot originate or alter connected-write approval; it may only resume a transaction already authorized and checkpointed by the trusted CLI.'
+      instructions: 'Soter Core validates exact locks and runs for the active ' + host + ' host projection, then saves a private durable checkpoint before emitting a provider-neutral operation resolved to an exact native host tool. After compaction or restart, use soter_list_host_calls and soter_get_host_call to recover pending work. Invoke exactly currentCall.transport.tool when currentCall is present; otherwise invoke the legacy checkpoint.call.transport.tool. Return both checkpoint.id and currentCall.id for sequential plans and connected transactions because a successful completion may emit the next exact call. A needs-attention connected transaction may use soter_reconcile_connected_transaction to emit one exact read-only observation; reconciliation never retries a write and remains paused for missing or divergent state. A completed meeting-intake context plan must be finalized with soter_finalize_meeting_intake_context before its snapshot is used. Inspect or recover its exact private decision workspace with soter_inspect_meeting_intake_decision, then record grounded host judgment with soter_commit_meeting_intake_decision; use state needs-input rather than guessing when candidates or policies remain unresolved. A ready durable decision can be projected into a reviewable change set with soter_propose_meeting_intake_change_set, but neither tool grants write approval. Always pass requested provider arguments through the separately configured provider MCP route and return the native result unchanged. Never fabricate a provider response. Soter does not invoke providers or persist raw responses. MCP cannot originate or alter connected-write approval; it may only resume a transaction already authorized and checkpointed by the trusted CLI.'
     }
   );
 
@@ -298,6 +303,83 @@ export function createSoterMcpServer({ root, host }) {
     return result(
       finalized,
       'Finalized the bounded connected context snapshot and paused its durable run before writes.'
+    );
+  });
+
+  server.registerTool('soter_inspect_meeting_intake_decision', {
+    title: 'Inspect meeting-intake decision context',
+    description: 'Recover the exact private normalized context snapshot and a safe needs-input template enumerating every bounded task and applicable policy. This read-only tool performs no provider call.',
+    inputSchema: {
+      lock_path: z.string().min(1),
+      snapshot_id: z.string().min(1)
+    },
+    outputSchema: resultSchema,
+    annotations: readAnnotations
+  }, async (input) => {
+    const inspected = inspectMeetingIntakeDecisionContext({
+      root,
+      lockPath: input.lock_path,
+      snapshotId: input.snapshot_id,
+      expectedHost: host
+    });
+    return result(
+      inspected,
+      'Recovered the exact private decision context and an explicit needs-input template without provider calls.'
+    );
+  });
+
+  server.registerTool('soter_commit_meeting_intake_decision', {
+    title: 'Commit grounded meeting-intake decision',
+    description: 'Resolve exact bounded meeting, transcript segments, task candidates, and applicable policy excerpts into a private durable Automation decision. Use needs-input to abstain. This tool performs no provider call and creates no write approval.',
+    inputSchema: {
+      lock_path: z.string().min(1),
+      snapshot_id: z.string().min(1),
+      decision_id: z.string().min(1),
+      decision: jsonObject,
+      at: z.string().min(20).optional()
+    },
+    outputSchema: resultSchema,
+    annotations: statefulAnnotations
+  }, async (input) => {
+    const committed = commitMeetingIntakeDecision({
+      root,
+      lockPath: input.lock_path,
+      snapshotId: input.snapshot_id,
+      id: input.decision_id,
+      input: input.decision,
+      producer: { kind: 'host', id: 'host.' + host, host },
+      at: input.at,
+      expectedHost: host
+    });
+    return result(
+      committed,
+      'Committed the exact grounded Automation decision without provider calls or write approval.'
+    );
+  });
+
+  server.registerTool('soter_propose_meeting_intake_change_set', {
+    title: 'Propose meeting-intake change set',
+    description: 'Project one exact ready durable meeting-intake decision into a reviewable provider-neutral change set. This read-only projection creates no approval and performs no provider call.',
+    inputSchema: {
+      lock_path: z.string().min(1),
+      decision_id: z.string().min(1),
+      change_set_id: z.string().min(1),
+      at: z.string().min(20).optional()
+    },
+    outputSchema: resultSchema,
+    annotations: readAnnotations
+  }, async (input) => {
+    const proposal = proposeDurableMeetingIntakeChangeSet({
+      root,
+      lockPath: input.lock_path,
+      decisionId: input.decision_id,
+      id: input.change_set_id,
+      createdAt: input.at || new Date().toISOString(),
+      expectedHost: host
+    });
+    return result(
+      proposal,
+      'Projected the exact durable Automation decision into a reviewable change set; no approval or provider call was created.'
     );
   });
 

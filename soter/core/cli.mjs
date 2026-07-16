@@ -10,6 +10,10 @@ import {
   prepareMeetingIntakeConnectedContext
 } from '../automations/meeting-intake/context.mjs';
 import {
+  commitMeetingIntakeDecision,
+  inspectMeetingIntakeDecisionContext
+} from '../automations/meeting-intake/decision.mjs';
+import {
   createContextAssemblyEvidence,
   createContainedTransactionEvidence,
   createResolutionEvidence,
@@ -39,7 +43,10 @@ import {
   prepareDurableOperationPlanExecution,
   prepareDurableProviderProbeExecution
 } from './service.mjs';
-import { runContainedMeetingIntakeTransaction } from '../automations/meeting-intake/transaction.mjs';
+import {
+  proposeDurableMeetingIntakeChangeSet,
+  runContainedMeetingIntakeTransaction
+} from '../automations/meeting-intake/transaction.mjs';
 import {
   approveConnectedOperationBatch,
   compileConnectedOperationBatch
@@ -597,6 +604,87 @@ async function main() {
     return;
   }
 
+  if (command === 'meeting-intake-decision-inspect') {
+    const inspected = inspectMeetingIntakeDecisionContext({
+      root,
+      lockPath: requiredOption(args, '--lock'),
+      snapshotId: requiredOption(args, '--snapshot')
+    });
+    if (json) {
+      print(inspected);
+    } else {
+      process.stdout.write(
+        'Inspected private meeting-intake decision context ' + inspected.snapshot.id + '.\n'
+          + 'Transcript segments: ' + inspected.counts.transcriptSegments + '\n'
+          + 'Task candidates: ' + inspected.counts.taskCandidates + '\n'
+          + 'Applicable policies: ' + inspected.counts.applicablePolicies + '\n'
+          + 'Template state: needs-input\nProvider calls executed: 0\n'
+      );
+    }
+    return;
+  }
+
+  if (command === 'meeting-intake-decision-commit') {
+    const committed = commitMeetingIntakeDecision({
+      root,
+      lockPath: requiredOption(args, '--lock'),
+      snapshotId: requiredOption(args, '--snapshot'),
+      id: option(
+        args,
+        '--decision-id',
+        'decision.meeting-intake.' + idPart
+      ),
+      input: readDocumentInput(root, requiredOption(args, '--decision-input')),
+      producer: {
+        kind: 'user',
+        id: option(args, '--actor', 'user'),
+        host: null
+      },
+      at: createdAt
+    });
+    if (json) {
+      print(committed);
+    } else {
+      process.stdout.write(
+        'Committed meeting-intake decision ' + committed.decision.id + '.\n'
+          + 'State: ' + committed.decision.state + '\n'
+          + 'Decision fingerprint: ' + committed.decision.decisionFingerprint + '\n'
+          + 'Private decision: ' + committed.decisionPath + '\n'
+          + 'Write approval created: no\nProvider calls executed: 0\n'
+      );
+    }
+    if (committed.decision.state !== 'ready') process.exitCode = 1;
+    return;
+  }
+
+  if (command === 'meeting-intake-proposal') {
+    const proposal = proposeDurableMeetingIntakeChangeSet({
+      root,
+      lockPath: requiredOption(args, '--lock'),
+      decisionId: requiredOption(args, '--decision'),
+      id: option(
+        args,
+        '--change-set-id',
+        'changeset.meeting-intake.' + idPart
+      ),
+      createdAt
+    });
+    const output = option(args, '--output');
+    if (output) writeJson(resolveRepoPath(root, output), proposal);
+    if (json) {
+      print(proposal);
+    } else {
+      process.stdout.write(
+        'Proposed meeting-intake change set ' + proposal.id + '.\n'
+          + 'Decision: ' + proposal.basis.id + ' (' + proposal.basis.fingerprint + ')\n'
+          + 'Operations: ' + proposal.operations.length + '\n'
+          + (output ? 'Reviewable change set: ' + output + '\n' : '')
+          + 'Approval created: no\nProvider calls executed: 0\n'
+      );
+    }
+    return;
+  }
+
   if (command === 'host-fail') {
     const checkpointId = requiredOption(args, '--checkpoint');
     const output = option(args, '--output');
@@ -726,6 +814,7 @@ async function main() {
       scenarioPath: option(args, '--scenario'),
       runId,
       snapshotId: option(args, '--snapshot-id', 'context.' + lock.configuration.name + '.transaction.' + idPart),
+      decisionId: option(args, '--decision-id', 'decision.' + lock.configuration.name + '.' + idPart),
       changeSetId: option(args, '--change-set-id', 'changeset.' + lock.configuration.name + '.' + idPart),
       approvalId: option(args, '--approval-id', 'approval.' + lock.configuration.name + '.' + idPart),
       createdAt,
@@ -738,6 +827,7 @@ async function main() {
       createContainedTransactionEvidence({
         lock,
         envelope: transaction.envelope,
+        decision: transaction.decision,
         changeSet: transaction.changeSet,
         approval: transaction.approval,
         id: transactionEvidenceId,
@@ -860,12 +950,15 @@ async function main() {
   }
 
   throw new Error(
-    'Usage: node soter/core/cli.mjs <resolve|prepare|context|context-connected-prepare|context-connected-finalize|transaction|connected-batch-preview|connected-batch-approve|connected-transaction-prepare|connected-transaction-complete|connected-transaction-reconcile|doctor|probe-prepare|probe-complete|capability-prepare|capability-complete|plan-prepare|plan-complete|host-fail|host-get|host-list|fixtures|selftest> [options]\n'
+    'Usage: node soter/core/cli.mjs <resolve|prepare|context|context-connected-prepare|context-connected-finalize|meeting-intake-decision-inspect|meeting-intake-decision-commit|meeting-intake-proposal|transaction|connected-batch-preview|connected-batch-approve|connected-transaction-prepare|connected-transaction-complete|connected-transaction-reconcile|doctor|probe-prepare|probe-complete|capability-prepare|capability-complete|plan-prepare|plan-complete|host-fail|host-get|host-list|fixtures|selftest> [options]\n'
       + '  resolve [--config PATH] [--output PATH] [--json]\n'
       + '  prepare --lock PATH [--scenario PATH] [--output PATH] [--evidence-dir PATH] [--json]\n'
       + '  context --lock PATH --meeting-id ID --recording-uri URI [--scenario PATH] [--json]\n'
       + '  context-connected-prepare --lock PATH --run PATH --meeting-id ID --recording-uri URI [--snapshot-id ID] [--json]\n'
       + '  context-connected-finalize --checkpoint ID [--json]\n'
+      + '  meeting-intake-decision-inspect --lock PATH --snapshot ID [--json]\n'
+      + '  meeting-intake-decision-commit --lock PATH --snapshot ID --decision-input PATH [--decision-id ID] [--actor ID] [--json]\n'
+      + '  meeting-intake-proposal --lock PATH --decision ID [--change-set-id ID] [--output PATH] [--json]\n'
       + '  transaction --lock PATH [--scenario PATH] [--approve] [--json]\n'
       + '  connected-batch-preview --lock PATH --change-set PATH [--batch-id ID] [--json]\n'
       + '  connected-batch-approve --batch PATH --change-set PATH --approval-id ID --actor ACTOR --reason TEXT --expires-at TIME [--json]\n'

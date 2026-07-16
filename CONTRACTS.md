@@ -468,6 +468,7 @@ The normative Core state shapes are the
 [resolved lock](./soter/contracts/lock.schema.json),
 [run envelope](./soter/contracts/run-envelope.schema.json),
 [context snapshot](./soter/contracts/context-snapshot.schema.json),
+[automation decision](./soter/contracts/automation-decision.schema.json),
 [scoped approval](./soter/contracts/approval.schema.json),
 [connected operation-batch approval](./soter/contracts/approval-v2.schema.json),
 [change set](./soter/contracts/change-set.schema.json),
@@ -1085,6 +1086,51 @@ URIs. Policy interpretation and participant expansion require their own
 judgment, identity, authority, and disclosure contracts. A private connected
 snapshot is not a provider probe, checked-in evidence, readiness result,
 live-health result, or proof that a host autonomously executed the plan.
+
+#### Grounded Automation decision
+
+`automation-decision/v1` is the provider-neutral durable boundary between
+bounded context and a proposed outcome. Core owns the envelope and persistence
+rules: exact Automation pack and version, run, lock, graph, context snapshot,
+producer, state, privacy, issues, payload, and self-fingerprint. The selected
+Automation owns the decision type and payload semantics through a pack-owned
+schema and validator. This prevents Core from accumulating domain judgment and
+prevents a host from returning unbound prose that later becomes an effect.
+
+A decision is either `ready` or `needs-input`. `ready` contains no issues and
+may be consumed by the owning Automation. `needs-input` contains at least one
+explicit issue and is an abstention, not a partial permission or low-confidence
+approval. Both states are private runtime records; neither authorizes a write,
+calls a provider, establishes host quality, or changes a pack. Core validates a
+connected decision against the exact current lock and selected Automation,
+requires the committed private connected snapshot and paused durable run,
+rejects credential material, stores the decision atomically under
+`.soter/state/automation-decisions`, and registers its fingerprint on that run.
+Repeating the same decision is idempotent. A different decision ID for the same
+snapshot conflicts instead of silently replacing or competing with the first.
+
+The meeting-intake decision schema binds exactly one bounded meeting and
+transcript entry; exact transcript segment indexes and fingerprints for the
+summary; one disposition (`fold`, `ignore`, or `review`) for every and only
+bounded task candidate; and one outcome (`allow`, `block`, or `review`) for
+every and only explicitly applicable policy entry. Policy citations must be
+exact substrings of the bounded body and retain quote fingerprints. Record and
+entry fingerprints are derived by Soter rather than trusted from host input.
+A connected `ready` decision requires at least one summary segment, exactly one
+grounded `fold`, no `review` dispositions, and cited `allow` outcomes for every
+policy. Otherwise the host records `needs-input`; Automation cannot project it
+into a change set.
+
+Meeting-intake change sets carry a decision basis containing the exact decision
+and context-snapshot IDs and fingerprints. The change-set scope fingerprint
+includes that basis, so changing the judgment or grounding invalidates the
+proposal and every later approval. Kernel links checked-in decision, snapshot,
+run, change set, and selected Automation artifacts. The CLI and MCP projections
+share the same constructors and validators. A read-only inspection projection
+rehydrates the exact private snapshot and a safe `needs-input` template after
+compaction rather than reconstructing candidates from conversation. MCP can
+commit host judgment and request a read-only proposal projection, but it still
+cannot approve or execute the resulting writes.
 
 Provider readiness uses a state machine separate from domain capability runs.
 Core derives the observation scope from the exact lock and desired

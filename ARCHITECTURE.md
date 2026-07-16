@@ -565,10 +565,18 @@ the canonical recording link, while the existing overlapping task receives a
 bounded Context classification. Proposal construction and acceptance checks now
 live with meeting-intake Automation; Core retains only generic approval,
 transaction, rollback, and verifier invocation mechanics. The contained
-proposal deterministically quotes its bounded fixture transcript and requires
-exactly one textually overlapping task candidate. It is not yet the general
-host-judgment contract needed for ambiguous or multiple candidate tasks. Core
-can compile that proposal into an exact connected
+path now creates an `automation-decision/v1` governed by an Automation-owned
+meeting-intake schema before it creates a proposal. The decision binds the
+exact run, lock, graph, context snapshot, meeting record, transcript entry and
+segments, every bounded task candidate, every explicitly applicable policy
+entry, exact cited policy excerpts, producer, issues, limitations, and its own
+fingerprint. A `ready` decision must resolve every candidate, fold exactly one
+grounded task, cite an allow outcome for every connected policy, and contain no
+issues. A `needs-input` decision records abstention and cannot produce a change
+set. Core stores connected decisions as private runtime state, registers the
+fingerprint on the same paused run, rejects a competing decision for that
+snapshot, and lets Automation project only a ready decision into a change set
+that carries the exact decision and snapshot basis. Core can compile that proposal into an exact connected
 operation batch with deduplication or expected-version preconditions,
 verification expectations, recovery modes, and a separate expiring approval
 fingerprint. The resulting batch is representable but remains blocked because
@@ -587,8 +595,8 @@ only when the normalized record proves a safe transition. Synthetic local
 tests prove this Core state machine, not connected
 credentials, provider write conformance, or a live end-to-end write. Observed Otter
 transcript conformance, host-started end-to-end dispatch, policy interpretation
-and enforcement, participant identity resolution, compensated creates, live
-approval-bound provider writes, live health, host judgment, and host conformance remain
+quality and enforcement, participant identity resolution, compensated creates, live
+approval-bound provider writes, live health, judgment-quality evaluation, and host conformance remain
 future proof boundaries. The v2 plan contract is intentionally narrower than a
 general workflow language: arbitrary transforms, branching, parallelism,
 fan-out, retries, and compensation are not implemented.

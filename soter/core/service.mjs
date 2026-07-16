@@ -41,13 +41,16 @@ import {
 } from './provider-probe-plans.mjs';
 import { fingerprintLock, lockMatchesResolution } from './resolve.mjs';
 import {
+  hasAutomationDecisionState,
   hasContextSnapshotState,
   hasHostCallCheckpoint,
   hasRunState,
   listHostCallCheckpointDocuments,
+  readAutomationDecisionState,
   readContextSnapshotState,
   readHostCallCheckpoint,
   readRunState,
+  writeAutomationDecisionState,
   writeContextSnapshotState,
   writeHostCallCheckpoint,
   writeRunState
@@ -1480,6 +1483,290 @@ export function commitDurableContextSnapshot({
     snapshotPath: snapshotState.path,
     run: nextRun,
     runPath: runState.path
+  };
+}
+
+export function getExactDurableContextSnapshot({
+  root,
+  lockPath,
+  snapshotId,
+  expectedHost
+}) {
+  const resolvedRoot = path.resolve(root);
+  const lockState = exactLock(resolvedRoot, lockPath, expectedHost);
+  const snapshotState = readContextSnapshotState(resolvedRoot, snapshotId);
+  const snapshot = snapshotState.snapshot;
+  contractFailures(
+    resolvedRoot,
+    snapshot,
+    'soter/contracts/context-snapshot.schema.json',
+    'Durable context snapshot'
+  );
+  if (snapshot.containment !== 'connected'
+    || snapshot.privacy.scope !== 'private'
+    || snapshot.configurationLockFingerprint !== fingerprintLock(lockState.lock)
+    || snapshot.graphFingerprint !== lockState.lock.graphFingerprint
+    || containsCredentialMaterial(snapshot)) {
+    throw new Error('Durable context snapshot does not match the exact private connected lock and graph.');
+  }
+  for (const entry of snapshot.entries) {
+    if (entry.valueFingerprint !== fingerprintJson(entry.value)) {
+      throw new Error('Durable context snapshot entry fingerprint is stale: ' + entry.id + '.');
+    }
+  }
+  const runState = readRunState(resolvedRoot, snapshot.runId);
+  const run = runState.run;
+  assertExactRun(
+    resolvedRoot,
+    lockState.file,
+    lockState.lock,
+    run,
+    DURABLE_RUN_STATES
+  );
+  const output = run.outputs.find((item) => item.id === snapshot.id);
+  if (run.lifecycleState !== 'paused'
+    || !output
+    || output.type !== 'context-snapshot'
+    || output.fingerprint !== fingerprintJson(snapshot)) {
+    throw new Error('Durable context snapshot is not registered on its exact paused run.');
+  }
+  return {
+    lock: lockState.lock,
+    snapshot,
+    snapshotPath: repoRelativePath(resolvedRoot, snapshotState.file),
+    run,
+    runPath: repoRelativePath(resolvedRoot, runState.file)
+  };
+}
+
+function automationDecisionFingerprint(decision) {
+  const value = structuredClone(decision);
+  delete value.decisionFingerprint;
+  return fingerprintJson(value);
+}
+
+function exactAutomationDecision({
+  root,
+  lockPath,
+  decision,
+  expectedHost,
+  requireRegistered
+}) {
+  const resolvedRoot = path.resolve(root);
+  const lockState = exactLock(resolvedRoot, lockPath, expectedHost);
+  const lock = lockState.lock;
+  contractFailures(
+    resolvedRoot,
+    decision,
+    'soter/contracts/automation-decision.schema.json',
+    'Automation decision'
+  );
+  if (decision.configurationLockFingerprint !== fingerprintLock(lock)
+    || decision.graphFingerprint !== lock.graphFingerprint
+    || decision.privacy.scope !== 'private'
+    || containsCredentialMaterial(decision)
+    || decision.decisionFingerprint !== automationDecisionFingerprint(decision)) {
+    throw new Error(
+      'Automation decision does not match the exact lock, graph, private-state, and fingerprint contract.'
+    );
+  }
+  if ((decision.state === 'ready' && decision.issues.length !== 0)
+    || (decision.state === 'needs-input' && decision.issues.length < 1)
+    || (decision.producer.kind === 'host'
+      ? typeof decision.producer.host !== 'string'
+      : decision.producer.host !== null)) {
+    throw new Error('Automation decision state, issues, and producer binding are inconsistent.');
+  }
+  const selected = lock.packs.filter((pack) => {
+    return pack.id === decision.automation.id && pack.layer === 'automation';
+  });
+  if (selected.length !== 1 || selected[0].version !== decision.automation.version) {
+    throw new Error('Automation decision does not match the exact selected Automation pack.');
+  }
+  if (decision.producer.kind === 'host'
+    && (decision.producer.host !== lock.host.id
+      || (expectedHost && decision.producer.host !== expectedHost))) {
+    throw new Error('Automation decision producer does not match the exact active host projection.');
+  }
+
+  const snapshotState = readContextSnapshotState(
+    resolvedRoot,
+    decision.context.snapshotId
+  );
+  const snapshot = snapshotState.snapshot;
+  contractFailures(
+    resolvedRoot,
+    snapshot,
+    'soter/contracts/context-snapshot.schema.json',
+    'Automation decision context snapshot'
+  );
+  if (snapshot.containment !== 'connected'
+    || snapshot.privacy.scope !== 'private'
+    || snapshot.runId !== decision.runId
+    || snapshot.configurationLockFingerprint !== decision.configurationLockFingerprint
+    || snapshot.graphFingerprint !== decision.graphFingerprint
+    || fingerprintJson(snapshot) !== decision.context.snapshotFingerprint) {
+    throw new Error('Automation decision does not bind the exact private connected context snapshot.');
+  }
+  if (snapshot.entries.some((entry) => {
+    return entry.valueFingerprint !== fingerprintJson(entry.value);
+  })) {
+    throw new Error('Automation decision context snapshot contains a stale entry fingerprint.');
+  }
+
+  const runState = readRunState(resolvedRoot, decision.runId);
+  const run = runState.run;
+  assertExactRun(
+    resolvedRoot,
+    lockState.file,
+    lock,
+    run,
+    DURABLE_RUN_STATES
+  );
+  const snapshotOutput = run.outputs.find((item) => item.id === snapshot.id);
+  const createdAt = Date.parse(decision.createdAt);
+  if (run.lifecycleState !== 'paused'
+    || run.automation.id !== decision.automation.id
+    || run.automation.version !== decision.automation.version
+    || !snapshotOutput
+    || snapshotOutput.type !== 'context-snapshot'
+    || snapshotOutput.fingerprint !== decision.context.snapshotFingerprint
+    || !Number.isFinite(createdAt)
+    || createdAt < Date.parse(snapshot.createdAt)) {
+    throw new Error(
+      'Automation decision requires the exact paused run and its committed context snapshot.'
+    );
+  }
+  if (requireRegistered) {
+    const decisionOutput = run.outputs.find((item) => item.id === decision.id);
+    const decisionCheckpoint = run.checkpoints.find((item) => {
+      return item.id === 'automation-decision.' + decision.id.slice('decision.'.length);
+    });
+    if (!decisionOutput
+      || decisionOutput.type !== 'automation-decision'
+      || decisionOutput.fingerprint !== decision.decisionFingerprint
+      || decisionCheckpoint?.decisionFingerprint !== decision.decisionFingerprint) {
+      throw new Error('Durable run does not register the exact automation decision.');
+    }
+  }
+  return {
+    root: resolvedRoot,
+    lock,
+    lockFile: lockState.file,
+    snapshot,
+    snapshotFile: snapshotState.file,
+    run,
+    runFile: runState.file,
+    decision
+  };
+}
+
+export function commitDurableAutomationDecision({
+  root,
+  lockPath,
+  decision,
+  expectedHost
+}) {
+  const exact = exactAutomationDecision({
+    root,
+    lockPath,
+    decision,
+    expectedHost,
+    requireRegistered: false
+  });
+  const checkpointId = 'automation-decision.' + decision.id.slice('decision.'.length);
+  const nextRun = structuredClone(exact.run);
+  const competingDecision = nextRun.checkpoints.find((checkpoint) => {
+    return checkpoint.kind === 'automation-decision'
+      && checkpoint.snapshotId === decision.context.snapshotId
+      && checkpoint.decisionId !== decision.id;
+  });
+  if (competingDecision) {
+    throw new Error(
+      'Context snapshot already has a different durable automation decision: '
+        + competingDecision.decisionId + '.'
+    );
+  }
+  let decisionState;
+  if (hasAutomationDecisionState(exact.root, decision.id)) {
+    decisionState = readAutomationDecisionState(exact.root, decision.id);
+    contractFailures(
+      exact.root,
+      decisionState.decision,
+      'soter/contracts/automation-decision.schema.json',
+      'Durable automation decision'
+    );
+    if (fingerprintJson(decisionState.decision) !== fingerprintJson(decision)) {
+      throw new Error('Automation decision conflicts with existing durable state.');
+    }
+    decisionState.path = repoRelativePath(exact.root, decisionState.file);
+  } else {
+    decisionState = writeAutomationDecisionState(exact.root, decision);
+  }
+
+  nextRun.checkpoints = replaceExactById(nextRun.checkpoints, {
+    id: checkpointId,
+    kind: 'automation-decision',
+    state: decision.state === 'ready' ? 'passed' : 'blocked',
+    snapshotId: decision.context.snapshotId,
+    snapshotFingerprint: decision.context.snapshotFingerprint,
+    decisionId: decision.id,
+    decisionFingerprint: decision.decisionFingerprint,
+    updatedAt: decision.createdAt,
+    details: decision.state === 'ready'
+      ? 'Automation recorded a complete grounded decision; no write approval or provider call was created.'
+      : 'Automation recorded an explicit abstention and paused for the stated missing input.'
+  }, 'Automation decision checkpoint');
+  nextRun.outputs = replaceExactById(nextRun.outputs, {
+    id: decision.id,
+    type: 'automation-decision',
+    fingerprint: decision.decisionFingerprint
+  }, 'Automation decision output');
+  nextRun.lifecycleState = 'paused';
+  contractFailures(
+    exact.root,
+    nextRun,
+    'soter/contracts/run-envelope.schema.json',
+    'Automation decision run envelope'
+  );
+  assertExactRun(
+    exact.root,
+    exact.lockFile,
+    exact.lock,
+    nextRun,
+    DURABLE_RUN_STATES
+  );
+  const runState = writeRunState(exact.root, nextRun);
+  return {
+    decision,
+    decisionPath: decisionState.path,
+    run: nextRun,
+    runPath: runState.path
+  };
+}
+
+export function getExactDurableAutomationDecision({
+  root,
+  lockPath,
+  decisionId,
+  expectedHost
+}) {
+  const resolvedRoot = path.resolve(root);
+  const state = readAutomationDecisionState(resolvedRoot, decisionId);
+  const exact = exactAutomationDecision({
+    root: resolvedRoot,
+    lockPath,
+    decision: state.decision,
+    expectedHost,
+    requireRegistered: true
+  });
+  return {
+    lock: exact.lock,
+    snapshot: exact.snapshot,
+    decision: exact.decision,
+    decisionPath: repoRelativePath(exact.root, state.file),
+    run: exact.run,
+    runPath: repoRelativePath(exact.root, exact.runFile)
   };
 }
 

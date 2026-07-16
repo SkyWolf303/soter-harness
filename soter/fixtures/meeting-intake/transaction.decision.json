@@ -1,0 +1,78 @@
+{
+  "$contract": "soter://contracts/automation-decision/v1",
+  "contractVersion": "1.0.0",
+  "id": "decision.meeting-intake.transaction-fixture",
+  "automation": {
+    "id": "automation.meeting-intake",
+    "version": "0.1.0"
+  },
+  "runId": "run.meeting-intake.transaction-fixture",
+  "createdAt": "2026-07-15T12:00:00.000Z",
+  "configurationLockFingerprint": "sha256:7bd80295d6cbdf765bd07318889cb6c7467ffaa8e476ffc4f9190372ce7584a2",
+  "graphFingerprint": "sha256:4a1b1357e868dba761a79674075bb2f3793266385557131cbd3bd644398f41cd",
+  "context": {
+    "snapshotId": "context.meeting-intake.transaction-fixture",
+    "snapshotFingerprint": "sha256:20b63ced15f12504c152de5797ed7c4559d4f3a14645313cd4d2574298a59e11"
+  },
+  "producer": {
+    "kind": "fixture",
+    "id": "fixture.meeting-intake",
+    "host": null
+  },
+  "state": "ready",
+  "decisionType": "meeting-intake.grounded-outcome",
+  "payload": {
+    "meeting": {
+      "recordId": "soter-fixture://crm/meeting/fixture-001",
+      "recordFingerprint": "sha256:7ec35d28022289ef295c06192e5b9fe448adcf663ae99c430fd8f0cd512273e3"
+    },
+    "transcript": {
+      "contextEntryId": "context.meeting.transcript",
+      "entryFingerprint": "sha256:4af2b54f30824f47a8e91b08eec7fd0f549b7e4c99f49d3e0805c99f3913daae"
+    },
+    "summary": {
+      "title": "Acme launch review summary",
+      "segmentReferences": [
+        {
+          "index": 0,
+          "segmentFingerprint": "sha256:dd04c06d33ade3eb26e9b6f4981fcdf0ab383a17a566e518b6bfd6474c9c2e8f"
+        },
+        {
+          "index": 1,
+          "segmentFingerprint": "sha256:60791d8dba53e5798cbc85c146d6a72f0a62f31fedf9174ff4881ac6bb354728"
+        }
+      ]
+    },
+    "tasks": [
+      {
+        "recordId": "soter-fixture://crm/task/existing-deck",
+        "recordFingerprint": "sha256:6371e1dfdd5c7f5095554f5149860db3c214e3bdd37937145b7a1616d3ce9d46",
+        "disposition": "fold",
+        "reason": "The bounded fixture transcript explicitly requests the existing launch-deck work.",
+        "segmentReferences": [
+          {
+            "index": 0,
+            "segmentFingerprint": "sha256:dd04c06d33ade3eb26e9b6f4981fcdf0ab383a17a566e518b6bfd6474c9c2e8f"
+          },
+          {
+            "index": 1,
+            "segmentFingerprint": "sha256:60791d8dba53e5798cbc85c146d6a72f0a62f31fedf9174ff4881ac6bb354728"
+          }
+        ]
+      }
+    ],
+    "policies": [],
+    "limitations": [
+      "Contained fixture context does not load external policy bodies and cannot establish connected policy interpretation."
+    ]
+  },
+  "issues": [],
+  "privacy": {
+    "scope": "private",
+    "redactions": [
+      "Provider credentials, secret references, and raw host responses are excluded.",
+      "Only exact bounded record identities, transcript segment fingerprints, and cited policy excerpts are retained."
+    ]
+  },
+  "decisionFingerprint": "sha256:4b7ded4f21de53ecbfd716dd3d00f41a73e91b242965663457f839cae71d7cb7"
+}

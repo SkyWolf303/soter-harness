@@ -4,15 +4,22 @@
   "id": "changeset.meeting-intake.transaction-fixture",
   "runId": "run.meeting-intake.transaction-fixture",
   "createdAt": "2026-07-15T12:00:00.000Z",
-  "configurationLockFingerprint": "sha256:df73e4b7c573b5e73c0a4475a52b49ab69f810055521aebe9dbf5316e8c433d8",
+  "configurationLockFingerprint": "sha256:7bd80295d6cbdf765bd07318889cb6c7467ffaa8e476ffc4f9190372ce7584a2",
+  "basis": {
+    "kind": "automation-decision",
+    "id": "decision.meeting-intake.transaction-fixture",
+    "fingerprint": "sha256:4b7ded4f21de53ecbfd716dd3d00f41a73e91b242965663457f839cae71d7cb7",
+    "contextSnapshotId": "context.meeting-intake.transaction-fixture",
+    "contextSnapshotFingerprint": "sha256:20b63ced15f12504c152de5797ed7c4559d4f3a14645313cd4d2574298a59e11"
+  },
   "state": "committed",
-  "scopeFingerprint": "sha256:5d470d5c97bbea42fee91f15d147bc6ebbd5858f7e051338ebdb266bbb93ab7e",
+  "scopeFingerprint": "sha256:5b87707d66a5037db836837b5d6fec41c3a83d06b253ccc7ee3c36986a25dcdc",
   "operations": [
     {
       "id": "operation.summary.create",
       "capability": "crm.records.create",
       "authority": "authority.crm.instance",
-      "reason": "Create one transcript-grounded meeting summary attributed to the canonical recording.",
+      "reason": "Create the exact transcript-cited summary selected by decision.meeting-intake.transaction-fixture.",
       "input": {
         "recordType": "meeting-summary",
         "deduplicationKey": "otter://fixture/meeting.fixture-001",
@@ -38,7 +45,7 @@
       "id": "operation.task.update",
       "capability": "crm.records.update",
       "authority": "authority.crm.instance",
-      "reason": "Classify the existing overlapping task as meeting-derived instead of creating a duplicate.",
+      "reason": "The bounded fixture transcript explicitly requests the existing launch-deck work.",
       "input": {
         "recordType": "task",
         "id": "soter-fixture://crm/task/existing-deck",

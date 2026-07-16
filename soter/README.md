@@ -128,9 +128,15 @@ in reverse after a later conflict, and surfaces ambiguous effects as
 `needs-attention` without overstating rollback.
 Meeting-intake Automation owns its proposal and post-write acceptance checks;
 Core owns only the generic approval, dispatch, checkpoint, rollback, and
-verifier-invocation mechanics. The contained proposer quotes one bounded fixture
-transcript and requires exactly one textually overlapping task. It does not yet
-define the durable host-judgment boundary for ambiguous or multiple candidates.
+verifier-invocation mechanics. Before proposal, the Automation now creates a
+grounded `automation-decision/v1` that covers the exact meeting and transcript
+segments, every bounded task candidate, and every explicitly applicable policy
+with exact citations. `ready` requires complete resolution; `needs-input`
+records abstention and cannot become a change set. Core stores the connected
+decision privately, binds it to the same paused run and context snapshot, and
+rejects tampering or a competing decision. The contained and MCP selftests prove
+that mechanism, including multiple-candidate disposition and a Codex-produced
+decision, but not live judgment quality.
 Host-started end-to-end dispatch is unproven, and
 the checked-in connected doctor therefore reports `ready=unknown`; the separate
 operation-batch compiler reports the concrete write blockers. This
@@ -282,7 +288,26 @@ private snapshot under `.soter/state/context-snapshots`, marks the definition
 authority loaded, updates the durable run, and pauses before writes. Participant
 People IDs remain references, not assumed CRM contact page URIs.
 
-Private run, call, and context-snapshot state lives under `.soter/state`, uses
+After finalization, `soter_commit_meeting_intake_decision` accepts only bounded
+candidate identities, transcript segment indexes, exact policy quotes,
+dispositions, reasons, issues, and limitations. Core derives and validates all
+record, entry, segment, quote, snapshot, lock, graph, run, and host fingerprints
+before writing `.soter/state/automation-decisions`. Use `needs-input` when any
+candidate or policy remains unresolved. `soter_propose_meeting_intake_change_set`
+projects only a `ready` decision and creates neither approval nor provider call.
+After compaction, `soter_inspect_meeting_intake_decision` recovers the exact
+normalized private snapshot plus a safe template that already enumerates every
+candidate as unresolved. The CLI equivalents are:
+
+    node soter/core/cli.mjs meeting-intake-decision-inspect --lock LOCK --snapshot SNAPSHOT_ID --json > /private/decision-workspace.json
+    node soter/core/cli.mjs meeting-intake-decision-commit --lock LOCK --snapshot SNAPSHOT_ID --decision-input ABSOLUTE_PRIVATE_PATH --decision-id DECISION_ID --actor ACTOR
+    node soter/core/cli.mjs meeting-intake-proposal --lock LOCK --decision DECISION_ID --change-set-id CHANGE_SET_ID --json > /private/change-set.json
+
+The generated change-set scope includes the exact decision and context-snapshot
+basis. Any changed judgment, citation, candidate disposition, or grounding
+therefore requires a new proposal and later approval.
+
+Private run, call, context-snapshot, and Automation-decision state lives under `.soter/state`, uses
 atomic restricted files, and is ignored by Git. `soter_list_host_calls` and
 `soter_get_host_call` are the recovery interface after compaction or restart.
 This state may contain portable inputs and normalized outputs; it must not be

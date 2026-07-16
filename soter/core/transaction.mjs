@@ -6,6 +6,7 @@ export function changeSetScopeFingerprint(changeSet) {
     id: changeSet.id,
     runId: changeSet.runId,
     configurationLockFingerprint: changeSet.configurationLockFingerprint,
+    basis: changeSet.basis || null,
     operations: changeSet.operations.map((operation) => ({
       id: operation.id,
       capability: operation.capability,

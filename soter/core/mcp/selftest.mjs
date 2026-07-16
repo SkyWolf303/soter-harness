@@ -315,17 +315,20 @@ async function selftest(root) {
     const names = listed.tools.map((tool) => tool.name).sort();
     const expectedNames = [
       'soter_advance_connected_transaction',
+      'soter_commit_meeting_intake_decision',
       'soter_complete_capability_call',
       'soter_complete_operation_plan',
       'soter_complete_provider_probe',
       'soter_fail_host_call',
       'soter_finalize_meeting_intake_context',
       'soter_get_host_call',
+      'soter_inspect_meeting_intake_decision',
       'soter_list_host_calls',
       'soter_prepare_capability_call',
       'soter_prepare_meeting_intake_context',
       'soter_prepare_operation_plan',
       'soter_prepare_provider_probe',
+      'soter_propose_meeting_intake_change_set',
       'soter_reconcile_connected_transaction'
     ];
     if (JSON.stringify(names) !== JSON.stringify(expectedNames)) {
@@ -337,7 +340,8 @@ async function selftest(root) {
     })) {
       throw new Error('The MCP projection exposed generic connected-write approval input.');
     }
-    if (!client.getInstructions()?.includes('soter_list_host_calls')) {
+    if (!client.getInstructions()?.includes('soter_list_host_calls')
+      || !client.getInstructions()?.includes('soter_commit_meeting_intake_decision')) {
       throw new Error('The MCP server did not project durable recovery instructions.');
     }
 
@@ -1371,6 +1375,82 @@ async function selftest(root) {
             persistedMarkers: contextMarkers.filter((marker) => contextDurableContents.includes(marker))
           })
       );
+    }
+    const inspectedDecisionContext = await call(
+      client,
+      'soter_inspect_meeting_intake_decision',
+      {
+        lock_path: lockPath,
+        snapshot_id: finalizedContext.snapshot.id
+      }
+    );
+    const connectedDecisionInput = structuredClone(inspectedDecisionContext.inputTemplate);
+    connectedDecisionInput.state = 'ready';
+    connectedDecisionInput.summarySegmentIndexes = [0];
+    connectedDecisionInput.tasks[0] = {
+      recordId: mcpTaskUri,
+      disposition: 'fold',
+      reason: 'The cited transcript segment grounds the exact bounded MCP task candidate.',
+      segmentIndexes: [0]
+    };
+    connectedDecisionInput.policies = contextPolicyBindings.map((binding, index) => ({
+      contextEntryId: 'context.crm.' + binding.id,
+      outcome: 'allow',
+      reason: 'The exact cited synthetic policy excerpt permits this contained selftest proposal.',
+      citations: ['Synthetic applicable MCP policy body ' + index + '.']
+    }));
+    connectedDecisionInput.issues = [];
+    connectedDecisionInput.limitations = [
+      'This synthetic host decision proves contract binding only and does not establish live provider judgment quality.'
+    ];
+    const invalidConnectedDecision = structuredClone(connectedDecisionInput);
+    invalidConnectedDecision.tasks[0].recordId = 'https://app.notion.com/unbounded-task';
+    await expectToolError(client, 'soter_commit_meeting_intake_decision', {
+      lock_path: lockPath,
+      snapshot_id: finalizedContext.snapshot.id,
+      decision_id: 'decision.meeting-intake.mcp-invalid',
+      decision: invalidConnectedDecision,
+      at: '2026-07-15T12:00:16.000Z'
+    }, 'every and only bounded task candidate');
+    const committedDecision = await call(client, 'soter_commit_meeting_intake_decision', {
+      lock_path: lockPath,
+      snapshot_id: finalizedContext.snapshot.id,
+      decision_id: 'decision.meeting-intake.mcp-selftest',
+      decision: connectedDecisionInput,
+      at: '2026-07-15T12:00:16.000Z'
+    });
+    const replayedDecision = await call(client, 'soter_commit_meeting_intake_decision', {
+      lock_path: lockPath,
+      snapshot_id: finalizedContext.snapshot.id,
+      decision_id: 'decision.meeting-intake.mcp-selftest',
+      decision: connectedDecisionInput,
+      at: '2026-07-15T12:00:18.000Z'
+    });
+    const projectedChangeSet = await call(client, 'soter_propose_meeting_intake_change_set', {
+      lock_path: lockPath,
+      decision_id: committedDecision.decision.id,
+      change_set_id: 'changeset.meeting-intake.mcp-decision-selftest',
+      at: '2026-07-15T12:00:17.000Z'
+    });
+    assertPrivateFile(path.join(root, committedDecision.decisionPath));
+    if (inspectedDecisionContext.counts.taskCandidates !== 1
+      || inspectedDecisionContext.counts.applicablePolicies !== contextPolicyBindings.length
+      || inspectedDecisionContext.inputTemplate.state !== 'needs-input'
+      || committedDecision.decision.state !== 'ready'
+      || committedDecision.decision.producer.host !== 'codex'
+      || replayedDecision.decision.decisionFingerprint
+        !== committedDecision.decision.decisionFingerprint
+      || committedDecision.run.lifecycleState !== 'paused'
+      || !committedDecision.run.outputs.some((item) => {
+        return item.id === committedDecision.decision.id
+          && item.fingerprint === committedDecision.decision.decisionFingerprint;
+      })
+      || projectedChangeSet.basis?.id !== committedDecision.decision.id
+      || projectedChangeSet.basis?.fingerprint
+        !== committedDecision.decision.decisionFingerprint
+      || projectedChangeSet.operations?.length !== 2
+      || projectedChangeSet.operations?.[1]?.input?.id !== mcpTaskUri) {
+      throw new Error('MCP grounded decision or read-only change-set projection drifted.');
     }
     const cliContextRunPath = 'soter/fixtures/meeting-intake/cli-connected-context.run.json';
     const cliContextRun = JSON.parse(fs.readFileSync(path.join(root, runPath), 'utf8'));
