@@ -30,7 +30,8 @@ fields make that distinction mechanical.
 - core contains provider-neutral resolution, preflight, evidence, offline and
   connected doctor operations, a shared execution service, and separate
   resumable capability-call, versioned sequential operation-plan, legacy
-  single-call probe, and explicit sequential provider-probe-plan bridges. The
+  single-call probe, explicit sequential provider-probe-plan, and
+  approval-bound connected-transaction bridges. The
   CLI and local Soter MCP server are thin interfaces
   over that service; future graphical interfaces must consume the same boundary.
 - fixtures contains generated, cross-linked examples of exact locks, run
@@ -108,9 +109,11 @@ an expiring approval bound to both the change set and batch. The current
 meeting-intake write set fails that compiler because it names fields absent from
 the connected mapping. A separately representable create remains blocked
 because the connector declares no automatic compensation route. No connected
-write is executable until the durable transaction checkpoint can consume an
-exact approval, retain prior values, verify effects, and compensate or surface
-manual recovery without overstating rollback.
+create is executable yet. Mapped updates now run through a private durable
+transaction checkpoint that consumes the exact approval, compares and retains
+prior mapped values, verifies each effect, compensates verified earlier updates
+in reverse after a later conflict, and surfaces ambiguous effects as
+`needs-attention` without overstating rollback.
 Host-started end-to-end dispatch is unproven, and
 the checked-in connected doctor therefore reports `ready=unknown`; the separate
 operation-batch compiler reports the concrete write blockers. This
@@ -186,8 +189,8 @@ selected host adapter. The host may explain `currentCall.transport.operation`
 when present (or the legacy `checkpoint.call.transport.operation`), but must
 execute exactly the matching native tool through its separate authenticated MCP route
 and return the native result to the matching complete tool. The server does
-not call providers, persist raw responses, or authorize
-confirmation-gated writes. Its stdio subprocess self-test establishes only the
+not call providers, persist raw responses, or originate or widen connected
+write approval. Its stdio subprocess self-test establishes only the
 shared Core recovery projection, not live host or provider conformance. The
 self-test restarts the server with a call pending, rehydrates it, repairs planted
 partial state, and rejects stale or tampered checkpoints.
@@ -205,8 +208,33 @@ approval: v1 represents a confirmation-gated step as blocked, while v2 rejects
 the unavailable effect before beginning earlier work. Arbitrary transforms,
 branching, fan-out, parallelism, plan-level retries, compensation,
 approval-bound write execution, and rollback remain outside the general plan
-contracts. An exact connected operation-batch preview and v2 approval contract
-now exist separately; their durable execution checkpoint remains future work.
+contracts. Those responsibilities belong to the separate connected transaction
+checkpoint.
+
+The connected update workflow is:
+
+    node soter/core/cli.mjs connected-batch-preview --lock LOCK --change-set CHANGE_SET --batch-id BATCH_ID --json > /private/batch.json
+    node soter/core/cli.mjs connected-batch-approve --batch /private/batch.json --change-set CHANGE_SET --approval-id APPROVAL_ID --actor ACTOR --reason REASON --expires-at TIME --at TIME --json > /private/approval.json
+    node soter/core/cli.mjs connected-transaction-prepare --lock LOCK --run RUN --batch /private/batch.json --change-set CHANGE_SET --approval /private/approval.json
+
+Preparation writes private state under `.soter/state` and returns one exact
+compare call. Execute only its resolved native host tool, then advance with
+`connected-transaction-complete --checkpoint ID --call CALL_ID --response
+ABSOLUTE_PRIVATE_PATH`; each completion returns at most the next write, verify,
+compare, or compensation call. The MCP equivalent is
+`soter_advance_connected_transaction`, which accepts only an existing
+checkpoint ID, exact call ID, and native response—never an approval document.
+The first write must start before the approval expires (at most fifteen minutes
+after creation). Verification and compensation may continue afterward.
+
+This is an external saga, not an ACID transaction. `completed` means every
+approved update was read back. `rolled-back` means verified earlier updates were
+restored after a later deterministic failure. `failed` means no ambiguous write
+remains. `needs-attention` means Core cannot prove whether an external effect or
+its compensation occurred and will not guess or retry it automatically. Mapped
+creates remain blocked until their selected provider has a governed automatic
+compensation route. Local self-tests use synthetic host results and do not prove
+connected credentials, write permission, response conformance, or live health.
 
 Meeting intake also exposes `soter_prepare_meeting_intake_context` and
 `soter_finalize_meeting_intake_context`; the CLI equivalents are

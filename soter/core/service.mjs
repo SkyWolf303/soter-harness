@@ -9,6 +9,13 @@ import {
 import { containsCredentialMaterial } from './host-runtime.mjs';
 import { fingerprintJson, readJson, repoRelativePath, resolveRepoPath } from './lib/canonical-json.mjs';
 import {
+  assertConnectedTransactionCheckpoint,
+  completeConnectedTransactionCall,
+  connectedTransactionCurrentCall,
+  createConnectedTransactionCheckpoint,
+  failConnectedTransactionCall
+} from './connected-transaction-runtime.mjs';
+import {
   assertOperationPlanCheckpoint,
   assertOperationPlanDocument,
   completeOperationPlanStep,
@@ -156,6 +163,9 @@ function sealCheckpoint(checkpoint) {
 }
 
 function assertCheckpoint(root, checkpoint) {
+  if (checkpoint?.$contract === 'soter://contracts/connected-transaction-checkpoint/v1') {
+    return assertConnectedTransactionCheckpoint(root, checkpoint);
+  }
   if (checkpoint?.$contract === 'soter://contracts/operation-plan-checkpoint/v1'
     || checkpoint?.$contract === 'soter://contracts/operation-plan-checkpoint/v2') {
     return assertOperationPlanCheckpoint(root, checkpoint);
@@ -339,6 +349,85 @@ function syncRunWithOperationPlan(run, checkpoint) {
   return next;
 }
 
+function connectedTransactionRunEntry(checkpoint) {
+  const currentCall = connectedTransactionCurrentCall(checkpoint);
+  const progressFingerprint = fingerprintJson({
+    batchFingerprint: checkpoint.batchFingerprint,
+    changeSetFingerprint: checkpoint.changeSetFingerprint,
+    approvalFingerprint: checkpoint.approvalFingerprint,
+    startedAt: checkpoint.startedAt,
+    state: checkpoint.state,
+    operations: checkpoint.operations.map((operation) => ({
+      id: operation.id,
+      state: operation.state,
+      callFingerprints: [
+        operation.compare,
+        operation.write,
+        operation.verification,
+        operation.compensation,
+        operation.compensationVerification
+      ].filter(Boolean).map((phase) => fingerprintJson(phase.call))
+    })),
+    current: checkpoint.current,
+    result: checkpoint.result
+  });
+  return {
+    id: 'connected-transaction.' + checkpoint.batch.id,
+    kind: 'connected-transaction',
+    batchId: checkpoint.batch.id,
+    batchFingerprint: checkpoint.batch.batchFingerprint,
+    changeSetId: checkpoint.changeSet.id,
+    approvalId: checkpoint.approval.id,
+    progressFingerprint,
+    state: checkpoint.state,
+    currentOperationId: checkpoint.current?.operationId || null,
+    currentStage: checkpoint.current?.stage || null,
+    currentCallId: currentCall?.id || null,
+    updatedAt: checkpoint.updatedAt,
+    details: checkpoint.state === 'requested'
+      ? 'Core is waiting for the exact native result for connected transaction stage '
+        + checkpoint.current.stage + '.'
+      : 'Core closed the approval-bound connected transaction in state '
+        + checkpoint.state + '.'
+  };
+}
+
+function syncRunWithConnectedTransaction(run, checkpoint) {
+  const priorLifecycle = run.lifecycleState;
+  let next = structuredClone(run);
+  const approvalIndex = next.approvals.findIndex((item) => item.id === checkpoint.approval.id);
+  if (approvalIndex >= 0) {
+    if (fingerprintJson(next.approvals[approvalIndex]) !== checkpoint.approvalFingerprint) {
+      throw new Error('Durable run contains a conflicting connected transaction approval.');
+    }
+  } else {
+    next.approvals.push(structuredClone(checkpoint.approval));
+  }
+  for (const operation of checkpoint.operations) {
+    for (const name of [
+      'compare', 'write', 'verification', 'compensation', 'compensationVerification'
+    ]) {
+      const call = operation[name]?.call;
+      if (call) next = syncRunWithCheckpoint(next, { kind: 'capability', call });
+    }
+  }
+  const entry = connectedTransactionRunEntry(checkpoint);
+  const index = next.checkpoints.findIndex((item) => item.id === entry.id);
+  if (index >= 0) next.checkpoints[index] = entry;
+  else next.checkpoints.push(entry);
+  const laterLifecycle = ['verifying', 'completed', 'failed', 'paused'].includes(priorLifecycle);
+  if (checkpoint.state === 'requested') {
+    next.lifecycleState = 'executing';
+  } else if (checkpoint.state === 'completed') {
+    next.lifecycleState = laterLifecycle ? priorLifecycle : 'executing';
+  } else {
+    next.lifecycleState = ['completed', 'failed'].includes(priorLifecycle)
+      ? priorLifecycle
+      : 'paused';
+  }
+  return next;
+}
+
 export async function prepareProviderProbeExecution({
   root,
   lockPath,
@@ -506,7 +595,9 @@ function persistDurableCheckpoint(root, checkpoint, run = null) {
   let nextRun = run
     ? (next.kind === 'operation-plan'
       ? syncRunWithOperationPlan(run, next)
-      : syncRunWithCheckpoint(run, next))
+      : next.kind === 'connected-transaction'
+        ? syncRunWithConnectedTransaction(run, next)
+        : syncRunWithCheckpoint(run, next))
     : null;
   if (nextRun) {
     next.run.fingerprint = fingerprintJson(nextRun);
@@ -522,6 +613,8 @@ function persistDurableCheckpoint(root, checkpoint, run = null) {
   };
   if (next.kind === 'operation-plan') {
     persisted.currentCall = operationPlanCurrentCall(next);
+  } else if (next.kind === 'connected-transaction') {
+    persisted.currentCall = connectedTransactionCurrentCall(next);
   } else if (next.$contract === 'soter://contracts/provider-probe-plan-checkpoint/v1') {
     persisted.currentCall = providerProbePlanCurrentCall(next);
   }
@@ -588,6 +681,23 @@ function durableRunForCheckpoint(root, lockFile, lock, checkpoint) {
     ? EXECUTABLE_RUN_STATES
     : DURABLE_RUN_STATES;
   let run = assertExactRun(root, lockFile, lock, state.run, allowedStates);
+  if (checkpoint.kind === 'connected-transaction') {
+    const expectedEntry = connectedTransactionRunEntry(checkpoint);
+    const currentEntry = run.checkpoints.find((item) => item.id === expectedEntry.id);
+    if (currentEntry
+      && currentEntry.progressFingerprint !== expectedEntry.progressFingerprint
+      && Date.parse(currentEntry.updatedAt) > Date.parse(checkpoint.updatedAt)) {
+      throw new Error(
+        'Durable run contains connected transaction state newer than the checkpoint.'
+      );
+    }
+    const repaired = syncRunWithConnectedTransaction(run, checkpoint);
+    if (fingerprintJson(repaired) !== fingerprintJson(run)) {
+      writeRunState(root, repaired);
+      run = repaired;
+    }
+    return run;
+  }
   if (checkpoint.kind === 'operation-plan') {
     const currentPlanEntry = run.checkpoints.find((item) => {
       return item.id === 'operation-plan.' + checkpoint.plan.id;
@@ -629,7 +739,9 @@ function pendingCheckpointForRun(root, runId, expectedHost) {
     .map((item) => assertCheckpoint(path.resolve(root), item.checkpoint))
     .find((checkpoint) => {
       return (!expectedHost || checkpoint.host.id === expectedHost)
-        && (checkpoint.kind === 'capability' || checkpoint.kind === 'operation-plan')
+        && (checkpoint.kind === 'capability'
+          || checkpoint.kind === 'operation-plan'
+          || checkpoint.kind === 'connected-transaction')
         && checkpoint.run?.id === runId
         && checkpoint.state === 'requested';
     }) || null;
@@ -682,6 +794,48 @@ export async function prepareDurableOperationPlanExecution({
     checkpoint,
     at: createdAt
   });
+  return persistDurableCheckpoint(resolvedRoot, checkpoint, durable.run);
+}
+
+export async function prepareDurableConnectedTransactionExecution({
+  root,
+  lockPath,
+  runPath,
+  batch,
+  changeSet,
+  approval,
+  at,
+  expectedHost
+}) {
+  const resolvedRoot = path.resolve(root);
+  if (containsCredentialMaterial({ batch, changeSet, approval })) {
+    throw new Error(
+      'Connected transaction sources contain credential-like material and cannot enter durable state.'
+    );
+  }
+  const { file: lockFile, lock } = exactLock(resolvedRoot, lockPath, expectedHost);
+  const durable = stageDurableRun(resolvedRoot, lockFile, lock, runPath);
+  const pending = pendingCheckpointForRun(resolvedRoot, durable.run.id, expectedHost);
+  if (pending) {
+    throw new Error(
+      'Run ' + durable.run.id + ' already has pending host checkpoint ' + pending.id + '.'
+    );
+  }
+  const checkpoint = await createConnectedTransactionCheckpoint({
+    root: resolvedRoot,
+    lock,
+    lockPath: repoRelativePath(resolvedRoot, lockFile),
+    run: durable.run,
+    runSourcePath: durable.sourcePath,
+    runStatePath: durable.statePath,
+    batch,
+    changeSet,
+    approval,
+    at: atOrNow(at)
+  });
+  if (hasHostCallCheckpoint(resolvedRoot, checkpoint.id)) {
+    throw new Error('Durable connected transaction checkpoint already exists: ' + checkpoint.id + '.');
+  }
   return persistDurableCheckpoint(resolvedRoot, checkpoint, durable.run);
 }
 
@@ -795,6 +949,7 @@ export async function prepareDurableCapabilityExecution(options) {
 function durableResult(root, state) {
   const run = state.checkpoint.kind === 'capability'
     || state.checkpoint.kind === 'operation-plan'
+    || state.checkpoint.kind === 'connected-transaction'
     ? durableRunForCheckpoint(root, state.lockFile, state.lock, state.checkpoint)
     : null;
   const result = {
@@ -805,6 +960,8 @@ function durableResult(root, state) {
   };
   if (state.checkpoint.kind === 'operation-plan') {
     result.currentCall = operationPlanCurrentCall(state.checkpoint);
+  } else if (state.checkpoint.kind === 'connected-transaction') {
+    result.currentCall = connectedTransactionCurrentCall(state.checkpoint);
   } else if (state.checkpoint.$contract
     === 'soter://contracts/provider-probe-plan-checkpoint/v1') {
     result.currentCall = providerProbePlanCurrentCall(state.checkpoint);
@@ -827,6 +984,33 @@ export async function completeDurableOperationPlanExecution({
   }
   const run = durableRunForCheckpoint(root, state.lockFile, state.lock, checkpoint);
   const completed = await completeOperationPlanStep({
+    root,
+    lock: state.lock,
+    checkpoint,
+    callId,
+    response,
+    at: atOrNow(at)
+  });
+  if (completed.idempotent) return durableResult(root, state);
+  return persistDurableCheckpoint(root, completed.checkpoint, run);
+}
+
+export async function completeDurableConnectedTransactionExecution({
+  root,
+  checkpointId,
+  callId,
+  response,
+  at,
+  expectedHost
+}) {
+  const state = exactCheckpoint(root, checkpointId, expectedHost);
+  const checkpoint = state.checkpoint;
+  if (checkpoint.kind !== 'connected-transaction') {
+    throw new Error('Checkpoint ' + checkpointId + ' is not a connected transaction.');
+  }
+  if (!callId) throw new Error('Connected transaction completion requires the exact current call ID.');
+  const run = durableRunForCheckpoint(root, state.lockFile, state.lock, checkpoint);
+  const completed = await completeConnectedTransactionCall({
     root,
     lock: state.lock,
     checkpoint,
@@ -928,7 +1112,7 @@ export async function completeDurableCapabilityExecution({
   return persistDurableCheckpoint(root, next, run);
 }
 
-export function failDurableHostExecution({
+export async function failDurableHostExecution({
   root,
   checkpointId,
   errorKind,
@@ -939,6 +1123,19 @@ export function failDurableHostExecution({
 }) {
   const state = exactCheckpoint(root, checkpointId, expectedHost);
   const checkpoint = state.checkpoint;
+  if (checkpoint.kind === 'connected-transaction') {
+    if (!callId) throw new Error('Connected transaction failures require the exact current call ID.');
+    const run = durableRunForCheckpoint(root, state.lockFile, state.lock, checkpoint);
+    const failed = await failConnectedTransactionCall({
+      root,
+      lock: state.lock,
+      checkpoint,
+      callId,
+      error: { kind: errorKind, message },
+      at: atOrNow(at)
+    });
+    return persistDurableCheckpoint(root, failed, run);
+  }
   if (checkpoint.kind === 'operation-plan') {
     if (!callId) throw new Error('Operation plan failures require the exact current call ID.');
     const run = durableRunForCheckpoint(root, state.lockFile, state.lock, checkpoint);
@@ -1012,6 +1209,8 @@ export function getDurableHostExecution({ root, checkpointId, expectedHost }) {
   };
   if (state.checkpoint.kind === 'operation-plan') {
     result.currentCall = operationPlanCurrentCall(state.checkpoint);
+  } else if (state.checkpoint.kind === 'connected-transaction') {
+    result.currentCall = connectedTransactionCurrentCall(state.checkpoint);
   } else if (state.checkpoint.$contract
     === 'soter://contracts/provider-probe-plan-checkpoint/v1') {
     result.currentCall = providerProbePlanCurrentCall(state.checkpoint);
@@ -1353,6 +1552,15 @@ export function listDurableHostExecutions({ root, state, expectedHost }) {
       const call = checkpoint.kind === 'operation-plan'
         ? operationPlanCurrentCall(checkpoint)
           || checkpoint.steps.findLast((step) => step.call)?.call
+        : checkpoint.kind === 'connected-transaction'
+          ? connectedTransactionCurrentCall(checkpoint)
+            || checkpoint.operations.flatMap((operation) => [
+              operation.compare,
+              operation.write,
+              operation.verification,
+              operation.compensation,
+              operation.compensationVerification
+            ]).filter(Boolean).findLast((phase) => phase.call)?.call
         : checkpoint.$contract === 'soter://contracts/provider-probe-plan-checkpoint/v1'
           ? providerProbePlanCurrentCall(checkpoint)
             || checkpoint.steps.findLast((step) => step.call)?.call
@@ -1371,7 +1579,11 @@ export function listDurableHostExecutions({ root, state, expectedHost }) {
           : call?.capability.id || null,
         runId: checkpoint.run?.id || null,
         planId: planned ? checkpoint.plan.id : null,
-        currentStepId: planned ? checkpoint.currentStepId : null
+        currentStepId: planned ? checkpoint.currentStepId : null,
+        batchId: checkpoint.kind === 'connected-transaction' ? checkpoint.batch.id : null,
+        currentStage: checkpoint.kind === 'connected-transaction'
+          ? checkpoint.current?.stage || null
+          : null
       };
     });
   return { checkpoints };

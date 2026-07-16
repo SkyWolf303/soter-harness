@@ -9,6 +9,9 @@ import { fileURLToPath } from 'node:url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 
+import { fingerprintJson } from '../lib/canonical-json.mjs';
+import { changeSetScopeFingerprint } from '../transaction.mjs';
+
 const codeRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const lockPath = 'soter/fixtures/meeting-intake/meeting-intake.lock.json';
 const runPath = 'soter/fixtures/meeting-intake/preflight.run.json';
@@ -57,6 +60,25 @@ function notionProbeResponse(checkpoint, marker, driftStepId = null) {
   }
   return {
     structuredContent: { result: { results: [], has_more: false } }
+  };
+}
+
+function notionTaskResponse(id, fields, marker = null) {
+  return {
+    structuredContent: {
+      result: {
+        results: [{
+          __soterType: 'task',
+          __soterId: id,
+          __soterFields: JSON.stringify({
+            ...fields,
+            projectUris: JSON.stringify(fields.projectUris)
+          })
+        }],
+        has_more: false
+      }
+    },
+    ...(marker ? { privateMarker: marker } : {})
   };
 }
 
@@ -161,6 +183,7 @@ async function selftest(root) {
     const listed = await client.listTools();
     const names = listed.tools.map((tool) => tool.name).sort();
     const expectedNames = [
+      'soter_advance_connected_transaction',
       'soter_complete_capability_call',
       'soter_complete_operation_plan',
       'soter_complete_provider_probe',
@@ -176,11 +199,158 @@ async function selftest(root) {
     if (JSON.stringify(names) !== JSON.stringify(expectedNames)) {
       throw new Error('Unexpected Soter MCP tools: ' + names.join(', '));
     }
-    if (listed.tools.some((tool) => JSON.stringify(tool.inputSchema).includes('approved_effects'))) {
+    if (listed.tools.some((tool) => {
+      const input = JSON.stringify(tool.inputSchema);
+      return input.includes('approved_effects') || input.includes('approval');
+    })) {
       throw new Error('The MCP projection exposed generic connected-write approval input.');
     }
     if (!client.getInstructions()?.includes('soter_list_host_calls')) {
       throw new Error('The MCP server did not project durable recovery instructions.');
+    }
+
+    const connectedRunPath = 'soter/fixtures/meeting-intake/mcp-connected-transaction.run.json';
+    const connectedRun = JSON.parse(fs.readFileSync(path.join(root, runPath), 'utf8'));
+    connectedRun.id = 'run.meeting-intake.mcp-connected-transaction';
+    fs.writeFileSync(
+      path.join(root, connectedRunPath),
+      JSON.stringify(connectedRun, null, 2) + '\n'
+    );
+    const connectedRecordId = 'https://www.notion.so/cccccccccccccccccccccccccccccccc';
+    const connectedPriorFields = {
+      title: 'MCP connected transaction task',
+      status: 'Backlog',
+      context: null,
+      projectUris: []
+    };
+    const connectedInput = {
+      recordType: 'task',
+      id: connectedRecordId,
+      expectedVersion: fingerprintJson({
+        type: 'task',
+        id: connectedRecordId,
+        fields: connectedPriorFields
+      }),
+      patch: { status: 'Open' }
+    };
+    const connectedChangeSet = {
+      $contract: 'soter://contracts/change-set/v1',
+      contractVersion: '1.0.0',
+      id: 'changeset.meeting-intake.mcp-connected-transaction',
+      runId: connectedRun.id,
+      createdAt: fixtureTime,
+      configurationLockFingerprint: connectedRun.configurationLock.fingerprint,
+      state: 'proposed',
+      scopeFingerprint: 'sha256:' + '0'.repeat(64),
+      operations: [{
+        id: 'operation.task.mcp-connected-status-update',
+        capability: 'crm.records.update',
+        authority: 'authority.crm.instance',
+        reason: 'Prove the CLI authorization and MCP resume trust boundary.',
+        input: connectedInput,
+        inputFingerprint: fingerprintJson(connectedInput),
+        state: 'pending',
+        effectId: null,
+        outputFingerprint: null,
+        error: null
+      }],
+      approvalId: null,
+      transaction: {
+        checkpointFingerprint: 'sha256:' + '0'.repeat(64),
+        state: 'not-started',
+        rollbackState: 'not-required',
+        restoredFingerprint: null
+      },
+      verification: {
+        state: 'unknown',
+        effectId: null,
+        criteria: ['Compare, write, and read back the exact mapped status field.'],
+        observedFingerprint: null
+      }
+    };
+    connectedChangeSet.scopeFingerprint = changeSetScopeFingerprint(connectedChangeSet);
+    const connectedChangeSetPath = 'soter/fixtures/meeting-intake/mcp-connected-transaction.changeset.json';
+    fs.writeFileSync(
+      path.join(root, connectedChangeSetPath),
+      JSON.stringify(connectedChangeSet, null, 2) + '\n'
+    );
+    const connectedBatch = runCli(root, [
+      'connected-batch-preview',
+      '--lock', lockPath,
+      '--change-set', connectedChangeSetPath,
+      '--batch-id', 'batch.meeting-intake.mcp-connected-transaction',
+      '--at', fixtureTime
+    ]);
+    const connectedBatchPath = path.join(privateInputRoot, 'mcp-connected-batch.json');
+    fs.writeFileSync(connectedBatchPath, JSON.stringify(connectedBatch, null, 2) + '\n', { mode: 0o600 });
+    const connectedApproval = runCli(root, [
+      'connected-batch-approve',
+      '--batch', connectedBatchPath,
+      '--change-set', connectedChangeSetPath,
+      '--approval-id', 'approval.meeting-intake.mcp-connected-transaction',
+      '--actor', 'mcp-selftest-user',
+      '--reason', 'Authorize only this exact mapped status update for the MCP resume selftest.',
+      '--expires-at', '2026-07-15T12:05:00.000Z',
+      '--at', fixtureTime
+    ]);
+    const connectedApprovalPath = path.join(privateInputRoot, 'mcp-connected-approval.json');
+    fs.writeFileSync(
+      connectedApprovalPath,
+      JSON.stringify(connectedApproval, null, 2) + '\n',
+      { mode: 0o600 }
+    );
+    let connectedTransaction = runCli(root, [
+      'connected-transaction-prepare',
+      '--lock', lockPath,
+      '--run', connectedRunPath,
+      '--batch', connectedBatchPath,
+      '--change-set', connectedChangeSetPath,
+      '--approval', connectedApprovalPath,
+      '--at', fixtureTime
+    ]);
+    const connectedCompareMarker = 'private-mcp-connected-compare-marker';
+    connectedTransaction = await call(client, 'soter_advance_connected_transaction', {
+      checkpoint_id: connectedTransaction.checkpoint.id,
+      call_id: connectedTransaction.currentCall.id,
+      response: notionTaskResponse(
+        connectedRecordId,
+        connectedPriorFields,
+        connectedCompareMarker
+      ),
+      at: '2026-07-15T12:00:01.000Z'
+    });
+    const connectedWriteMarker = 'private-mcp-connected-write-marker';
+    connectedTransaction = await call(client, 'soter_advance_connected_transaction', {
+      checkpoint_id: connectedTransaction.checkpoint.id,
+      call_id: connectedTransaction.currentCall.id,
+      response: {
+        structuredContent: { result: { id: connectedRecordId } },
+        privateMarker: connectedWriteMarker
+      },
+      at: '2026-07-15T12:00:02.000Z'
+    });
+    const connectedVerifyMarker = 'private-mcp-connected-verify-marker';
+    connectedTransaction = await call(client, 'soter_advance_connected_transaction', {
+      checkpoint_id: connectedTransaction.checkpoint.id,
+      call_id: connectedTransaction.currentCall.id,
+      response: notionTaskResponse(connectedRecordId, {
+        ...connectedPriorFields,
+        status: 'Open'
+      }, connectedVerifyMarker),
+      at: '2026-07-15T12:00:03.000Z'
+    });
+    const connectedDurableText = [
+      connectedTransaction.checkpointPath,
+      connectedTransaction.runPath
+    ].map((file) => fs.readFileSync(path.join(root, file), 'utf8')).join('\n');
+    if (connectedTransaction.checkpoint.state !== 'completed'
+      || connectedTransaction.run.approvals[0]?.id !== connectedApproval.id
+      || connectedTransaction.run.effects.length !== 3
+      || [connectedCompareMarker, connectedWriteMarker, connectedVerifyMarker].some((marker) => {
+        return JSON.stringify(connectedTransaction).includes(marker)
+          || connectedDurableText.includes(marker);
+      })) {
+      throw new Error('CLI-authorized MCP transaction did not resume, verify, and minimize exactly.');
     }
 
     await expectToolError(client, 'soter_prepare_capability_call', {

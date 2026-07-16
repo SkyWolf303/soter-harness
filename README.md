@@ -171,6 +171,13 @@ The main remaining gaps are structural and behavioral:
   operations, preconditions, verification, recovery, and an expiring v2
   approval. The current meeting-intake change set is rejected for unmapped
   fields, and mapped creates remain blocked without automatic compensation.
+  Executable mapped updates now run through a private durable checkpoint with
+  compare-before-write, exact approval validation, read-after-write
+  verification, reverse compensation of verified prior updates, restart-safe
+  call identity, and an honest `needs-attention` state for ambiguous external
+  effects. The CLI can originate the exact approval-bound checkpoint; MCP can
+  only recover and advance it by checkpoint and call ID. This is proven with
+  synthetic host results, not live provider write evidence.
   Checked-in connected
   response-shape evidence, host-started end-to-end dispatch, and host-level
   agent behavior remain unproven.
@@ -399,7 +406,9 @@ to the exact lock, graph, host, run, provider, capability, authority, input, and
 call ID. It stores normalized private outputs and fingerprints, never the raw
 host response. Version 2 offers only `unique-string-list` bindings;
 arbitrary transforms, branching, fan-out, parallelism, plan-level retry or
-compensation, approval-bound write batches, and rollback remain unimplemented.
+compensation, approval-bound write batches, and rollback remain outside the
+general plan contract; exact mapped updates use the separate connected
+transaction checkpoint.
 Because the plan interface accepts no approval, v1 blocks a confirmation-gated
 write step without provider arguments, while v2 rejects a plan containing that
 unavailable effect before earlier work begins.

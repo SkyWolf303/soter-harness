@@ -304,8 +304,11 @@ service boundary as well.
 
 This projection deliberately exposes no generic way to attach connected-write
 approval. Reads and probes can cross the seam when their resolved policy allows
-them; confirmation-gated writes remain blocked until a durable run checkpoint
-can bind a user's approval to the exact operation-batch fingerprint.
+them. A trusted CLI path may compile and approve an exact connected operation
+batch, then start a private transaction checkpoint bound to that approval,
+change set, run, lock, and graph. The MCP projection can recover and advance
+that existing checkpoint by exact checkpoint and call IDs, but it cannot
+originate, replace, or widen approval.
 
 Before returning a requested call, the current MCP projection atomically writes
 a private, self-fingerprinted checkpoint and updates a private durable copy of
@@ -313,8 +316,14 @@ the run envelope under `.soter/state`. A restarted host can list pending calls,
 rehydrate one by checkpoint ID, and complete or fail it without reconstructing
 the request from conversational memory. Completion stores the normalized
 result in private state, records only fingerprints in the run envelope, and
-never persists the native provider response. One outstanding capability call
-per run prevents ambiguous concurrent resume.
+never persists the native provider response. One outstanding capability, plan,
+or transaction call per run prevents ambiguous concurrent resume. Connected
+update transactions expose explicit compare, write, and verify calls. If a
+later operation conflicts, Core restores verified earlier updates in reverse
+order and verifies each restoration. An unknown write outcome is not
+represented as rollback: the checkpoint enters `needs-attention` for
+reconciliation because external systems do not provide an ACID transaction
+boundary.
 
 The stdio self-test terminates and restarts the server between preparation and
 completion, repairs planted partial cross-file updates, rejects stale and
@@ -531,11 +540,17 @@ fingerprint. It rejects the current contained meeting-intake change set because
 several write fields are absent from the connected mapping, and it blocks even
 a mapped create because the current connector route cannot compensate a newly
 created page. The compiler and preview CLI execute no provider calls; durable
-approved execution, prior-value capture, reverse compensation, and transaction
-recovery remain unimplemented. Observed Otter
+mapped updates now use a private `connected-transaction-checkpoint/v1`. Core
+validates the exact approval before the first write, captures compared prior
+mapped fields, verifies each applied patch, compensates verified updates in
+reverse after a later conflict, and recovers the exact current host call after
+restart. It preflights every operation and recovery route before the first
+effect so an invalid tail cannot strand earlier changes. The CLI alone
+originates the authorized checkpoint; MCP only advances it. Synthetic local tests prove this Core state machine, not connected
+credentials, provider write conformance, or a live end-to-end write. Observed Otter
 transcript conformance, host-started end-to-end dispatch, policy body loading and
-applicability, participant identity resolution, approval-bound multi-call
-writes, live health, host judgment, and host conformance remain
+applicability, participant identity resolution, compensated creates, live
+approval-bound provider writes, live health, host judgment, and host conformance remain
 future proof boundaries. The v2 plan contract is intentionally narrower than a
 general workflow language: arbitrary transforms, branching, parallelism,
 fan-out, retries, and compensation are not implemented.

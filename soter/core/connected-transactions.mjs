@@ -139,6 +139,48 @@ function batchFingerprint(batch) {
   return fingerprintJson(value);
 }
 
+export function assertConnectedOperationBatchApproval({ root, batch, changeSet, approval, at, allowExpired = false }) {
+  const resolvedRoot = path.resolve(root);
+  validate(resolvedRoot, batch, 'soter/contracts/connected-operation-batch.schema.json', 'Connected operation batch');
+  validate(resolvedRoot, changeSet, 'soter/contracts/change-set.schema.json', 'Change set');
+  validate(resolvedRoot, approval, 'soter/contracts/approval-v2.schema.json', 'Connected approval');
+  const approvalCreatedAt = Date.parse(approval.createdAt);
+  const approvalExpiresAt = Date.parse(approval.expiresAt);
+  const operationIds = batch.operations.map((operation) => operation.id);
+  if (!batch.executable || batch.state !== 'proposed' || batch.blockers.length
+    || batch.batchFingerprint !== batchFingerprint(batch)
+    || new Set(operationIds).size !== operationIds.length
+    || batch.operations.some((operation, index) => {
+      return operation.sequence !== index + 1
+        || operation.inputFingerprint !== fingerprintJson(operation.input);
+    })
+    || changeSet.state !== 'proposed'
+    || batch.runId !== changeSet.runId
+    || batch.configurationLockFingerprint !== changeSet.configurationLockFingerprint
+    || batch.changeSet.id !== changeSet.id
+    || batch.changeSet.scopeFingerprint !== changeSetScopeFingerprint(changeSet)
+    || approval.decision !== 'approved'
+    || approval.runId !== batch.runId
+    || approval.scope.changeSetId !== changeSet.id
+    || approval.scope.changeSetFingerprint !== changeSet.scopeFingerprint
+    || approval.scope.operationBatchId !== batch.id
+    || approval.scope.operationBatchFingerprint !== batch.batchFingerprint
+    || fingerprintJson(approval.scope.effects) !== fingerprintJson(['write'])
+    || !Number.isFinite(approvalCreatedAt)
+    || !Number.isFinite(approvalExpiresAt)
+    || approvalExpiresAt <= approvalCreatedAt
+    || approvalExpiresAt - approvalCreatedAt > 15 * 60 * 1000) {
+    throw new Error('Connected approval does not match the exact executable change set and operation batch.');
+  }
+  const observedAt = Date.parse(at);
+  if (!allowExpired && (!Number.isFinite(observedAt)
+    || observedAt < approvalCreatedAt
+    || observedAt > approvalExpiresAt)) {
+    throw new Error('Connected approval is not current for transaction initiation.');
+  }
+  return true;
+}
+
 export function compileConnectedOperationBatch({ root, lock, changeSet, id, createdAt }) {
   const resolvedRoot = path.resolve(root);
   validate(resolvedRoot, changeSet, 'soter/contracts/change-set.schema.json', 'Change set');
@@ -213,5 +255,12 @@ export function approveConnectedOperationBatch({ root, batch, changeSet, id, act
     reason
   };
   validate(resolvedRoot, approval, 'soter/contracts/approval-v2.schema.json', 'Connected approval');
+  assertConnectedOperationBatchApproval({
+    root: resolvedRoot,
+    batch,
+    changeSet,
+    approval,
+    at: createdAt
+  });
   return approval;
 }

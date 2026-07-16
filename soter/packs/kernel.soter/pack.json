@@ -46,6 +46,7 @@
     { "path": "soter/contracts/approval-v2.schema.json", "role": "definition" },
     { "path": "soter/contracts/change-set.schema.json", "role": "definition" },
     { "path": "soter/contracts/connected-operation-batch.schema.json", "role": "definition" },
+    { "path": "soter/contracts/connected-transaction-checkpoint.schema.json", "role": "definition" },
     { "path": "soter/kernel/verify.mjs", "role": "implementation" }
   ],
   "compatibility": {

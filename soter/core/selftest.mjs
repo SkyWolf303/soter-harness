@@ -18,6 +18,13 @@ import {
   compileConnectedOperationBatch
 } from './connected-transactions.mjs';
 import {
+  assertConnectedTransactionCheckpoint,
+  completeConnectedTransactionCall,
+  connectedTransactionCurrentCall,
+  createConnectedTransactionCheckpoint,
+  failConnectedTransactionCall
+} from './connected-transaction-runtime.mjs';
+import {
   createContextAssemblyEvidence,
   createContainedTransactionEvidence,
   createResolutionEvidence,
@@ -30,7 +37,9 @@ import {
   commitDurableContextSnapshot,
   completeDurableProviderProbeExecution,
   completeDurableOperationPlanExecution,
+  completeDurableConnectedTransactionExecution,
   getDurableHostExecution,
+  prepareDurableConnectedTransactionExecution,
   prepareDurableProviderProbeExecution,
   prepareDurableOperationPlanExecution
 } from './service.mjs';
@@ -101,6 +110,36 @@ function notionProbeStepResponse(checkpoint, identityMarker, driftStepId = null)
     structuredContent: {
       result: { results: [], has_more: false }
     }
+  };
+}
+
+function notionTaskReadResponse(id, fields, privateMarker = null) {
+  return {
+    structuredContent: {
+      result: {
+        results: [{
+          __soterType: 'task',
+          __soterId: id,
+          __soterFields: JSON.stringify({
+            ...fields,
+            projectUris: JSON.stringify(fields.projectUris)
+          })
+        }],
+        has_more: false
+      }
+    },
+    ...(privateMarker ? { privateMarker } : {})
+  };
+}
+
+function notionTaskVersion(id, fields) {
+  return fingerprintJson({ type: 'task', id, fields });
+}
+
+function notionUpdateResponse(id, privateMarker = null) {
+  return {
+    structuredContent: { result: { id } },
+    ...(privateMarker ? { privateMarker } : {})
   };
 }
 
@@ -713,14 +752,21 @@ export async function selftest(root) {
       }
     }
     const updateProposal = structuredClone(connectedProposal);
+    const updateRecordId = 'https://www.notion.so/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+    const updatePriorFields = {
+      title: 'Connected transaction selftest task',
+      status: 'Backlog',
+      context: null,
+      projectUris: []
+    };
     updateProposal.id = 'changeset.meeting-intake.connected-update-selftest';
     updateProposal.operations = [{
       ...structuredClone(connectedProposal.operations[1]),
       id: 'operation.task.status-update',
       input: {
         recordType: 'task',
-        id: 'https://www.notion.so/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-        expectedVersion: 'sha256:' + '3'.repeat(64),
+        id: updateRecordId,
+        expectedVersion: notionTaskVersion(updateRecordId, updatePriorFields),
         patch: { status: 'Open' }
       }
     }];
@@ -743,6 +789,423 @@ export async function selftest(root) {
       createdAt: FIXTURE_TIME,
       expiresAt: '2026-07-15T12:05:00.000Z'
     });
+    const transactionRun = { id: updateProposal.runId };
+    let connectedCheckpoint = await createConnectedTransactionCheckpoint({
+      root: temp,
+      lock,
+      lockPath,
+      run: transactionRun,
+      runSourcePath: 'soter/fixtures/meeting-intake/connected-transaction-selftest.run.json',
+      runStatePath: '.soter/state/runs/' + transactionRun.id + '.json',
+      batch: updateBatch,
+      changeSet: updateProposal,
+      approval: connectedApproval,
+      at: FIXTURE_TIME
+    });
+    const compareCall = connectedTransactionCurrentCall(connectedCheckpoint);
+    const compareResponse = notionTaskReadResponse(
+      updateRecordId,
+      updatePriorFields,
+      'private-connected-compare-marker'
+    );
+    connectedCheckpoint = (await completeConnectedTransactionCall({
+      root: temp,
+      lock,
+      checkpoint: connectedCheckpoint,
+      callId: compareCall.id,
+      response: compareResponse,
+      at: '2026-07-15T12:00:01.000Z'
+    })).checkpoint;
+    const updateCall = connectedTransactionCurrentCall(connectedCheckpoint);
+    connectedCheckpoint = (await completeConnectedTransactionCall({
+      root: temp,
+      lock,
+      checkpoint: connectedCheckpoint,
+      callId: updateCall.id,
+      response: notionUpdateResponse(updateRecordId, 'private-connected-write-marker'),
+      at: '2026-07-15T12:00:02.000Z'
+    })).checkpoint;
+    const verifyCall = connectedTransactionCurrentCall(connectedCheckpoint);
+    connectedCheckpoint = (await completeConnectedTransactionCall({
+      root: temp,
+      lock,
+      checkpoint: connectedCheckpoint,
+      callId: verifyCall.id,
+      response: notionTaskReadResponse(updateRecordId, {
+        ...updatePriorFields,
+        status: 'Open'
+      }),
+      at: '2026-07-15T12:00:03.000Z'
+    })).checkpoint;
+    const replayedCompare = await completeConnectedTransactionCall({
+      root: temp,
+      lock,
+      checkpoint: connectedCheckpoint,
+      callId: compareCall.id,
+      response: compareResponse,
+      at: '2026-07-15T12:00:04.000Z'
+    });
+    let alteredReplayRejected = false;
+    try {
+      await completeConnectedTransactionCall({
+        root: temp,
+        lock,
+        checkpoint: connectedCheckpoint,
+        callId: compareCall.id,
+        response: notionTaskReadResponse(updateRecordId, {
+          ...updatePriorFields,
+          title: 'Altered replay'
+        }),
+        at: '2026-07-15T12:00:04.000Z'
+      });
+    } catch (error) {
+      alteredReplayRejected = error.message.includes('replay does not match');
+    }
+    const tamperedCheckpoint = structuredClone(connectedCheckpoint);
+    tamperedCheckpoint.operations[0].priorFields.status = 'Tampered';
+    let tamperedCheckpointRejected = false;
+    try {
+      assertConnectedTransactionCheckpoint(temp, tamperedCheckpoint);
+    } catch (error) {
+      tamperedCheckpointRejected = error.message.includes('stale');
+    }
+    if (connectedCheckpoint.state !== 'completed'
+      || connectedCheckpoint.result?.appliedOperationIds[0] !== 'operation.task.status-update'
+      || connectedCheckpoint.operations[0].priorFields.status !== 'Backlog'
+      || connectedCheckpoint.operations[0].appliedVersion
+        !== notionTaskVersion(updateRecordId, { ...updatePriorFields, status: 'Open' })
+      || replayedCompare.idempotent !== true
+      || !alteredReplayRejected
+      || !tamperedCheckpointRejected
+      || JSON.stringify(connectedCheckpoint).includes('private-connected')) {
+      failures.push('connected transaction did not compare, write, verify, minimize, seal, and replay exactly');
+    }
+
+    let expiredCheckpoint = await createConnectedTransactionCheckpoint({
+      root: temp,
+      lock,
+      lockPath,
+      run: transactionRun,
+      runSourcePath: 'soter/fixtures/meeting-intake/connected-expiry-selftest.run.json',
+      runStatePath: '.soter/state/runs/' + transactionRun.id + '.json',
+      batch: updateBatch,
+      changeSet: updateProposal,
+      approval: connectedApproval,
+      at: '2026-07-15T12:04:59.000Z'
+    });
+    expiredCheckpoint = (await completeConnectedTransactionCall({
+      root: temp,
+      lock,
+      checkpoint: expiredCheckpoint,
+      callId: connectedTransactionCurrentCall(expiredCheckpoint).id,
+      response: notionTaskReadResponse(updateRecordId, updatePriorFields),
+      at: '2026-07-15T12:05:01.000Z'
+    })).checkpoint;
+    if (expiredCheckpoint.state !== 'failed'
+      || expiredCheckpoint.startedAt !== null
+      || expiredCheckpoint.current !== null
+      || expiredCheckpoint.result?.error?.kind !== 'authorization') {
+      failures.push('connected transaction emitted a first write after its exact approval expired');
+    }
+
+    const ambiguousCheckpointStart = await createConnectedTransactionCheckpoint({
+      root: temp,
+      lock,
+      lockPath,
+      run: transactionRun,
+      runSourcePath: 'soter/fixtures/meeting-intake/connected-ambiguous-selftest.run.json',
+      runStatePath: '.soter/state/runs/' + transactionRun.id + '.json',
+      batch: updateBatch,
+      changeSet: updateProposal,
+      approval: connectedApproval,
+      at: FIXTURE_TIME
+    });
+    const ambiguousWriteCheckpoint = (await completeConnectedTransactionCall({
+      root: temp,
+      lock,
+      checkpoint: ambiguousCheckpointStart,
+      callId: connectedTransactionCurrentCall(ambiguousCheckpointStart).id,
+      response: notionTaskReadResponse(updateRecordId, updatePriorFields),
+      at: '2026-07-15T12:00:01.000Z'
+    })).checkpoint;
+    const ambiguousCheckpoint = await failConnectedTransactionCall({
+      root: temp,
+      lock,
+      checkpoint: ambiguousWriteCheckpoint,
+      callId: connectedTransactionCurrentCall(ambiguousWriteCheckpoint).id,
+      error: { kind: 'unavailable', message: 'Injected write transport ambiguity.' },
+      at: '2026-07-15T12:00:02.000Z'
+    });
+    const replayedAmbiguousFailure = await failConnectedTransactionCall({
+      root: temp,
+      lock,
+      checkpoint: ambiguousCheckpoint,
+      callId: connectedTransactionCurrentCall(ambiguousWriteCheckpoint).id,
+      error: { kind: 'unavailable', message: 'Injected write transport ambiguity.' },
+      at: '2026-07-15T12:00:03.000Z'
+    });
+    if (ambiguousCheckpoint.state !== 'needs-attention'
+      || ambiguousCheckpoint.operations[0].state !== 'needs-attention'
+      || replayedAmbiguousFailure.checkpointFingerprint
+        !== ambiguousCheckpoint.checkpointFingerprint) {
+      failures.push('connected transaction overstated a failed write transport as safely rolled back');
+    }
+
+    const rollbackProposal = structuredClone(updateProposal);
+    const rollbackRecordId = 'https://www.notion.so/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+    const rollbackPriorFields = {
+      title: 'Connected rollback selftest task',
+      status: 'Backlog',
+      context: null,
+      projectUris: []
+    };
+    rollbackProposal.id = 'changeset.meeting-intake.connected-rollback-selftest';
+    rollbackProposal.operations = [
+      structuredClone(updateProposal.operations[0]),
+      structuredClone(updateProposal.operations[0])
+    ];
+    rollbackProposal.operations[0].id = 'operation.task.first-status-update';
+    rollbackProposal.operations[1].id = 'operation.task.second-status-update';
+    rollbackProposal.operations[1].input.id = rollbackRecordId;
+    rollbackProposal.operations[1].input.expectedVersion = notionTaskVersion(
+      rollbackRecordId,
+      rollbackPriorFields
+    );
+    rollbackProposal.operations.forEach((operation) => {
+      operation.inputFingerprint = fingerprintJson(operation.input);
+    });
+    rollbackProposal.scopeFingerprint = changeSetScopeFingerprint(rollbackProposal);
+    const rollbackBatch = compileConnectedOperationBatch({
+      root: temp,
+      lock,
+      changeSet: rollbackProposal,
+      id: 'batch.meeting-intake.connected-rollback-selftest',
+      createdAt: FIXTURE_TIME
+    });
+    const connectedRollbackApproval = approveConnectedOperationBatch({
+      root: temp,
+      batch: rollbackBatch,
+      changeSet: rollbackProposal,
+      id: 'approval.meeting-intake.connected-rollback-selftest',
+      actor: 'fixture.user',
+      reason: 'Approve two exact mapped updates to prove reverse compensation.',
+      createdAt: FIXTURE_TIME,
+      expiresAt: '2026-07-15T12:05:00.000Z'
+    });
+    const invalidTailProposal = structuredClone(rollbackProposal);
+    invalidTailProposal.id = 'changeset.meeting-intake.connected-invalid-tail-selftest';
+    invalidTailProposal.operations[1].input.id = 'not-a-provider-record-id';
+    invalidTailProposal.operations[1].inputFingerprint = fingerprintJson(
+      invalidTailProposal.operations[1].input
+    );
+    invalidTailProposal.scopeFingerprint = changeSetScopeFingerprint(invalidTailProposal);
+    const invalidTailBatch = compileConnectedOperationBatch({
+      root: temp,
+      lock,
+      changeSet: invalidTailProposal,
+      id: 'batch.meeting-intake.connected-invalid-tail-selftest',
+      createdAt: FIXTURE_TIME
+    });
+    const invalidTailApproval = approveConnectedOperationBatch({
+      root: temp,
+      batch: invalidTailBatch,
+      changeSet: invalidTailProposal,
+      id: 'approval.meeting-intake.connected-invalid-tail-selftest',
+      actor: 'fixture.user',
+      reason: 'This invalid provider target must fail complete preflight before the first effect.',
+      createdAt: FIXTURE_TIME,
+      expiresAt: '2026-07-15T12:05:00.000Z'
+    });
+    let connectedInvalidTailRejected = false;
+    try {
+      await createConnectedTransactionCheckpoint({
+        root: temp,
+        lock,
+        lockPath,
+        run: { id: invalidTailProposal.runId },
+        runSourcePath: 'soter/fixtures/meeting-intake/connected-invalid-tail-selftest.run.json',
+        runStatePath: '.soter/state/runs/' + invalidTailProposal.runId + '.json',
+        batch: invalidTailBatch,
+        changeSet: invalidTailProposal,
+        approval: invalidTailApproval,
+        at: FIXTURE_TIME
+      });
+    } catch (error) {
+      connectedInvalidTailRejected = error.message.includes(
+        'operation.task.second-status-update/write'
+      );
+    }
+    if (!connectedInvalidTailRejected) {
+      failures.push('connected transaction did not preflight every provider route before the first effect');
+    }
+    let rollbackCheckpoint = await createConnectedTransactionCheckpoint({
+      root: temp,
+      lock,
+      lockPath,
+      run: { id: rollbackProposal.runId },
+      runSourcePath: 'soter/fixtures/meeting-intake/connected-rollback-selftest.run.json',
+      runStatePath: '.soter/state/runs/' + rollbackProposal.runId + '.json',
+      batch: rollbackBatch,
+      changeSet: rollbackProposal,
+      approval: connectedRollbackApproval,
+      at: FIXTURE_TIME
+    });
+    rollbackCheckpoint = (await completeConnectedTransactionCall({
+      root: temp,
+      lock,
+      checkpoint: rollbackCheckpoint,
+      callId: connectedTransactionCurrentCall(rollbackCheckpoint).id,
+      response: notionTaskReadResponse(updateRecordId, updatePriorFields),
+      at: '2026-07-15T12:00:01.000Z'
+    })).checkpoint;
+    rollbackCheckpoint = (await completeConnectedTransactionCall({
+      root: temp,
+      lock,
+      checkpoint: rollbackCheckpoint,
+      callId: connectedTransactionCurrentCall(rollbackCheckpoint).id,
+      response: notionUpdateResponse(updateRecordId),
+      at: '2026-07-15T12:00:02.000Z'
+    })).checkpoint;
+    rollbackCheckpoint = (await completeConnectedTransactionCall({
+      root: temp,
+      lock,
+      checkpoint: rollbackCheckpoint,
+      callId: connectedTransactionCurrentCall(rollbackCheckpoint).id,
+      response: notionTaskReadResponse(updateRecordId, {
+        ...updatePriorFields,
+        status: 'Open'
+      }),
+      at: '2026-07-15T12:00:03.000Z'
+    })).checkpoint;
+    rollbackCheckpoint = (await completeConnectedTransactionCall({
+      root: temp,
+      lock,
+      checkpoint: rollbackCheckpoint,
+      callId: connectedTransactionCurrentCall(rollbackCheckpoint).id,
+      response: notionTaskReadResponse(rollbackRecordId, {
+        ...rollbackPriorFields,
+        status: 'Unexpected concurrent value'
+      }),
+      at: '2026-07-15T12:00:04.000Z'
+    })).checkpoint;
+    const compensationCall = connectedTransactionCurrentCall(rollbackCheckpoint);
+    rollbackCheckpoint = (await completeConnectedTransactionCall({
+      root: temp,
+      lock,
+      checkpoint: rollbackCheckpoint,
+      callId: compensationCall.id,
+      response: notionUpdateResponse(updateRecordId),
+      at: '2026-07-15T12:00:05.000Z'
+    })).checkpoint;
+    rollbackCheckpoint = (await completeConnectedTransactionCall({
+      root: temp,
+      lock,
+      checkpoint: rollbackCheckpoint,
+      callId: connectedTransactionCurrentCall(rollbackCheckpoint).id,
+      response: notionTaskReadResponse(updateRecordId, updatePriorFields),
+      at: '2026-07-15T12:00:06.000Z'
+    })).checkpoint;
+    if (compensationCall.capability.id !== 'crm.records.update'
+      || compensationCall.arguments.properties.Status !== 'Backlog'
+      || rollbackCheckpoint.state !== 'rolled-back'
+      || rollbackCheckpoint.operations[0].state !== 'compensated'
+      || rollbackCheckpoint.operations[1].state !== 'failed'
+      || rollbackCheckpoint.result?.compensatedOperationIds[0]
+        !== 'operation.task.first-status-update'
+      || rollbackCheckpoint.result?.error?.kind !== 'conflict') {
+      failures.push('connected transaction did not compensate verified updates in reverse after a later conflict');
+    }
+
+    const durableConnectedRun = structuredClone(envelope);
+    durableConnectedRun.id = updateProposal.runId;
+    const durableConnectedRunPath = 'soter/fixtures/meeting-intake/connected-transaction-selftest.run.json';
+    writeJson(path.join(temp, durableConnectedRunPath), durableConnectedRun);
+    let durableConnected = await prepareDurableConnectedTransactionExecution({
+      root: temp,
+      lockPath,
+      runPath: durableConnectedRunPath,
+      batch: updateBatch,
+      changeSet: updateProposal,
+      approval: connectedApproval,
+      at: FIXTURE_TIME,
+      expectedHost: 'codex'
+    });
+    let duplicateDurableConnectedRejected = false;
+    try {
+      await prepareDurableConnectedTransactionExecution({
+        root: temp,
+        lockPath,
+        runPath: durableConnectedRunPath,
+        batch: updateBatch,
+        changeSet: updateProposal,
+        approval: connectedApproval,
+        at: FIXTURE_TIME,
+        expectedHost: 'codex'
+      });
+    } catch (error) {
+      duplicateDurableConnectedRejected = error.message.includes('already has pending host checkpoint');
+    }
+    durableConnected = await completeDurableConnectedTransactionExecution({
+      root: temp,
+      checkpointId: durableConnected.checkpoint.id,
+      callId: durableConnected.currentCall.id,
+      response: notionTaskReadResponse(
+        updateRecordId,
+        updatePriorFields,
+        'private-durable-connected-compare-marker'
+      ),
+      at: '2026-07-15T12:00:01.000Z',
+      expectedHost: 'codex'
+    });
+    const rehydratedConnected = getDurableHostExecution({
+      root: temp,
+      checkpointId: durableConnected.checkpoint.id,
+      expectedHost: 'codex'
+    });
+    durableConnected = await completeDurableConnectedTransactionExecution({
+      root: temp,
+      checkpointId: durableConnected.checkpoint.id,
+      callId: rehydratedConnected.currentCall.id,
+      response: notionUpdateResponse(
+        updateRecordId,
+        'private-durable-connected-write-marker'
+      ),
+      at: '2026-07-15T12:00:02.000Z',
+      expectedHost: 'codex'
+    });
+    durableConnected = await completeDurableConnectedTransactionExecution({
+      root: temp,
+      checkpointId: durableConnected.checkpoint.id,
+      callId: durableConnected.currentCall.id,
+      response: notionTaskReadResponse(updateRecordId, {
+        ...updatePriorFields,
+        status: 'Open'
+      }, 'private-durable-connected-verify-marker'),
+      at: '2026-07-15T12:00:03.000Z',
+      expectedHost: 'codex'
+    });
+    const durableConnectedCheckpointText = fs.readFileSync(
+      path.join(temp, durableConnected.checkpointPath),
+      'utf8'
+    );
+    const durableConnectedRunText = fs.readFileSync(
+      path.join(temp, durableConnected.runPath),
+      'utf8'
+    );
+    const durableTransactionEntry = durableConnected.run.checkpoints.find((item) => {
+      return item.id === 'connected-transaction.' + updateBatch.id;
+    });
+    if (!duplicateDurableConnectedRejected
+      || rehydratedConnected.currentCall?.transport.operation !== 'update_page'
+      || durableConnected.checkpoint.state !== 'completed'
+      || durableConnected.run.approvals.length !== 1
+      || durableConnected.run.approvals[0].id !== connectedApproval.id
+      || durableConnected.run.effects.length !== 3
+      || durableTransactionEntry?.state !== 'completed'
+      || durableConnectedCheckpointText.includes('private-durable-connected')
+      || durableConnectedRunText.includes('private-durable-connected')) {
+      failures.push('durable connected transaction did not persist, recover, minimize, and synchronize its exact run');
+    }
     const createProposal = structuredClone(connectedProposal);
     createProposal.id = 'changeset.meeting-intake.connected-create-selftest';
     createProposal.operations = [{
@@ -2168,7 +2631,7 @@ export async function selftest(root) {
     return false;
   }
   process.stdout.write(
-    'CORE SELFTEST PASS: deterministic lock, typed fixture reads/writes, exact-scope approval, deduplication, expected-version conflicts, rollback, read-after-write verification, resumable fixed and bound sequential operation plans, bounded connected context finalization, resumable MCP host dispatch, exact-lock single and multi-step provider probes, schema drift rejection, connected readiness, expiry, honest states, and stale-lock detection.\n'
+    'CORE SELFTEST PASS: deterministic lock, typed fixture reads/writes, exact-scope approval, deduplication, expected-version conflicts, rollback, read-after-write verification, resumable fixed and bound sequential operation plans, approval-bound connected update transactions with reverse compensation, bounded connected context finalization, resumable MCP host dispatch, exact-lock single and multi-step provider probes, schema drift rejection, connected readiness, expiry, honest states, and stale-lock detection.\n'
   );
   return true;
 }

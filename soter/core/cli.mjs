@@ -26,6 +26,7 @@ import { fingerprintLock, resolveConfiguration } from './resolve.mjs';
 import { prepareRunEnvelope } from './run.mjs';
 import {
   completeDurableCapabilityExecution,
+  completeDurableConnectedTransactionExecution,
   completeDurableOperationPlanExecution,
   completeDurableProviderProbeExecution,
   failDurableHostExecution,
@@ -33,11 +34,15 @@ import {
   getDurableProviderProbeObservation,
   listDurableHostExecutions,
   prepareDurableCapabilityExecution,
+  prepareDurableConnectedTransactionExecution,
   prepareDurableOperationPlanExecution,
   prepareDurableProviderProbeExecution
 } from './service.mjs';
 import { runContainedMeetingIntakeTransaction } from './transaction.mjs';
-import { compileConnectedOperationBatch } from './connected-transactions.mjs';
+import {
+  approveConnectedOperationBatch,
+  compileConnectedOperationBatch
+} from './connected-transactions.mjs';
 
 const defaultRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -82,6 +87,12 @@ function writeEvidence(root, directory, records) {
   for (const record of records) {
     writeJson(path.join(targetDirectory, record.id + '.json'), record);
   }
+}
+
+function readDocumentInput(root, requestedPath) {
+  return path.isAbsolute(requestedPath)
+    ? readPrivateJsonInput(root, requestedPath)
+    : readJson(resolveRepoPath(root, requestedPath));
 }
 
 async function main() {
@@ -427,6 +438,77 @@ async function main() {
     return;
   }
 
+  if (command === 'connected-transaction-prepare') {
+    if (option(args, '--output')) {
+      throw new Error(
+        'Connected transaction checkpoints are private runtime state and cannot be exported into the repository.'
+      );
+    }
+    const prepared = await prepareDurableConnectedTransactionExecution({
+      root,
+      lockPath: requiredOption(args, '--lock'),
+      runPath: requiredOption(args, '--run'),
+      batch: readDocumentInput(root, requiredOption(args, '--batch')),
+      changeSet: readDocumentInput(root, requiredOption(args, '--change-set')),
+      approval: readDocumentInput(root, requiredOption(args, '--approval')),
+      at: createdAt
+    });
+    if (json) {
+      print(prepared);
+    } else {
+      const call = prepared.currentCall;
+      process.stdout.write(
+        'Prepared connected transaction ' + prepared.checkpoint.batch.id + ' in state '
+          + prepared.checkpoint.state + '.\n'
+          + 'Approval: ' + prepared.checkpoint.approval.id + ' (exact batch fingerprint matched)\n'
+          + (call
+            ? 'Provider operation: ' + call.transport.server + '/'
+              + call.transport.operation + '\n'
+              + 'Native host tool: ' + call.transport.tool + '\n'
+              + 'Exact call ID: ' + call.id + '\n'
+            : 'Host request emitted: no\n')
+          + 'Durable checkpoint: ' + prepared.checkpointPath + '\n'
+          + 'Raw provider response persistence: disabled by Core\n'
+      );
+    }
+    if (prepared.checkpoint.state !== 'requested') process.exitCode = 1;
+    return;
+  }
+
+  if (command === 'connected-transaction-complete') {
+    if (option(args, '--output')) {
+      throw new Error(
+        'Connected transaction checkpoints are private runtime state and cannot be exported into the repository.'
+      );
+    }
+    const completed = await completeDurableConnectedTransactionExecution({
+      root,
+      checkpointId: requiredOption(args, '--checkpoint'),
+      callId: requiredOption(args, '--call'),
+      response: readPrivateJsonInput(root, requiredOption(args, '--response')),
+      at: createdAt
+    });
+    if (json) {
+      print(completed);
+    } else {
+      const call = completed.currentCall;
+      process.stdout.write(
+        'Advanced connected transaction ' + completed.checkpoint.batch.id + ' to state '
+          + completed.checkpoint.state + '.\n'
+          + (call
+            ? 'Next stage: ' + completed.checkpoint.current.stage + '\n'
+              + 'Next provider operation: ' + call.transport.server + '/'
+              + call.transport.operation + '\n'
+              + 'Next native host tool: ' + call.transport.tool + '\n'
+              + 'Next exact call ID: ' + call.id + '\n'
+            : 'Next host request emitted: no\n')
+          + 'Raw provider response persisted by Core: no\n'
+      );
+    }
+    if (!['requested', 'completed'].includes(completed.checkpoint.state)) process.exitCode = 1;
+    return;
+  }
+
   if (command === 'context-connected-prepare') {
     const prepared = await prepareMeetingIntakeConnectedContext({
       root,
@@ -484,22 +566,38 @@ async function main() {
   }
 
   if (command === 'host-fail') {
-    const failed = failDurableHostExecution({
+    const checkpointId = requiredOption(args, '--checkpoint');
+    const output = option(args, '--output');
+    if (output) {
+      const current = getDurableHostExecution({ root, checkpointId });
+      if (current.checkpoint.kind === 'connected-transaction') {
+        throw new Error(
+          'Connected transaction checkpoints are private runtime state and cannot be exported into the repository.'
+        );
+      }
+    }
+    const failed = await failDurableHostExecution({
       root,
-      checkpointId: requiredOption(args, '--checkpoint'),
+      checkpointId,
       errorKind: requiredOption(args, '--kind'),
       message: requiredOption(args, '--message'),
       callId: option(args, '--call'),
       at: createdAt
     });
-    const output = option(args, '--output');
     if (output) writeJson(resolveRepoPath(root, output), failed.checkpoint);
     if (json) {
       print(failed);
     } else {
+      const call = failed.currentCall;
       process.stdout.write(
         'Recorded ' + failed.checkpoint.id + ' in state '
           + failed.checkpoint.state + '.\n'
+          + (call
+            ? 'Next provider operation: ' + call.transport.server + '/'
+              + call.transport.operation + '\n'
+              + 'Next native host tool: ' + call.transport.tool + '\n'
+              + 'Next exact call ID: ' + call.id + '\n'
+            : '')
           + (output ? 'Wrote: ' + output + '\n' : '')
       );
     }
@@ -674,6 +772,32 @@ async function main() {
     return;
   }
 
+  if (command === 'connected-batch-approve') {
+    const batch = readDocumentInput(root, requiredOption(args, '--batch'));
+    const changeSet = readDocumentInput(root, requiredOption(args, '--change-set'));
+    const approval = approveConnectedOperationBatch({
+      root,
+      batch,
+      changeSet,
+      id: requiredOption(args, '--approval-id'),
+      actor: requiredOption(args, '--actor'),
+      reason: requiredOption(args, '--reason'),
+      createdAt,
+      expiresAt: requiredOption(args, '--expires-at')
+    });
+    if (json) {
+      print(approval);
+    } else {
+      process.stdout.write(
+        'Approved exact connected operation batch ' + batch.id + '.\n'
+          + 'Approval: ' + approval.id + '\n'
+          + 'Expires: ' + approval.expiresAt + '\n'
+          + 'Writes executed: 0\n'
+      );
+    }
+    return;
+  }
+
   if (command === 'selftest') {
     const { selftest } = await import('./selftest.mjs');
     process.exitCode = await selftest(root) ? 0 : 1;
@@ -704,7 +828,7 @@ async function main() {
   }
 
   throw new Error(
-    'Usage: node soter/core/cli.mjs <resolve|prepare|context|context-connected-prepare|context-connected-finalize|transaction|connected-batch-preview|doctor|probe-prepare|probe-complete|capability-prepare|capability-complete|plan-prepare|plan-complete|host-fail|host-get|host-list|fixtures|selftest> [options]\n'
+    'Usage: node soter/core/cli.mjs <resolve|prepare|context|context-connected-prepare|context-connected-finalize|transaction|connected-batch-preview|connected-batch-approve|connected-transaction-prepare|connected-transaction-complete|doctor|probe-prepare|probe-complete|capability-prepare|capability-complete|plan-prepare|plan-complete|host-fail|host-get|host-list|fixtures|selftest> [options]\n'
       + '  resolve [--config PATH] [--output PATH] [--json]\n'
       + '  prepare --lock PATH [--scenario PATH] [--output PATH] [--evidence-dir PATH] [--json]\n'
       + '  context --lock PATH --meeting-id ID --recording-uri URI [--scenario PATH] [--json]\n'
@@ -712,6 +836,9 @@ async function main() {
       + '  context-connected-finalize --checkpoint ID [--json]\n'
       + '  transaction --lock PATH [--scenario PATH] [--approve] [--json]\n'
       + '  connected-batch-preview --lock PATH --change-set PATH [--batch-id ID] [--json]\n'
+      + '  connected-batch-approve --batch PATH --change-set PATH --approval-id ID --actor ACTOR --reason TEXT --expires-at TIME [--json]\n'
+      + '  connected-transaction-prepare --lock PATH --run PATH --batch PATH --change-set PATH --approval PATH [--json]\n'
+      + '  connected-transaction-complete --checkpoint ID --call ID --response ABSOLUTE_PRIVATE_PATH [--json]\n'
       + '  doctor --lock PATH [--level offline|connected] [--probe PATH ...] [--probe-checkpoint ID ...] [--config PATH] [--json]\n'
       + '  probe-prepare --lock PATH --provider ID [--output PATH] [--json]\n'
       + '  probe-complete --checkpoint ID [--call ID] --response ABSOLUTE_PRIVATE_PATH [--probe-output PATH] [--json]\n'
@@ -721,7 +848,7 @@ async function main() {
       + '  plan-complete --checkpoint ID --call ID --response ABSOLUTE_PRIVATE_PATH [--json]\n'
       + '  host-fail --checkpoint ID [--call ID] --kind KIND --message TEXT [--output PATH] [--json]\n'
       + '  host-get --checkpoint ID\n'
-      + '  host-list [--state requested|completed|failed|blocked]\n'
+      + '  host-list [--state requested|completed|rolled-back|failed|needs-attention|blocked]\n'
       + '  fixtures <--check|--update> [--json]'
   );
 }

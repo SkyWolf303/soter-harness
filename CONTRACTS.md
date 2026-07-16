@@ -419,6 +419,7 @@ The normative Core state shapes are the
 [connected operation-batch approval](./soter/contracts/approval-v2.schema.json),
 [change set](./soter/contracts/change-set.schema.json),
 [connected operation batch](./soter/contracts/connected-operation-batch.schema.json),
+[private connected transaction checkpoint](./soter/contracts/connected-transaction-checkpoint.schema.json),
 [host tool call](./soter/contracts/host-tool-call.schema.json),
 [provider probe call](./soter/contracts/provider-probe-call.schema.json),
 [provider probe plan checkpoint](./soter/contracts/provider-probe-plan-checkpoint.schema.json),
@@ -782,12 +783,11 @@ it exposes the logical operation for explanation, emits the exact resolved
 native tool request, and accepts a native result, but never invokes a provider
 tool itself.
 
-The initial connected service accepts no caller-supplied approval set.
-Consequently, a capability whose resolved effects require confirmation produces
-a blocked call with no tool or arguments. A future write interface may proceed
-only after Core validates an approval bound to the exact generated operation
-batch and change-set fingerprint; host approval prompts alone are not reusable
-Soter authorization.
+The generic capability and operation-plan services accept no caller-supplied
+approval set. Consequently, a capability whose resolved effects require
+confirmation produces a blocked call with no tool or arguments. Connected
+writes use the separate transaction contract below. Host approval prompts alone
+are not reusable Soter authorization.
 
 The host-call checkpoint represents one native request. A provider feature that
 needs several requests—multi-target reads, deduplication followed by creation,
@@ -877,11 +877,52 @@ otherwise representable.
 operation-batch fingerprint, names only the approved effects, and expires. A
 changed input, binding, mapping, recovery plan, operation order, or batch
 fingerprint requires a new approval. A blocked batch cannot be approved. The
-current compiler and preview command execute no provider calls; the durable
-sequential transaction checkpoint that will consume an executable approval,
-retain compared prior fields, verify applied effects, and compensate in reverse
-order remains the next runtime contract. Generic capability and operation-plan
-interfaces still accept no connected-write approval.
+compiler and preview command execute no provider calls.
+
+`connected-transaction-checkpoint/v1` is the private durable execution boundary
+for an executable update-only batch. Preparation requires the exact current
+lock, graph, host, durable run, proposed batch, source change set, and unexpired
+`approval/v2`. Core validates all fingerprints and emits only the first
+compare-before-write read. Before that emission, it preflights every operation's
+compare, write, verify, compensation, and compensation-verification binding,
+input shape, provider translator, and native host route. An invalid tail fails
+before an earlier effect. The checkpoint embeds the exact authorization sources
+because resume must not reconstruct authority from conversation or a later
+prompt. It stores no credential value or native provider response.
+
+Each update proceeds sequentially through four explicit responsibilities:
+
+1. Read the exact record and require the compiled expected version.
+2. Capture only the mapped fields that the approved patch may overwrite.
+3. Emit the approved update and then read the exact record again.
+4. Require the approved fields to match and retain the observed version needed
+   for possible compensation.
+
+The first write must begin while the exact approval is current. Once an effect
+has begun, expiry does not prevent verification or compensation; stopping
+recovery because the initiating approval expired would increase risk. A changed
+batch, change set, approval, lock, graph, host, provider route, checkpoint, call
+ID, or completed-response fingerprint fails closed.
+
+If a later compare conflicts or a deterministic read fails, Core compensates
+every verified applied update in reverse order. Compensation restores the
+captured prior mapped fields using the last observed version, then reads the
+record and verifies that restoration. A successful reverse sequence closes as
+`rolled-back`; it is not reported as successful completion. A failure before
+any write closes as `failed`.
+
+External providers do not supply an ACID boundary. A transport failure during a
+write, a missing post-write record, an unverified compensation, or another
+ambiguous effect closes as `needs-attention`. Core must not retry an ambiguous
+write automatically or claim rollback. Recovery requires provider
+reconciliation against the exact checkpoint before a new operation batch and
+approval can be created.
+
+Mapped creates remain non-executable while the selected provider declares no
+automatic compensation route. Generic capability and operation-plan interfaces
+still accept no connected-write approval. The trusted CLI can create an exact
+approval and start the transaction; MCP can only load, complete, or fail the
+already-authorized checkpoint by exact checkpoint and current-call identity.
 
 #### Bounded connected context finalization
 

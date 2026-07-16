@@ -45,6 +45,7 @@
     { "path": "soter/core/context.mjs", "role": "implementation" },
     { "path": "soter/core/transaction.mjs", "role": "implementation" },
     { "path": "soter/core/connected-transactions.mjs", "role": "implementation" },
+    { "path": "soter/core/connected-transaction-runtime.mjs", "role": "implementation" },
     { "path": "soter/core/fixtures.mjs", "role": "implementation" },
     { "path": "soter/core/cli.mjs", "role": "implementation" },
     { "path": "soter/core/selftest.mjs", "role": "evaluation" }
