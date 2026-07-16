@@ -6,7 +6,7 @@
   "level": "connected",
   "configuration": {
     "name": "meeting-intake",
-    "lockFingerprint": "sha256:3ba61127ff8c9a83717d7413f1729bd201f6f23518e12a23c9be3cfc241ea8fa"
+    "lockFingerprint": "sha256:f8a5f3e88e0a6f49ffa006ff6983d783d88e6bc37f5c9c9cc5a9a70dec8b6a20"
   },
   "states": {
     "valid": "passed",
@@ -43,7 +43,7 @@
       "claim": "Every required capability resolves to exactly one connected provider implementation.",
       "state": "failed",
       "evidenceIds": [],
-      "details": "0 of 4 required connected implementation checks passed; inspect diagnostics and probe details."
+      "details": "1 of 4 required connected implementation checks passed; inspect diagnostics and probe details."
     },
     {
       "id": "connections.credentials-ready",
@@ -132,18 +132,18 @@
       "remediation": "Add and declare a connected provider implementation before attempting a connected run."
     },
     {
-      "code": "SOTER_CONNECTED_PROVIDER_MISSING",
-      "severity": "error",
-      "claim": "Every required capability has exactly one declared connected provider implementation.",
-      "subject": "integration.otter/meeting.transcript.read",
+      "code": "SOTER_PROVIDER_PROBE_MISSING",
+      "severity": "warning",
+      "claim": "Each selected connected provider has one current probe for the supplied lock.",
+      "subject": "provider.integration.otter.mcp",
       "path": [
-        "bindings",
-        "meeting.transcript.read"
+        "providerProbes",
+        "provider.integration.otter.mcp"
       ],
-      "expected": "One connected implementation of 1.0.0.",
-      "observed": "Found 0 connected implementations for integration.otter/meeting.transcript.read.",
+      "expected": "One current probe bound to sha256:f8a5f3e88e0a6f49ffa006ff6983d783d88e6bc37f5c9c9cc5a9a70dec8b6a20.",
+      "observed": "Found 0 matching probes.",
       "evidenceIds": [],
-      "remediation": "Add and declare a connected provider implementation before attempting a connected run."
+      "remediation": "Run the provider adapter read-only probe and pass its structured result to the connected doctor."
     },
     {
       "code": "SOTER_CONNECTED_SCOPE",

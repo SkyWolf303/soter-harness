@@ -9,17 +9,17 @@
     "id": "run.meeting-intake.transaction-fixture",
     "version": null
   },
-  "configurationLockFingerprint": "sha256:3ba61127ff8c9a83717d7413f1729bd201f6f23518e12a23c9be3cfc241ea8fa",
+  "configurationLockFingerprint": "sha256:f8a5f3e88e0a6f49ffa006ff6983d783d88e6bc37f5c9c9cc5a9a70dec8b6a20",
   "dependencies": [
     {
       "id": "kernel.soter",
       "version": "0.1.0",
-      "fingerprint": "sha256:5cfb4a379585a0cb1474e19567ac387b923fee9601f4c2c5a23bde446daa8636"
+      "fingerprint": "sha256:863b93a77939093b87d38572efc9ef7dcac546c2dbc87f3f23b3a7ddb2e5caf4"
     },
     {
       "id": "core.runtime",
       "version": "0.1.0",
-      "fingerprint": "sha256:7e3f4c9790cf1b02f3c3a52f44ca70ba97cda74a295677093a76a8d1267152d1"
+      "fingerprint": "sha256:5efd9e6c69c886b8b6f87c18505b9b7f568a40bdbd07dd536c30e465c44fa8df"
     },
     {
       "id": "context.crm",
@@ -39,7 +39,7 @@
     {
       "id": "integration.otter",
       "version": "0.1.0",
-      "fingerprint": "sha256:efdee423bed978d2c831d408013fd4c578fb048e1e15dd9f5729fb039fc60f52"
+      "fingerprint": "sha256:2b026b4426d72cab08f667f36e219be74664913634b175ab79b0f040f192e07b"
     }
   ],
   "host": {
@@ -58,7 +58,7 @@
     {
       "id": "integration.otter",
       "version": "0.1.0",
-      "manifestFingerprint": "sha256:efdee423bed978d2c831d408013fd4c578fb048e1e15dd9f5729fb039fc60f52",
+      "manifestFingerprint": "sha256:2b026b4426d72cab08f667f36e219be74664913634b175ab79b0f040f192e07b",
       "evidenceMaturity": "declared"
     }
   ],
@@ -133,12 +133,12 @@
     {
       "role": "change-set",
       "id": "changeset.meeting-intake.transaction-fixture",
-      "fingerprint": "sha256:8b5a786470d8783031805e400038d9278603ddd67711e0636117519c8779daac"
+      "fingerprint": "sha256:fc134e35d44f92cd44db3b83976a85f9f2b5f69658889902586aecf6fcf36e31"
     },
     {
       "role": "approval",
       "id": "approval.meeting-intake.transaction-fixture",
-      "fingerprint": "sha256:52b5aed4f216d52e016ec996828002e8bcb4993e4b522a339a2422f207a59b23"
+      "fingerprint": "sha256:74ac37c5bb573bc7e33a4f3a81f27e29df5834c8468b0d13ef6d27cbeab84bec"
     }
   ],
   "effects": [

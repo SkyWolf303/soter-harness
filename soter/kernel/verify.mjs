@@ -26,6 +26,7 @@ const RUNTIME_ARTIFACT_CONTRACTS = new Set([
   'soter://contracts/evidence/v1',
   'soter://contracts/doctor-result/v1',
   'soter://contracts/provider-probe/v1',
+  'soter://contracts/provider-probe-call/v1',
   'soter://contracts/host-tool-call/v1',
   'soter://contracts/context-snapshot/v1',
   'soter://contracts/approval/v1',
@@ -152,6 +153,9 @@ function schemaErrors(value, schema, rootSchema = schema, at = '$') {
 
   if (typeof value === 'number' && schema.minimum !== undefined && value < schema.minimum) {
     errors.push({ path: at, message: 'must be at least ' + schema.minimum });
+  }
+  if (typeof value === 'number' && schema.maximum !== undefined && value > schema.maximum) {
+    errors.push({ path: at, message: 'must be at most ' + schema.maximum });
   }
 
   if (Array.isArray(value)) {
@@ -388,6 +392,7 @@ function checkPackGraph(root, documents, out, census) {
   const snapshots = new Map();
   const providerFixtures = new Map();
   const providerProbes = new Map();
+  const providerProbeCalls = new Map();
   const hostToolCalls = new Map();
   const approvals = new Map();
   const changeSets = new Map();
@@ -479,6 +484,9 @@ function checkPackGraph(root, documents, out, census) {
     } else if (entry.contractId === 'soter://contracts/provider-probe/v1') {
       census.providerProbes += 1;
       addUniqueRuntimeArtifact(providerProbes, entry, 'probe');
+    } else if (entry.contractId === 'soter://contracts/provider-probe-call/v1') {
+      census.providerProbeCalls += 1;
+      addUniqueRuntimeArtifact(providerProbeCalls, entry, 'probecall');
     } else if (entry.contractId === 'soter://contracts/host-tool-call/v1') {
       census.hostToolCalls += 1;
       addUniqueRuntimeArtifact(hostToolCalls, entry, 'toolcall');
@@ -805,6 +813,7 @@ function checkPackGraph(root, documents, out, census) {
     snapshots,
     providers,
     providerProbes,
+    providerProbeCalls,
     hostToolCalls,
     approvals,
     changeSets,
@@ -826,6 +835,7 @@ function checkPackGraph(root, documents, out, census) {
     snapshots,
     providerFixtures,
     providerProbes,
+    providerProbeCalls,
     hostToolCalls,
     approvals,
     changeSets
@@ -897,9 +907,17 @@ function checkCapabilityProviders(root, providers, providerFixtures, packs, capa
         ));
       }
     } else if (entry.doc.runtime.engine === 'mcp') {
-      const missing = ['prepareExport', 'completeExport', 'server', 'tools']
+      const missing = [
+        'prepareExport',
+        'completeExport',
+        'probePrepareExport',
+        'probeCompleteExport',
+        'server',
+        'tools',
+        'probeTools'
+      ]
         .filter((field) => !entry.doc.runtime[field]
-          || (field === 'tools' && !entry.doc.runtime[field].length));
+          || (['tools', 'probeTools'].includes(field) && !entry.doc.runtime[field].length));
       if (missing.length) {
         out.push(violation(
           entry.file,
@@ -907,6 +925,18 @@ function checkCapabilityProviders(root, providers, providerFixtures, packs, capa
           'MCP provider runtime is missing ' + missing.join(', '),
           'host-dispatched calls require explicit translation entry points, server identity, and tool allowlist',
           'declare the complete MCP runtime boundary'
+        ));
+      }
+      const undeclaredProbeTools = (entry.doc.runtime.probeTools || [])
+        .filter((tool) => !entry.doc.runtime.tools?.includes(tool));
+      if (undeclaredProbeTools.length) {
+        out.push(violation(
+          entry.file,
+          'SOTER_PROVIDER_RUNTIME',
+          'MCP provider probe tools are outside its capability tool allowlist: '
+            + undeclaredProbeTools.join(', '),
+          'readiness probes cannot expand the integration transport boundary',
+          'add each safe probe tool to runtime.tools or remove it from runtime.probeTools'
         ));
       }
       if (!['connected', 'canary', 'live'].includes(entry.doc.containment)) {
@@ -1005,6 +1035,7 @@ function checkRuntimeArtifacts(
   snapshots,
   providers,
   providerProbes,
+  providerProbeCalls,
   hostToolCalls,
   approvals,
   changeSets,
@@ -1188,6 +1219,91 @@ function checkRuntimeArtifacts(
           ));
         }
       }
+    }
+  }
+
+  for (const entry of providerProbeCalls.values()) {
+    const lock = requireLock(
+      entry,
+      entry.doc.configurationLockFingerprint,
+      'provider probe call'
+    );
+    const provider = providers.get(entry.doc.provider.implementation);
+    if (!provider
+      || provider.doc.pack !== entry.doc.provider.pack
+      || provider.doc.version !== entry.doc.provider.version
+      || provider.doc.containment !== entry.doc.provider.containment
+      || provider.doc.runtime.engine !== 'mcp'
+      || provider.doc.runtime.server !== entry.doc.transport.server
+      || (entry.doc.transport.tool
+        && !provider.doc.runtime.probeTools?.includes(entry.doc.transport.tool))) {
+      out.push(violation(
+        entry.file,
+        'SOTER_PROVIDER_PROBE_CALL_PROVIDER',
+        'provider probe call has no exact declared MCP probe provider: '
+          + entry.doc.provider.implementation,
+        'readiness transport must remain inside one selected implementation and safe probe allowlist',
+        'regenerate the request from the exact selected MCP provider declaration'
+      ));
+    }
+    if (lock) {
+      const bindings = lock.doc.bindings.filter((binding) => {
+        return binding.providerPack === entry.doc.provider.pack;
+      });
+      const capabilities = new Set(bindings.map((binding) => binding.capability));
+      const authorities = new Set(bindings.flatMap((binding) => binding.authorities));
+      const planOutOfScope = entry.doc.plan.capabilities.some((id) => !capabilities.has(id))
+        || entry.doc.plan.authorities.some((id) => !authorities.has(id));
+      if (planOutOfScope
+        || lock.doc.graphFingerprint !== entry.doc.graphFingerprint
+        || lock.doc.host.id !== entry.doc.host.id
+        || lock.doc.host.adapter !== entry.doc.host.adapter
+        || lock.doc.host.version !== entry.doc.host.version) {
+        out.push(violation(
+          entry.file,
+          'SOTER_PROVIDER_PROBE_CALL_SCOPE',
+          'provider probe call is outside its locked provider, capability, authority, graph, or host scope',
+          'a readiness check cannot inspect authorities or capabilities outside the selected graph',
+          'prepare the probe request again from the referenced lock'
+        ));
+      }
+    }
+    if (entry.doc.arguments !== null
+      && entry.doc.argumentsFingerprint !== fingerprintJson(entry.doc.arguments)) {
+      out.push(violation(
+        entry.file,
+        'SOTER_PROVIDER_PROBE_CALL_FINGERPRINT',
+        'provider probe arguments fingerprint is stale',
+        'the executed readiness request must match the recorded request exactly',
+        'regenerate the request or restore the original arguments'
+      ));
+    }
+    const requestedShape = entry.doc.transport.tool !== null
+      && entry.doc.arguments !== null
+      && entry.doc.argumentsFingerprint !== null;
+    const validLifecycle = (entry.doc.state === 'requested'
+        && entry.doc.completedAt === null
+        && requestedShape
+        && entry.doc.responseFingerprint === null
+        && entry.doc.probeFingerprint === null
+        && entry.doc.error === null)
+      || (entry.doc.state === 'completed'
+        && entry.doc.completedAt !== null
+        && requestedShape
+        && entry.doc.responseFingerprint !== null
+        && entry.doc.probeFingerprint !== null
+        && entry.doc.error === null)
+      || (entry.doc.state === 'failed'
+        && entry.doc.completedAt !== null
+        && entry.doc.error !== null);
+    if (!validLifecycle) {
+      out.push(violation(
+        entry.file,
+        'SOTER_PROVIDER_PROBE_CALL_STATE',
+        'provider probe call fields disagree with lifecycle state ' + entry.doc.state,
+        'requested, completed, and failed probe calls need mechanically distinct private state',
+        'regenerate the call through the Core provider-probe state machine'
+      ));
     }
   }
 
@@ -1852,6 +1968,7 @@ export function verifySoter(root = defaultRoot, options = {}) {
     contextSnapshots: 0,
     providerFixtures: 0,
     providerProbes: 0,
+    providerProbeCalls: 0,
     hostToolCalls: 0,
     approvals: 0,
     changeSets: 0
@@ -2000,6 +2117,7 @@ function report(resultValue, json) {
       + c.evidence + ' evidence records, ' + c.doctorResults + ' doctor results, '
       + c.providers + ' providers, ' + c.contextSnapshots + ' context snapshots, '
       + c.providerFixtures + ' provider fixtures, ' + c.providerProbes + ' provider probes, '
+      + c.providerProbeCalls + ' provider probe calls, '
       + c.hostToolCalls + ' host tool calls, '
       + c.approvals + ' approvals, '
       + c.changeSets + ' change sets.'

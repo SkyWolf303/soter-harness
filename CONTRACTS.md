@@ -418,6 +418,7 @@ The normative Core state shapes are the
 [scoped approval](./soter/contracts/approval.schema.json),
 [change set](./soter/contracts/change-set.schema.json),
 [host tool call](./soter/contracts/host-tool-call.schema.json),
+[provider probe call](./soter/contracts/provider-probe-call.schema.json),
 [evidence record](./soter/contracts/evidence.schema.json), and
 [doctor result](./soter/contracts/doctor-result.schema.json). Connected
 integrations produce short-lived, secret-safe
@@ -690,6 +691,8 @@ call from Core. A connected provider declaration names:
   one logical tool and argument object.
 - An integration-owned completion function that normalizes the host response
   into the capability output contract.
+- A narrower probe-tool allowlist plus prepare and completion functions for
+  non-mutating readiness observations.
 - The exact provider, capability, authority, containment, and effects covered.
 
 Core creates a `host-tool-call/v1` record before dispatch. The record binds the
@@ -711,6 +714,22 @@ advances to completed or failed. The durable call record stores response and
 output fingerprints rather than the raw provider body. A retry, resume, or
 handoff therefore cannot substitute a different lock, provider, input, tool,
 or response without detection.
+
+Provider readiness uses a separate `provider-probe-call/v1` state machine. Core
+derives its probe plan from the exact lock and desired configuration, including
+the selected provider, secret-reference identifiers, authorities, and
+capabilities. The integration may choose only a tool in its narrower
+`probeTools` allowlist. On resume, the integration returns typed observations;
+Core—not the integration—assembles the exact-lock `provider-probe/v1` document.
+This separation prevents an identity or metadata request from being recorded as
+a domain capability invocation and prevents a provider adapter from widening
+the scope of the readiness claims it was asked to check.
+
+Probe-call records contain request, response, and normalized-probe
+fingerprints, never provider response bodies. A successful identity request may
+establish authentication and endpoint reachability while leaving a capability
+`unknown`. Capability compatibility becomes `passed` only when the declared
+safe method actually observes enough behavior to support that claim.
 
 ### Binding automations to integrations
 

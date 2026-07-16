@@ -13,14 +13,19 @@ fields make that distinction mechanical.
 - contracts contains versioned machine-readable contracts.
 - packs contains one manifest for each selectable system.
 - capabilities contains provider-neutral integration capability contracts.
+- providers contains typed implementation declarations, containment levels,
+  host transport allowlists, and explicit limitations.
+- integrations contains provider-specific translators and contained runtimes;
+  automations never import these modules directly.
 - configurations contains explicit desired configurations.
 - hosts contains explicit adapter declarations and projection ownership.
 - scenarios contains behavior-level fixtures and expected evidence.
 - migrations maps prototype artifacts to their target ownership and state.
 - kernel contains the target verifier shared by every future host projection.
 - core contains provider-neutral resolution, preflight, evidence, offline and
-  connected doctor operations plus a resumable host-tool request/result bridge
-  consumed by future agent, CLI, and graphical interfaces.
+  connected doctor operations, a shared host-runtime boundary, and separate
+  resumable capability-call and provider-probe bridges consumed by CLI and
+  future agent and graphical interfaces.
 - fixtures contains generated, cross-linked examples of exact locks, run
   envelopes, evidence, and doctor results. These are runtime-state examples,
   not pack source artifacts.
@@ -44,11 +49,15 @@ exact-scope approvals, transactional in-memory writes, rollback proof,
 read-after-write verification, scoped evidence, and an offline doctor report.
 It also validates and aggregates short-lived provider probes into an honest
 connected-readiness result and proves the state machine for policy-bound MCP
-dispatch with synthetic host results. Host MCP routes are declared for Notion
-and Otter, but no connected provider translator or probe producer exists yet,
-so the checked-in connected doctor reports `ready=failed`. This increment does
-not authenticate or call an external provider, prove host-level agent judgment,
-or replace the existing processing-a-meeting guide.
+dispatch with synthetic host results. The connected Otter provider now
+translates a canonical meeting URL into exact `fetch({id})` arguments and
+produces an identity-only `get_user_info({})` probe. That probe can pass
+authentication and reachability while leaving transcript compatibility
+unknown. Unobserved transcript response shapes fail closed. Notion has no
+connected provider yet, host dispatch is not automatic, and the checked-in
+connected doctor therefore reports `ready=failed`. This increment does not
+fetch a user's meeting, prove provider transcript normalization, prove
+host-level agent judgment, or replace the existing processing-a-meeting guide.
 
 ## Verify
 
@@ -72,13 +81,24 @@ Prove Core output contracts, stale-lock detection, and honest offline states:
     node soter/core/cli.mjs fixtures --check
     node soter/core/cli.mjs doctor --lock soter/fixtures/meeting-intake/meeting-intake.lock.json
 
-Inspect the expected missing-connected-provider diagnostics:
+Inspect the expected missing-Notion and missing-probe diagnostics:
 
     node soter/core/cli.mjs doctor --lock soter/fixtures/meeting-intake/meeting-intake.lock.json --level connected
 
-With only fixture providers declared, this exits nonzero by design. Connected
+This exits nonzero by design. Otter has a connected declaration, but no private
+probe is checked in; Notion still lacks a connected declaration. Connected
 adapters pass one or more exact-lock `--probe PATH` artifacts; Core never
 accepts a fixture result as connected state.
+
+Inspect the structured Otter probe request without calling the provider:
+
+    node soter/core/cli.mjs probe-prepare --lock soter/fixtures/meeting-intake/meeting-intake.lock.json --provider provider.integration.otter.mcp --json
+
+The emitted request is `otter/get_user_info` with empty arguments. A host can
+resume it through `probe-complete` using private transient response input. Core
+persists only fingerprints and the normalized probe, and the probe leaves
+`meeting.transcript.read` unknown until a specifically authorized transcript
+response proves the adapter shape.
 
 The Codex projection registers Otter in `.codex/config.toml`. After trusting
 the project, authenticate once with `codex mcp login otter` or through Codex

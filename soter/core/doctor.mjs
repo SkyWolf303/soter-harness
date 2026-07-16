@@ -378,7 +378,6 @@ export function runConnectedDoctor({
     });
     if (matches.length !== 1) {
       const state = matches.length ? 'failed' : 'unknown';
-      implementationStates.push(state);
       if (desiredBinding?.secretRef) {
         recordUniqueState(
           credentialStates,

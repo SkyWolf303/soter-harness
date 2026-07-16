@@ -141,10 +141,13 @@ The main remaining gaps are structural and behavioral:
   context assembly, exact-scope approvals, transactional fixture writes,
   rollback, read-after-write verification, scoped evidence, and offline
   diagnosis, and the policy-bound request/result state machine for resumable
-  host-dispatched MCP calls. It can derive connected readiness from exact,
-  expiring, secret-safe provider probes, but no connected provider translator
-  emits those probes yet. Live provider semantics and host-level agent behavior
-  therefore remain unproven.
+  host-dispatched MCP calls. The first connected Otter declaration now emits an
+  exact `fetch({id})` request and an identity-only `get_user_info({})` probe
+  request through separate resumable contracts. The probe can establish
+  authentication and reachability while mechanically leaving transcript
+  compatibility unknown. Notion translation, observed Otter response-shape
+  conformance, automatic host dispatch, and host-level agent behavior remain
+  unproven.
 - Legacy provider behavior remains mixed into automations. The target now
   separates fixture reads and writes behind typed capabilities, but connected
   implementations and legacy migration remain.
@@ -170,8 +173,9 @@ desired configuration, behavior scenarios, and migration mapping. Minimum Core
 fixtures prove exact lock resolution, preflight, schema-valid CRM/transcript
 context assembly, confirmation-gated writes, rollback mechanics, and
 read-after-write verification through local providers. A negative connected
-doctor fixture also proves that missing connected implementations fail
-readiness without being represented as a graph or fixture failure. All packs remain at an
+doctor fixture also proves that a missing Notion implementation and a missing
+current Otter probe fail or leave readiness unknown without being represented
+as graph or fixture failures. All packs remain at an
 **experimental** release stage and **declared** evidence maturity because those
 claims do not prove connected or agent-host behavior. The graph and checked-in
 lock are valid; connected readiness, full automation verification, and live
@@ -239,13 +243,27 @@ Inspect connected readiness separately:
       --lock soter/fixtures/meeting-intake/meeting-intake.lock.json \
       --level connected
 
-With the declared fixture-only Notion and Otter providers, that command exits
-nonzero with `ready=failed`. A connected integration
-must emit a `provider-probe/v1` document for the exact lock; Core will reject
+With no connected Notion implementation and no current Otter probe, that
+command exits nonzero with `ready=failed`. A connected integration must emit a
+`provider-probe/v1` document for the exact lock; Core will reject
 missing, expired, malformed, ambiguous, or wrong-lock probes. Probe documents
 contain secret-reference identifiers and safe observations, never secret
 values. Connected readiness does not by itself establish automation
 verification or end-to-end health.
+
+Core also exposes the host-neutral probe handshake for adapters and debugging:
+
+    node soter/core/cli.mjs probe-prepare \
+      --lock soter/fixtures/meeting-intake/meeting-intake.lock.json \
+      --provider provider.integration.otter.mcp \
+      --output /private/path/otter-probe-call.json
+
+The host executes only the emitted logical MCP request. It can then return the
+native result through `probe-complete --call ... --response ...`; Core writes
+only the typed probe and response fingerprint, never the response body. The
+current Otter producer intentionally reports `meeting.transcript.read=unknown`
+because `get_user_info` does not read a transcript. Treat response files as
+private transient runtime state and keep them outside the repository.
 
 For Codex, trust the project and authenticate the declared Otter server once:
 
@@ -280,11 +298,11 @@ runtime is connected or ready.
 2. Declare meeting intake as the representative vertical slice with its
    outcomes, scenarios, capability needs, authorities, effects, and migration
    mapping.
-3. Add Notion and Otter MCP translators on the host-tool bridge, explicit
-   provider target mappings, and exact tool-schema conformance; have them emit
-   the now-enforced credential, reachability, authority, and capability probes.
-   Then add durable provider checkpoints and the separately authorized canary
-   doctor level.
+3. Finish the connected integration slice: add the Notion MCP translator and
+   safe probe producer, validate Otter transcript response normalization with
+   an explicitly authorized private meeting fixture, and connect host dispatch
+   to the resumable Core calls. Then add durable provider checkpoints and the
+   separately authorized canary doctor level.
 4. Prove the full judgment and orchestration slice through both Claude and
    Codex host adapters rather than treating deterministic fixture mechanics as
    agent behavior evidence.

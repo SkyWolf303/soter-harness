@@ -263,6 +263,14 @@ boundary:
    it into the portable capability output, and Core validates the output and
    records only the response and output fingerprints needed for traceability.
 
+Readiness checks use a parallel but distinct resumable probe call. Core fixes
+the credential-reference, authority, and capability scope from the resolved
+configuration; the integration chooses from a narrower safe probe-tool
+allowlist and returns observations rather than a readiness verdict. Core then
+builds the exact-lock, expiring probe. An identity result can therefore prove
+authentication and reachability without being mistaken for transcript or
+record compatibility.
+
 This keeps provider credentials and raw host transport outside Core while
 preventing Codex- or Claude-qualified tool names from becoming automation API.
 Host configuration proves only that a route is declared. Connected probes and
@@ -427,12 +435,14 @@ resolution, artifact-fingerprinted locks, effect-free preflight, typed fixture
 capability dispatch, authority-aware context snapshots, exact-scope approvals,
 transactional fixture writes, rollback proof, read-after-write verification,
 claim-scoped evidence, an offline doctor, and contract-enforced aggregation of
-short-lived connected provider probes. The current target deliberately fails
-connected readiness because it has no connected Notion or Otter provider
-translator. The host MCP routes and resumable request/result contract now
-exist, but provider target mapping, tool-schema conformance, connected probe
-production, authority loading, provider-grade checkpoints, live health, host
-judgment, and host conformance remain future proof boundaries.
+short-lived connected provider probes. The current target includes the first
+connected Otter provider mapping, exact transcript-fetch request translation,
+and identity-only probe producer. That probe deliberately leaves transcript
+compatibility unknown, and unobserved response shapes fail closed. Connected
+readiness still fails because Notion has no connected implementation and no
+current private probes are checked in. Observed Otter transcript conformance,
+automatic host dispatch, authority loading, provider-grade checkpoints, live
+health, host judgment, and host conformance remain future proof boundaries.
 
 ### Change unit and completion gate
 

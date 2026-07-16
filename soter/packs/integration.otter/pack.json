@@ -28,7 +28,9 @@
   "artifacts": [
     { "path": "soter/capabilities/meeting.transcript.read.json", "role": "definition" },
     { "path": "soter/providers/provider.integration.otter.fixture.json", "role": "implementation" },
+    { "path": "soter/providers/provider.integration.otter.mcp.json", "role": "implementation" },
     { "path": "soter/integrations/otter/fixture.mjs", "role": "implementation" },
+    { "path": "soter/integrations/otter/mcp.mjs", "role": "implementation" },
     { "path": "soter/fixtures/providers/otter/transcripts.json", "role": "fixture" }
   ],
   "compatibility": {

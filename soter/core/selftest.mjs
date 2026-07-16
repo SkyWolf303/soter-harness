@@ -23,6 +23,11 @@ import {
   prepareHostToolCall
 } from './host-tools.mjs';
 import { fingerprintJson, readJson, writeJson } from './lib/canonical-json.mjs';
+import {
+  completeProviderProbeCall,
+  failProviderProbeCall,
+  prepareProviderProbeCall
+} from './provider-probes.mjs';
 import { verifySoter } from '../kernel/verify.mjs';
 import {
   approveChangeSet,
@@ -39,16 +44,16 @@ function installSelftestConnectedProvider(root, sourceId, targetId) {
   const provider = structuredClone(readJson(sourcePath));
   provider.id = targetId;
   provider.containment = 'connected';
-  const server = provider.pack === 'integration.notion' ? 'notion' : 'otter';
   provider.runtime = {
     engine: 'mcp',
     module: provider.runtime.module,
     prepareExport: 'prepareMcp',
     completeExport: 'completeMcp',
-    server,
-    tools: server === 'notion'
-      ? ['query_data_sources', 'create_pages', 'update_page']
-      : ['fetch']
+    probePrepareExport: 'prepareProbeMcp',
+    probeCompleteExport: 'completeProbeMcp',
+    server: 'notion',
+    tools: ['query_data_sources', 'create_pages', 'update_page'],
+    probeTools: ['query_data_sources']
   };
   provider.fixtures = [];
   provider.limitations = [
@@ -192,15 +197,103 @@ export async function selftest(root) {
         'provider.integration.notion.fixture',
         'provider.integration.notion.connected-selftest'
       ),
-      otter: installSelftestConnectedProvider(
+      otter: readJson(path.join(
         temp,
-        'provider.integration.otter.fixture',
-        'provider.integration.otter.connected-selftest'
-      )
+        'soter/providers/provider.integration.otter.mcp.json'
+      ))
     };
     const lock = resolveConfiguration({ root: temp });
     const lockPath = 'soter/fixtures/meeting-intake/meeting-intake.lock.json';
     writeJson(path.join(temp, lockPath), lock);
+
+    const preparedOtterProbe = await prepareProviderProbeCall({
+      root: temp,
+      lock,
+      providerImplementation: connectedProviders.otter.id,
+      callId: 'probecall.selftest.otter-identity',
+      probeId: 'probe.integration.otter.identity-selftest',
+      at: FIXTURE_TIME
+    });
+    const identityMarker = 'private-identity-selftest-marker';
+    const completedOtterProbe = await completeProviderProbeCall({
+      root: temp,
+      lock,
+      call: preparedOtterProbe.call,
+      response: {
+        structuredContent: {
+          result: identityMarker
+        }
+      },
+      at: FIXTURE_TIME
+    });
+    if (preparedOtterProbe.call.state !== 'requested'
+      || preparedOtterProbe.call.transport.tool !== 'get_user_info'
+      || Object.keys(preparedOtterProbe.call.arguments).length !== 0
+      || completedOtterProbe.call.state !== 'completed'
+      || completedOtterProbe.probe?.reachability.state !== 'passed'
+      || completedOtterProbe.probe?.capabilities[0]?.state !== 'unknown'
+      || JSON.stringify(completedOtterProbe).includes(identityMarker)) {
+      failures.push('Otter identity probe did not preserve safe request scope and honest capability state');
+    }
+    const widenedOtterProbe = await completeProviderProbeCall({
+      root: temp,
+      lock,
+      call: preparedOtterProbe.call,
+      response: { structuredContent: { result: 'synthetic identity' } },
+      at: FIXTURE_TIME,
+      translator: {
+        completeProbeMcp({ plan }) {
+          return {
+            credentials: plan.credentialRefs.map((secretRefId) => ({
+              secretRefId,
+              state: 'passed',
+              details: 'Synthetic credential observation.'
+            })),
+            reachability: {
+              state: 'passed',
+              details: 'Synthetic reachability observation.'
+            },
+            authorities: plan.authorities.map((id) => ({
+              id,
+              state: 'passed',
+              details: 'Synthetic authority observation.'
+            })),
+            capabilities: [
+              ...plan.capabilities.map((id) => ({
+                id,
+                state: 'unknown',
+                method: 'metadata',
+                details: 'Synthetic capability observation.'
+              })),
+              {
+                id: 'crm.records.read',
+                state: 'passed',
+                method: 'metadata',
+                details: 'This observation is deliberately outside the probe plan.'
+              }
+            ],
+            limitations: ['Synthetic widened-scope probe must fail.']
+          };
+        }
+      }
+    });
+    if (widenedOtterProbe.call.state !== 'failed'
+      || widenedOtterProbe.call.error.kind !== 'validation') {
+      failures.push('provider probe translator widened the exact locked observation plan');
+    }
+    const failedOtterProbe = failProviderProbeCall({
+      root: temp,
+      lock,
+      call: preparedOtterProbe.call,
+      error: Object.assign(new Error('Injected probe transport failure.'), {
+        kind: 'unavailable'
+      }),
+      at: FIXTURE_TIME
+    });
+    if (failedOtterProbe.state !== 'failed'
+      || failedOtterProbe.error.kind !== 'unavailable') {
+      failures.push('provider probe host failure was not normalized into the portable error vocabulary');
+    }
 
     const resolutionEvidence = createResolutionEvidence({
       lock,
@@ -329,6 +422,12 @@ export async function selftest(root) {
       || doctor.report.states.verified !== 'unknown'
       || doctor.report.states.healthy !== 'unknown') {
       failures.push('offline doctor overstated or understated its result states');
+    }
+    if (connectedWithoutProbes.report.states.ready !== 'unknown'
+      || connectedWithoutProbes.report.checks.find((item) => {
+        return item.id === 'integrations.implementations-ready';
+      })?.state !== 'passed') {
+      failures.push('connected doctor confused missing probes with missing provider implementations');
     }
     if (connected.report.states.valid !== 'passed'
       || connected.report.states.ready !== 'passed'
@@ -550,6 +649,73 @@ export async function selftest(root) {
       || credentialLeakAttempt.call.arguments !== null
       || credentialLeakAttempt.call.error.kind !== 'validation') {
       failures.push('MCP bridge allowed credential-like material into provider arguments');
+    }
+    const otterReadInput = {
+      meetingId: 'meeting.selftest',
+      recordingUri: 'https://otter.ai/u/conversation_selftest'
+    };
+    const preparedOtterRead = await prepareHostToolCall({
+      root: temp,
+      lock,
+      runId: 'run.meeting-intake.fixture',
+      callId: 'toolcall.selftest.otter-read',
+      capability: 'meeting.transcript.read',
+      authority: 'authority.otter.provider',
+      providerImplementation: connectedProviders.otter.id,
+      input: otterReadInput,
+      at: FIXTURE_TIME
+    });
+    const transcriptMarker = 'private-transcript-response-marker';
+    const completedOtterRead = await completeHostToolCall({
+      root: temp,
+      lock,
+      call: preparedOtterRead.call,
+      input: otterReadInput,
+      response: {
+        structuredContent: {
+          result: {
+            speakers: [
+              { id: 'speaker.selftest', displayName: 'Selftest speaker' }
+            ],
+            segments: [
+              {
+                speakerId: 'speaker.selftest',
+                text: 'Selftest transcript segment.',
+                startSeconds: 0
+              }
+            ],
+            ignoredPrivateField: transcriptMarker
+          }
+        }
+      },
+      at: FIXTURE_TIME
+    });
+    if (preparedOtterRead.call.state !== 'requested'
+      || preparedOtterRead.call.transport.tool !== 'fetch'
+      || preparedOtterRead.call.arguments.id !== 'conversation_selftest'
+      || completedOtterRead.call.state !== 'completed'
+      || completedOtterRead.output?.meetingId !== 'meeting.selftest'
+      || JSON.stringify(completedOtterRead).includes(transcriptMarker)) {
+      failures.push('Otter MCP bridge did not enforce exact fetch translation and minimized normalization');
+    }
+    const invalidOtterRead = await prepareHostToolCall({
+      root: temp,
+      lock,
+      runId: 'run.meeting-intake.fixture',
+      callId: 'toolcall.selftest.otter-invalid-uri',
+      capability: 'meeting.transcript.read',
+      authority: 'authority.otter.provider',
+      providerImplementation: connectedProviders.otter.id,
+      input: {
+        meetingId: 'meeting.selftest',
+        recordingUri: 'https://example.com/not-an-otter-meeting'
+      },
+      at: FIXTURE_TIME
+    });
+    if (invalidOtterRead.call.state !== 'failed'
+      || invalidOtterRead.call.arguments !== null
+      || invalidOtterRead.call.error.kind !== 'validation') {
+      failures.push('Otter MCP bridge emitted a provider request for an invalid recording URI');
     }
     const missingTranscript = await invokeCapability({
       root: temp,
