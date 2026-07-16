@@ -106,6 +106,7 @@ async function selftest(root) {
   let client = await connectClient(root);
   let preparedCapability;
   let requestedRunContents;
+  const privateInputRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'soter-mcp-response-'));
   try {
     const listed = await client.listTools();
     const names = listed.tools.map((tool) => tool.name).sort();
@@ -344,9 +345,19 @@ async function selftest(root) {
       '--at', fixtureTime
     ]);
     const cliIdentity = 'private-cli-identity-marker';
-    const cliResponsePath = '.soter/state/cli-probe-response.json';
+    const rejectedRepoResponse = invokeCli(root, [
+      'probe-complete',
+      '--checkpoint', cliProbe.checkpoint.id,
+      '--response', path.join(root, 'soter/fixtures/meeting-intake/offline.doctor.json'),
+      '--at', fixtureTime
+    ]);
+    if (rejectedRepoResponse.status === 0
+      || !rejectedRepoResponse.stderr.includes('must remain outside the repository')) {
+      throw new Error('CLI accepted a native provider response path inside the repository.');
+    }
+    const cliResponsePath = path.join(privateInputRoot, 'cli-probe-response.json');
     fs.writeFileSync(
-      path.join(root, cliResponsePath),
+      cliResponsePath,
       JSON.stringify({ structuredContent: { result: cliIdentity } }, null, 2) + '\n',
       { mode: 0o600 }
     );
@@ -388,6 +399,7 @@ async function selftest(root) {
     }, 'fingerprint does not match');
   } finally {
     await client.close().catch(() => {});
+    fs.rmSync(privateInputRoot, { recursive: true, force: true });
   }
 }
 

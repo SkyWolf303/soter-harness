@@ -786,8 +786,12 @@ the scope of the readiness claims it was asked to check.
 Probe-call records contain request, response, and normalized-probe
 fingerprints, never provider response bodies. A successful identity request may
 establish authentication and endpoint reachability while leaving a capability
-`unknown`. Capability compatibility becomes `passed` only when the declared
-safe method actually observes enough behavior to support that claim.
+`unknown`. File-based CLI completion accepts native results only from an absolute
+private path whose real target is outside the repository; the caller deletes
+that transient input after completion. A provider response file cannot become
+pack content, desired configuration, runtime evidence, or a committed fixture.
+Capability compatibility becomes `passed` only when the declared safe method
+actually observes enough behavior to support that claim.
 
 ### Binding automations to integrations
 

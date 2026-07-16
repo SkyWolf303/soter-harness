@@ -9,7 +9,7 @@
     "id": "run.meeting-intake.transaction-fixture",
     "version": null
   },
-  "configurationLockFingerprint": "sha256:445ba22c56a829f199b81c87ab2107dcf52a5baaff87c75f464d470be711179e",
+  "configurationLockFingerprint": "sha256:d755ec92aeee6d9da64aaef0d70b2932a8c3d00a18bdc3c6c543f333c9545fd1",
   "dependencies": [
     {
       "id": "kernel.soter",
@@ -133,12 +133,12 @@
     {
       "role": "change-set",
       "id": "changeset.meeting-intake.transaction-fixture",
-      "fingerprint": "sha256:d659e226f73e48df5ce602bb4d1dba3b0b22f603341c965de8b6d15787d2ac7d"
+      "fingerprint": "sha256:33dda4a160f79ea542fe38e62bf0c4bcc5f47425499f2ddfb17f41c727a8d031"
     },
     {
       "role": "approval",
       "id": "approval.meeting-intake.transaction-fixture",
-      "fingerprint": "sha256:6f53d612efb3e24e959b935a8ec1f8d6ae3239c1374002ba439959b0ed3b6943"
+      "fingerprint": "sha256:98e7c2f39a03a7b4fbf667184e738459ffad46494cc8326a647dd1ae1276994a"
     }
   ],
   "effects": [

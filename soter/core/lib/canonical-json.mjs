@@ -67,6 +67,21 @@ export function readJson(file) {
   return JSON.parse(fs.readFileSync(file, 'utf8'));
 }
 
+export function readPrivateJsonInput(root, requestedPath) {
+  if (!path.isAbsolute(requestedPath)) {
+    throw new Error('Private input path must be absolute and outside the repository: ' + requestedPath);
+  }
+  const realRoot = fs.realpathSync(path.resolve(root));
+  const realInput = fs.realpathSync(path.resolve(requestedPath));
+  if (realInput === realRoot || realInput.startsWith(realRoot + path.sep)) {
+    throw new Error('Private input path must remain outside the repository: ' + requestedPath);
+  }
+  if (!fs.statSync(realInput).isFile()) {
+    throw new Error('Private input path is not a file: ' + requestedPath);
+  }
+  return readJson(realInput);
+}
+
 export function writeJson(file, value) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, JSON.stringify(value, null, 2) + '\n');

@@ -276,9 +276,11 @@ returning it. The host executes only `checkpoint.call.transport` with
       --checkpoint checkpoint.probecall.example \
       --response /private/transient/otter-response.json
 
-The response file is private transient input and must remain outside the
-repository. Core never copies its native body into durable state; it stores the
-typed probe plus response fingerprint. The current Otter producer intentionally
+The response file must use an absolute private path outside the repository; the
+CLI rejects relative paths, repository paths, and symlinks that resolve into the
+repository. Delete the transient input after completion. Core never copies its
+native body into durable state; it stores the typed probe plus response
+fingerprint. The current Otter producer intentionally
 reports `meeting.transcript.read=unknown` because `get_user_info` does not read a
 transcript.
 

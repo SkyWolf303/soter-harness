@@ -12,7 +12,12 @@ import {
   createRunPreparationEvidence
 } from './evidence.mjs';
 import { checkMeetingIntakeFixtures, writeMeetingIntakeFixtures } from './fixtures.mjs';
-import { readJson, resolveRepoPath, writeJson } from './lib/canonical-json.mjs';
+import {
+  readJson,
+  readPrivateJsonInput,
+  resolveRepoPath,
+  writeJson
+} from './lib/canonical-json.mjs';
 import { fingerprintLock, resolveConfiguration } from './resolve.mjs';
 import { prepareRunEnvelope } from './run.mjs';
 import {
@@ -230,7 +235,7 @@ async function main() {
   }
 
   if (command === 'probe-complete') {
-    const response = readJson(resolveRepoPath(root, requiredOption(args, '--response')));
+    const response = readPrivateJsonInput(root, requiredOption(args, '--response'));
     const completed = await completeDurableProviderProbeExecution({
       root,
       checkpointId: requiredOption(args, '--checkpoint'),
@@ -302,7 +307,7 @@ async function main() {
     const completed = await completeDurableCapabilityExecution({
       root,
       checkpointId: requiredOption(args, '--checkpoint'),
-      response: readJson(resolveRepoPath(root, requiredOption(args, '--response'))),
+      response: readPrivateJsonInput(root, requiredOption(args, '--response')),
       at: createdAt
     });
     const checkpointOutput = option(args, '--checkpoint-output');
@@ -523,9 +528,9 @@ async function main() {
       + '  transaction --lock PATH [--scenario PATH] [--approve] [--json]\n'
       + '  doctor --lock PATH [--level offline|connected] [--probe PATH ...] [--probe-checkpoint ID ...] [--config PATH] [--json]\n'
       + '  probe-prepare --lock PATH --provider ID [--output PATH] [--json]\n'
-      + '  probe-complete --checkpoint ID --response PATH [--probe-output PATH] [--json]\n'
+      + '  probe-complete --checkpoint ID --response ABSOLUTE_PRIVATE_PATH [--probe-output PATH] [--json]\n'
       + '  capability-prepare --lock PATH --run PATH --capability ID --authority ID --provider ID --input PATH [--output PATH] [--json]\n'
-      + '  capability-complete --checkpoint ID --response PATH [--output PATH] [--json]\n'
+      + '  capability-complete --checkpoint ID --response ABSOLUTE_PRIVATE_PATH [--output PATH] [--json]\n'
       + '  host-fail --checkpoint ID --kind KIND --message TEXT [--output PATH] [--json]\n'
       + '  host-get --checkpoint ID\n'
       + '  host-list [--state requested|completed|failed|blocked]\n'

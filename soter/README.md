@@ -113,8 +113,10 @@ Inspect the structured Otter probe request without calling the provider:
 
 The emitted request is `otter/get_user_info` with empty arguments. Core stores
 it as private runtime state before returning it. A host can resume through
-`probe-complete --checkpoint ID --response PRIVATE_PATH`; the response path is
-transient input, not durable state. Core persists only fingerprints and the
+`probe-complete --checkpoint ID --response ABSOLUTE_PRIVATE_PATH`; the CLI
+requires the file's real path to remain outside the repository, and the caller
+deletes it after completion. The response is transient input, not durable
+state. Core persists only fingerprints and the
 normalized probe, and the probe leaves
 `meeting.transcript.read` unknown until a specifically authorized transcript
 response proves the adapter shape.
