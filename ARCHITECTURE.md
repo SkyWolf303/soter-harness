@@ -499,15 +499,19 @@ each resolution, skips empty reference chains without a provider request,
 requires both checkpoint and current-call identity on resume, and recovers the
 next step after restart without retaining native provider responses.
 Meeting-intake Automation uses that same Core service to prepare a bounded
-connected grounding plan: policy index, exact transcript, exactly one CRM
-meeting matched by recording URI, and only the organizations, projects, and
-tasks referenced through that meeting. Automation validates domain completeness
-and rejects a related read that omits or adds an ID; Core binds every snapshot
-entry to an exact normalized plan output and passed effect, persists the private
-snapshot, updates the same durable run, and pauses before writes. The transition
-deliberately leaves the definition authority declared because policy index rows
-do not contain authoritative page bodies. Participant People IDs are not treated
-as CRM contact page URIs. The current target includes the
+connected grounding plan: policy index, every policy page explicitly selected
+by pack-owned Automation settings, exact transcript, exactly one CRM meeting
+matched by recording URI, and only the organizations, projects, and tasks
+referenced through that meeting. The index and page reads must agree on each
+configured policy's exact URI and title. Automation records the governed
+subjects and applicability reason for every bounded body, validates domain
+completeness, and rejects a related read that omits or adds an ID; Core binds
+every snapshot entry to an exact normalized plan output and passed effect,
+persists the private snapshot, marks the definition authority loaded, updates
+the same durable run, and pauses before writes. Policy prose is grounded context,
+not executable rules: content interpretation and enforcement remain a host
+judgment boundary. Participant People IDs are not treated as CRM contact page
+URIs. The current target includes the
 first connected Otter provider mapping, exact transcript-fetch request
 translation, and identity-only probe producer. It also includes a connected
 Notion provider whose bounded reads and gated mapped-write translators,
@@ -555,8 +559,8 @@ approved, prior, missing, divergent, and failed-read observations and resume
 only when the normalized record proves a safe transition. Synthetic local
 tests prove this Core state machine, not connected
 credentials, provider write conformance, or a live end-to-end write. Observed Otter
-transcript conformance, host-started end-to-end dispatch, policy body loading and
-applicability, participant identity resolution, compensated creates, live
+transcript conformance, host-started end-to-end dispatch, policy interpretation
+and enforcement, participant identity resolution, compensated creates, live
 approval-bound provider writes, live health, host judgment, and host conformance remain
 future proof boundaries. The v2 plan contract is intentionally narrower than a
 general workflow language: arbitrary transforms, branching, parallelism,

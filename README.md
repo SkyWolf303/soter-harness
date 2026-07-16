@@ -155,14 +155,19 @@ The main remaining gaps are structural and behavioral:
   limited to one target so cross-data-source SQL never becomes a hidden Notion
   plan requirement; several targets can now be expressed as explicit ordered
   capability steps. The connected context lifecycle now generates a bounded
-  six-step plan for the policy index, exact transcript, CRM meeting selected by
-  the same recording URI, and only the organization-to-project-to-task chain
-  referenced by that meeting. Absent references skip with no provider call;
-  referenced records must all be returned before Automation can finalize the
-  private snapshot. Core binds every snapshot entry to an exact plan output and
-  passed effect before persisting it and pausing the run. Policy page bodies and
-  participant profiles remain deliberately unloaded; provider People IDs are
-  not assumed to be CRM contact page URIs. Notion readiness now uses a separate
+  plan for the policy index, every policy page explicitly bound to this
+  Automation, the exact transcript, the CRM meeting selected by the same
+  recording URI, and only the organization-to-project-to-task chain referenced
+  by that meeting. The index must identify every configured policy by exact URI
+  and title; each page fetch must return that same identity and a bounded body.
+  The snapshot records why and to which subject each body is applicable, but
+  does not treat prose as executable policy or claim that a host interpreted it
+  correctly. Absent references skip with no provider call; referenced records
+  must all be returned before Automation can finalize the private snapshot. Core
+  binds every snapshot entry to an exact plan output and passed effect before
+  persisting it and pausing the run. Participant profiles remain deliberately
+  unloaded; provider People IDs are not assumed to be CRM contact page URIs.
+  Notion readiness now uses a separate
   15-step private plan that checks identity plus exact schema and one bounded
   mapped query for every configured target. Core persists only minimized step
   observations and assembles a v2 probe after the complete plan passes.
@@ -432,14 +437,18 @@ checkpoint locally:
     node soter/core/cli.mjs context-connected-finalize \
       --checkpoint checkpoint.plan.meeting-intake.connected-context.example
 
-Finalization requires at least one typed policy index row, a non-empty
-speaker-consistent transcript, exactly one CRM meeting whose normalized
-recording URI matches the selected transcript, and every referenced
-organization, project, and task from each non-skipped related step. Provider
-results outside the exact requested type, IDs, filters, or limit fail closed.
-It stores the connected snapshot under `.soter/state/context-snapshots`, updates
-the same durable run, and pauses before writes. The definition authority remains
-`declared`, because an index row is not the authoritative policy page body.
+Finalization requires the policy index to identify every configured applicable
+policy by exact URI and title, every corresponding bounded page body to match
+that identity, a non-empty speaker-consistent transcript, exactly one CRM
+meeting whose normalized recording URI matches the selected transcript, and
+every referenced organization, project, and task from each non-skipped related
+step. Provider results outside the exact requested type, identities, filters, or
+limit fail closed. It stores the connected snapshot under
+`.soter/state/context-snapshots`, records each policy body's configured subjects
+and applicability reason, updates the same durable run, marks the definition
+authority `loaded`, and pauses before writes. Loading proves bounded provenance
+and applicability; interpreting or enforcing the policy prose is a separate
+host-judgment boundary.
 
 `.soter/state` is private user runtime state and is ignored by Git. It may
 contain portable inputs and normalized provider outputs needed to resume work;
@@ -478,9 +487,8 @@ runtime is connected or ready.
 2. Declare meeting intake as the representative vertical slice with its
    outcomes, scenarios, capability needs, authorities, effects, and migration
    mapping.
-3. Finish the connected integration slice: add an exact-lock Notion target
-   schema/read probe; define bounded policy-content and applicability contracts;
-   define participant identity resolution without equating provider People IDs
+3. Finish the connected integration slice: extend exact-lock Notion readiness
+   evidence to policy-page reads; define participant identity resolution without equating provider People IDs
    with CRM contact URIs; validate Otter transcript normalization with an
    explicitly authorized private meeting fixture; and prove host-started Codex
    and Claude dispatch and checkpoint recovery through the configured Core

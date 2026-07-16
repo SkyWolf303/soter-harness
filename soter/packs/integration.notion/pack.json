@@ -20,7 +20,8 @@
     "provides": [
       { "id": "crm.records.read", "version": "1.0.0" },
       { "id": "crm.records.create", "version": "1.0.0" },
-      { "id": "crm.records.update", "version": "1.0.0" }
+      { "id": "crm.records.update", "version": "1.0.0" },
+      { "id": "documents.content.read", "version": "1.0.0" }
     ]
   },
   "authorities": [
@@ -32,6 +33,7 @@
     { "path": "soter/capabilities/crm.records.read.json", "role": "definition" },
     { "path": "soter/capabilities/crm.records.create.json", "role": "definition" },
     { "path": "soter/capabilities/crm.records.update.json", "role": "definition" },
+    { "path": "soter/capabilities/documents.content.read.json", "role": "definition" },
     { "path": "soter/providers/provider.integration.notion.fixture.json", "role": "implementation" },
     { "path": "soter/integrations/notion/fixture.mjs", "role": "implementation" },
     { "path": "soter/integrations/notion/settings.json", "role": "definition" },

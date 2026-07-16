@@ -2475,6 +2475,17 @@ function selftest(root) {
     }
     fs.writeFileSync(configFile, originalConfigText);
 
+    const missingPolicyBindings = JSON.parse(originalConfigText);
+    delete missingPolicyBindings.settings['automation.meeting-intake'].policyBindings;
+    fs.writeFileSync(configFile, JSON.stringify(missingPolicyBindings, null, 2) + '\n');
+    const badAutomationSettings = verifySoter(temp);
+    if (!badAutomationSettings.violations.some((item) => {
+      return item.code === 'SOTER_PACK_SETTINGS_SCHEMA';
+    })) {
+      failures.push('planted missing Automation policy bindings were not detected');
+    }
+    fs.writeFileSync(configFile, originalConfigText);
+
     const hostFile = path.join(temp, 'soter', 'hosts', 'codex', 'adapter.json');
     const originalHostText = fs.readFileSync(hostFile, 'utf8');
     const host = JSON.parse(originalHostText);

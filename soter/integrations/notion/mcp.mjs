@@ -136,9 +136,45 @@ function notionPageId(value) {
   const id = requiredString(value, 'Notion record id');
   const match = id.match(/([a-f0-9]{32}|[a-f0-9-]{36})(?:\?.*)?$/i);
   if (!match) {
-    throw providerError('validation', 'Notion updates require a page URL or UUID record id.');
+    throw providerError('validation', 'Notion page operations require a page URL or UUID record id.');
   }
   return match[1];
+}
+
+function normalizedNotionPageId(value) {
+  return notionPageId(value).replaceAll('-', '').toLowerCase();
+}
+
+function normalizedPageContent(payload, input) {
+  if (payload?.metadata?.type !== 'page') {
+    throw providerError('validation', 'Notion document fetch did not return page metadata.');
+  }
+  const title = requiredString(payload.title, 'Notion document title');
+  const providerUri = requiredString(payload.url, 'Notion document URL');
+  if (title !== input.expectedTitle
+    || normalizedNotionPageId(providerUri) !== normalizedNotionPageId(input.uri)) {
+    throw providerError(
+      'conflict',
+      'Notion document identity or title does not match the exact requested definition.'
+    );
+  }
+  const envelope = requiredString(payload.text, 'Notion document content');
+  const pageStart = envelope.indexOf('<page ');
+  const pageOpenEnd = envelope.indexOf('>', pageStart);
+  const propertiesEnd = envelope.indexOf('</properties>', pageOpenEnd);
+  const pageEnd = envelope.lastIndexOf('</page>');
+  if (pageStart < 0 || pageOpenEnd < pageStart || propertiesEnd < pageOpenEnd
+    || pageEnd < propertiesEnd) {
+    throw providerError(
+      'validation',
+      'Notion document content does not match the observed bounded page envelope.'
+    );
+  }
+  const body = envelope.slice(propertiesEnd + '</properties>'.length, pageEnd).trim();
+  if (!body || body.length > 250000) {
+    throw providerError('validation', 'Notion document body is empty or outside the bounded content limit.');
+  }
+  return { title, providerUri, body };
 }
 
 function selectForType({ definition, target, input, params }) {
@@ -170,6 +206,13 @@ function selectForType({ definition, target, input, params }) {
 }
 
 export function prepareMcp({ capability, input, settings, mappings }) {
+  if (capability === 'documents.content.read') {
+    requiredString(input.expectedTitle, 'Notion expected document title');
+    return {
+      tool: 'fetch',
+      arguments: { id: normalizedNotionPageId(input.uri) }
+    };
+  }
   const mapping = mappingDocument(mappings, capability);
   if (capability === 'crm.records.create') {
     const definition = recordMapping(mapping, input.recordType);
@@ -284,8 +327,26 @@ function assertRequestedRecords(records, input) {
 }
 
 export function completeMcp({ capability, authority, input, response, at, mappings }) {
-  const mapping = mappingDocument(mappings, capability);
   const payload = requiredObject(nativePayload(response), 'Notion query result');
+  if (capability === 'documents.content.read') {
+    const normalized = normalizedPageContent(payload, input);
+    return {
+      document: {
+        uri: input.uri,
+        title: normalized.title,
+        format: 'markdown',
+        body: normalized.body,
+        bodyFingerprint: fingerprintJson(normalized.body)
+      },
+      provenance: {
+        provider: 'notion-mcp',
+        authority,
+        providerUri: normalized.providerUri
+      },
+      observedAt: at
+    };
+  }
+  const mapping = mappingDocument(mappings, capability);
   if (capability === 'crm.records.create') {
     const created = Array.isArray(payload.pages) ? payload.pages[0] : payload;
     const id = created?.url || created?.id;

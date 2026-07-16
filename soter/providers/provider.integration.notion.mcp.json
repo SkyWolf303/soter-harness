@@ -22,7 +22,8 @@
   "capabilities": [
     { "id": "crm.records.read", "version": "1.0.0" },
     { "id": "crm.records.create", "version": "1.0.0" },
-    { "id": "crm.records.update", "version": "1.0.0" }
+    { "id": "crm.records.update", "version": "1.0.0" },
+    { "id": "documents.content.read", "version": "1.0.0" }
   ],
   "authorities": [
     { "role": "definition", "subject": "crm.records" },
@@ -41,7 +42,7 @@
     "Connected readiness uses an explicit private sequence: authenticated identity, exact schema metadata, and one bounded mapped query for each configured target. A zero-row result establishes query and empty-envelope compatibility but not non-null value decoding.",
     "Meeting-intake context can follow only mapped organization, project, and task page URIs observed in prior normalized records. Empty relations skip without a provider call, and related results outside the exact requested type, IDs, filters, or limit fail closed.",
     "Meeting participant values are provider People IDs and are not assumed to identify CRM contact pages; participant expansion requires a separate identity contract.",
-    "Definition records expose mapped row properties only. Policy page bodies require a later bounded context-fetch capability.",
+    "Policy bodies are fetched only by exact configured page identity and expected title; the adapter returns bounded normalized content but does not interpret policy rules.",
     "Native provider responses and connected identity values must remain private and are never persisted by Core."
   ]
 }

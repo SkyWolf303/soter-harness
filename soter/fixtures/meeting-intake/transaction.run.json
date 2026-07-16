@@ -13,9 +13,9 @@
   },
   "configurationLock": {
     "path": "soter/fixtures/meeting-intake/meeting-intake.lock.json",
-    "fingerprint": "sha256:1123ed8dc6b3c9883d1311e6d245a61c804101b1080218b77591201a1ec6da73"
+    "fingerprint": "sha256:aaff2821af23dd5b5a2cdbb5256479d6c76384261ac765d2e22271b1a71c1d5a"
   },
-  "graphFingerprint": "sha256:9ee19106cef9a258ae4b1b8a3e1ffb5f7657746fd30bac4c36ad8a0470dee985",
+  "graphFingerprint": "sha256:88890c8a1ba6c8898b456df87a9844111f7d77805d6d5f8e205817a4c726b113",
   "context": [
     {
       "subject": "crm.records",
@@ -44,7 +44,7 @@
       "uri": "notion://configured-user",
       "declarationFingerprint": "sha256:0567ff10843e26a53e85ffa7d609867226b00615288193983c4e6f9384050032",
       "status": "declared",
-      "provenance": "configuration-lock:sha256:1123ed8dc6b3c9883d1311e6d245a61c804101b1080218b77591201a1ec6da73",
+      "provenance": "configuration-lock:sha256:aaff2821af23dd5b5a2cdbb5256479d6c76384261ac765d2e22271b1a71c1d5a",
       "freshness": "unknown"
     },
     {
@@ -64,7 +64,7 @@
       "uri": "soter-state://runs",
       "declarationFingerprint": "sha256:6f39e99f1ebc86fe11ee09cc7170824ac4c11a6fc88371edb673bd2379dacdc8",
       "status": "declared",
-      "provenance": "configuration-lock:sha256:1123ed8dc6b3c9883d1311e6d245a61c804101b1080218b77591201a1ec6da73",
+      "provenance": "configuration-lock:sha256:aaff2821af23dd5b5a2cdbb5256479d6c76384261ac765d2e22271b1a71c1d5a",
       "freshness": "unknown"
     }
   ],
@@ -109,6 +109,20 @@
         "write"
       ],
       "reason": "Notion is the configured instance authority for bounded CRM record updates."
+    },
+    {
+      "capability": "documents.content.read",
+      "capabilityVersion": "1.0.0",
+      "providerPack": "integration.notion",
+      "providerVersion": "0.1.0",
+      "authorities": [
+        "authority.crm.definition"
+      ],
+      "effects": [
+        "disclosure",
+        "read"
+      ],
+      "reason": "Notion supplies the exact external policy document bodies selected by meeting intake."
     },
     {
       "capability": "meeting.transcript.read",
@@ -164,7 +178,7 @@
       "decision": "approved",
       "scope": {
         "changeSetId": "changeset.meeting-intake.transaction-fixture",
-        "fingerprint": "sha256:6bf1ede40995d535b40c7efb37d68270e5817abcb562880da1e83576e9753394",
+        "fingerprint": "sha256:30af556069ff954398ed95ccbb32a7743601340f47a3a781fdbb0be94be20fba",
         "effects": [
           "write"
         ]
@@ -208,12 +222,12 @@
     {
       "id": "context.meeting-intake.transaction-fixture",
       "type": "context-snapshot",
-      "fingerprint": "sha256:0f3909d2944d632bccb419015061549295b9d8eac4834f09e405e16243c83224"
+      "fingerprint": "sha256:1319485b3b7718f2ba002b10007171ea182654eef91de33417730863f995084a"
     },
     {
       "id": "changeset.meeting-intake.transaction-fixture",
       "type": "change-set",
-      "fingerprint": "sha256:8f84221657902428d0b2f45692e3b6a1041f8e247f2015eb18dd2d85d6c14be6"
+      "fingerprint": "sha256:2c891e1b25bfcf334db484112ca75f86d9560d93602fb5f2263cf2615f3c69e4"
     }
   ],
   "effects": [

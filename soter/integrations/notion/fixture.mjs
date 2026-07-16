@@ -1,6 +1,8 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 
+import { fingerprintJson } from '../../core/lib/canonical-json.mjs';
+
 function providerError(kind, message) {
   const error = new Error(message);
   error.kind = kind;
@@ -22,6 +24,35 @@ function recordId(recordType, deduplicationKey) {
 
 export async function invoke({ capability, input, authority, fixtures, state, at }) {
   const fixture = state || JSON.parse(fs.readFileSync(fixtures[0], 'utf8'));
+  if (capability === 'documents.content.read') {
+    const matches = (fixture.data.documents || []).filter((document) => {
+      return document.uri === input.uri;
+    });
+    if (matches.length !== 1) {
+      throw providerError('not-found', 'Document fixture did not resolve exactly once: ' + input.uri + '.');
+    }
+    const source = matches[0];
+    if (source.title !== input.expectedTitle) {
+      throw providerError(
+        'conflict',
+        'Document fixture title does not match the expected definition identity.'
+      );
+    }
+    if (typeof source.body !== 'string' || !source.body.trim() || source.body.length > 250000) {
+      throw providerError('validation', 'Document fixture body is empty or outside the bounded content limit.');
+    }
+    return {
+      document: {
+        uri: source.uri,
+        title: source.title,
+        format: 'markdown',
+        body: source.body,
+        bodyFingerprint: fingerprintJson(source.body)
+      },
+      provenance: provenance(authority),
+      observedAt: at || fixture.observedAt
+    };
+  }
   if (capability === 'crm.records.read') {
     const requestedTypes = new Set(input.recordTypes);
     const requestedIds = input.ids ? new Set(input.ids) : null;

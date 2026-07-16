@@ -82,6 +82,27 @@ function notionTaskResponse(id, fields, marker = null) {
   };
 }
 
+function notionPageResponse({ uri, title, body, marker = null }) {
+  return {
+    content: [{
+      type: 'text',
+      text: JSON.stringify({
+        metadata: { type: 'page' },
+        title,
+        url: uri,
+        text: 'Here is the result of "view" for the requested page.\n'
+          + '<page url="' + uri + '">\n'
+          + '<ancestor-path></ancestor-path>\n'
+          + '<properties>{"title":' + JSON.stringify(title) + '}</properties>\n'
+          + body + '\n'
+          + '</page>'
+      })
+    }],
+    isError: false,
+    ...(marker ? { privateMarker: marker } : {})
+  };
+}
+
 function createFixtureRoot() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'soter-mcp-'));
   fs.cpSync(path.join(codeRoot, 'soter'), path.join(root, 'soter'), { recursive: true });
@@ -1033,6 +1054,9 @@ async function selftest(root) {
 
     const connectedContextRunPath = 'soter/fixtures/meeting-intake/mcp-connected-context.run.json';
     const connectedContextRun = JSON.parse(fs.readFileSync(path.join(root, runPath), 'utf8'));
+    const connectedContextLock = JSON.parse(fs.readFileSync(path.join(root, lockPath), 'utf8'));
+    const contextPolicyBindings = [...connectedContextLock.settings['automation.meeting-intake'].policyBindings]
+      .sort((left, right) => left.id.localeCompare(right.id, 'en'));
     connectedContextRun.id = 'run.meeting-intake.mcp-connected-context';
     fs.writeFileSync(
       path.join(root, connectedContextRunPath),
@@ -1058,7 +1082,8 @@ async function selftest(root) {
       checkpoint_id: preparedContext.checkpoint.id
     }, 'completed operation plan');
     const contextMarkers = [
-      'private-mcp-context-policy-marker',
+      'private-mcp-context-policy-index-marker',
+      ...contextPolicyBindings.map((_, index) => 'private-mcp-context-policy-body-' + index),
       'private-mcp-context-transcript-marker',
       'private-mcp-context-meeting-marker',
       'private-mcp-context-organization-marker',
@@ -1068,18 +1093,18 @@ async function selftest(root) {
     const mcpOrganizationUri = 'https://app.notion.com/mcp-context-organization';
     const mcpProjectUri = 'https://app.notion.com/mcp-context-project';
     const mcpTaskUri = 'https://app.notion.com/mcp-context-task';
-    const contextTranscript = await call(client, 'soter_complete_operation_plan', {
+    let contextExecution = await call(client, 'soter_complete_operation_plan', {
       checkpoint_id: preparedContext.checkpoint.id,
       call_id: preparedContext.currentCall.id,
       response: {
         content: [{
           type: 'text',
           text: JSON.stringify({
-            results: [{
+            results: contextPolicyBindings.map((binding) => ({
               __soterType: 'policy',
-              __soterId: 'https://app.notion.com/mcp-context-policy',
-              __soterFields: JSON.stringify({ name: 'MCP context policy index' })
-            }],
+              __soterId: binding.documentUri,
+              __soterFields: JSON.stringify({ name: binding.title })
+            })),
             has_more: false
           })
         }],
@@ -1089,17 +1114,41 @@ async function selftest(root) {
     });
     await client.close();
     client = await connectClient(root);
-    const recoveredContext = await call(client, 'soter_get_host_call', {
+    contextExecution = await call(client, 'soter_get_host_call', {
       checkpoint_id: preparedContext.checkpoint.id
     });
-    if (recoveredContext.checkpoint?.currentStepId !== 'step.context-transcript'
-      || recoveredContext.currentCall?.id !== contextTranscript.currentCall.id
-      || recoveredContext.currentCall?.transport?.tool !== 'mcp__otter__fetch') {
-      throw new Error('MCP connected context did not recover its exact transcript source.');
+    if (contextExecution.checkpoint?.currentStepId
+        !== 'step.context-policy.' + contextPolicyBindings[0].id.slice('policy.'.length)
+      || contextExecution.currentCall?.capability?.id !== 'documents.content.read'
+      || contextExecution.currentCall?.transport?.tool !== 'mcp__codex_apps__notion_fetch') {
+      throw new Error('MCP connected context did not recover its exact first policy-body source.');
+    }
+    for (const [index, binding] of contextPolicyBindings.entries()) {
+      if (contextExecution.checkpoint?.currentStepId
+          !== 'step.context-policy.' + binding.id.slice('policy.'.length)
+        || contextExecution.currentCall?.arguments?.id
+          !== binding.documentUri.slice(-32).toLowerCase()) {
+        throw new Error('MCP connected context policy-body call drifted for ' + binding.id + '.');
+      }
+      contextExecution = await call(client, 'soter_complete_operation_plan', {
+        checkpoint_id: preparedContext.checkpoint.id,
+        call_id: contextExecution.currentCall.id,
+        response: notionPageResponse({
+          uri: binding.documentUri,
+          title: binding.title,
+          body: '# ' + binding.title + '\n\nSynthetic applicable MCP policy body ' + index + '.',
+          marker: contextMarkers[index + 1]
+        }),
+        at: '2026-07-15T12:00:10.' + String(index + 1).padStart(3, '0') + 'Z'
+      });
+    }
+    if (contextExecution.checkpoint?.currentStepId !== 'step.context-transcript'
+      || contextExecution.currentCall?.transport?.tool !== 'mcp__otter__fetch') {
+      throw new Error('MCP connected context did not advance to its exact transcript source.');
     }
     const contextMeeting = await call(client, 'soter_complete_operation_plan', {
       checkpoint_id: preparedContext.checkpoint.id,
-      call_id: recoveredContext.currentCall.id,
+      call_id: contextExecution.currentCall.id,
       response: {
         structuredContent: {
           result: {
@@ -1111,7 +1160,7 @@ async function selftest(root) {
             }]
           }
         },
-        privateMarker: contextMarkers[1]
+        privateMarker: contextMarkers[contextPolicyBindings.length + 1]
       },
       at: '2026-07-15T12:00:11.000Z'
     });
@@ -1139,7 +1188,7 @@ async function selftest(root) {
             has_more: false
           }
         },
-        privateMarker: contextMarkers[2]
+        privateMarker: contextMarkers[contextPolicyBindings.length + 2]
       },
       at: '2026-07-15T12:00:12.000Z'
     });
@@ -1152,9 +1201,12 @@ async function selftest(root) {
       || recoveredOrganization.currentCall?.id !== contextOrganization.currentCall.id
       || recoveredOrganization.currentCall?.arguments?.data?.params?.[0]
         !== mcpOrganizationUri
-      || recoveredOrganization.checkpoint.steps[3]
-        ?.bindingResolutions[0]?.sourceOutputFingerprint
-        !== recoveredOrganization.checkpoint.steps[2]?.outputFingerprint) {
+      || recoveredOrganization.checkpoint.steps.find((step) => {
+        return step.id === 'step.context-organizations';
+      })?.bindingResolutions[0]?.sourceOutputFingerprint
+        !== recoveredOrganization.checkpoint.steps.find((step) => {
+          return step.id === 'step.context-meeting-record';
+        })?.outputFingerprint) {
       throw new Error('MCP connected context did not recover its exact bound organization read.');
     }
     const contextProject = await call(client, 'soter_complete_operation_plan', {
@@ -1177,7 +1229,7 @@ async function selftest(root) {
             has_more: false
           }
         },
-        privateMarker: contextMarkers[3]
+        privateMarker: contextMarkers[contextPolicyBindings.length + 3]
       },
       at: '2026-07-15T12:00:13.000Z'
     });
@@ -1201,7 +1253,7 @@ async function selftest(root) {
             has_more: false
           }
         },
-        privateMarker: contextMarkers[4]
+        privateMarker: contextMarkers[contextPolicyBindings.length + 4]
       },
       at: '2026-07-15T12:00:14.000Z'
     });
@@ -1224,7 +1276,7 @@ async function selftest(root) {
             has_more: false
           }
         },
-        privateMarker: contextMarkers[5]
+        privateMarker: contextMarkers[contextPolicyBindings.length + 5]
       },
       at: '2026-07-15T12:00:15.000Z'
     });
@@ -1242,17 +1294,43 @@ async function selftest(root) {
       finalizedContext.runPath
     ].map((file) => fs.readFileSync(path.join(root, file), 'utf8')).join('\n');
     if (contextCompleted.checkpoint?.state !== 'completed'
-      || contextCompleted.checkpoint?.result?.stepResults?.length !== 6
+      || contextCompleted.checkpoint?.result?.stepResults?.length !== 9
       || contextProject.checkpoint?.currentStepId !== 'step.context-projects'
       || contextProject.currentCall?.arguments?.data?.params?.[0] !== mcpProjectUri
       || contextTask.checkpoint?.currentStepId !== 'step.context-tasks'
       || contextTask.currentCall?.arguments?.data?.params?.[0] !== mcpTaskUri
       || finalizedContext.snapshot?.containment !== 'connected'
-      || finalizedContext.snapshot?.entries?.length !== 6
+      || finalizedContext.snapshot?.entries?.length !== 9
+      || finalizedContext.snapshot?.entries?.filter((entry) => {
+        return entry.applicability?.state === 'applicable';
+      }).length !== contextPolicyBindings.length
+      || finalizedContext.run?.context
+        ?.find((entry) => entry.authority === 'authority.crm.definition')?.status !== 'loaded'
       || finalizedContext.run?.lifecycleState !== 'paused'
       || cliFinalizedContext.snapshotPath !== finalizedContext.snapshotPath
       || contextMarkers.some((marker) => contextDurableContents.includes(marker))) {
-      throw new Error('MCP and CLI connected-context projections drifted or persisted a raw response.');
+      throw new Error(
+        'MCP and CLI connected-context projections drifted or persisted a raw response: '
+          + JSON.stringify({
+            checkpointState: contextCompleted.checkpoint?.state,
+            stepResults: contextCompleted.checkpoint?.result?.stepResults?.length,
+            projectStep: contextProject.checkpoint?.currentStepId,
+            projectId: contextProject.currentCall?.arguments?.data?.params?.[0],
+            taskStep: contextTask.checkpoint?.currentStepId,
+            taskId: contextTask.currentCall?.arguments?.data?.params?.[0],
+            containment: finalizedContext.snapshot?.containment,
+            entries: finalizedContext.snapshot?.entries?.length,
+            applicableEntries: finalizedContext.snapshot?.entries?.filter((entry) => {
+              return entry.applicability?.state === 'applicable';
+            }).length,
+            definitionAuthority: finalizedContext.run?.context
+              ?.find((entry) => entry.authority === 'authority.crm.definition'),
+            lifecycleState: finalizedContext.run?.lifecycleState,
+            cliSnapshotPath: cliFinalizedContext.snapshotPath,
+            mcpSnapshotPath: finalizedContext.snapshotPath,
+            persistedMarkers: contextMarkers.filter((marker) => contextDurableContents.includes(marker))
+          })
+      );
     }
     const cliContextRunPath = 'soter/fixtures/meeting-intake/cli-connected-context.run.json';
     const cliContextRun = JSON.parse(fs.readFileSync(path.join(root, runPath), 'utf8'));

@@ -66,6 +66,23 @@
         "recordingUri": "otter://fixture/meeting.fixture-001"
       }
     }
+    ],
+    "documents": [
+      {
+        "uri": "https://app.notion.com/39ed79b5de3881dbb40dddf827bd6373",
+        "title": "Docs",
+        "body": "# Docs\n\nMeeting summaries are grounded documents. Preserve the source meeting link and do not present unsupported claims as decisions."
+      },
+      {
+        "uri": "https://app.notion.com/39ed79b5de388105b507f11ad35d2acd",
+        "title": "Meetings",
+        "body": "# Meetings\n\nA meeting record identifies its canonical recording. Derived outcomes must remain attributable to that source meeting."
+      },
+      {
+        "uri": "https://app.notion.com/39dd79b5de388178b804fd5cf8e9eaa3",
+        "title": "Tasks",
+        "body": "# Tasks\n\nGround tasks in an attributable source, resolve existing overlap before creation, and never assign an external participant as an internal owner."
+      }
     ]
   }
 }

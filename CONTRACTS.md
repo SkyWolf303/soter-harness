@@ -957,18 +957,23 @@ approval.
 Meeting intake uses the operation-plan service as its connected context
 transport; it does not introduce a second provider execution path. Automation
 derives the selected connected provider implementations and authorities from
-the exact lock, then generates an `operation-plan/v2` with three fixed sources
-followed by three reference-bound sources:
+the exact lock, then generates an `operation-plan/v2` with a configured set of
+fixed sources followed by three reference-bound sources:
 
 1. A bounded CRM policy index read under the definition authority.
-2. The exact transcript selected by meeting ID and canonical recording URI.
-3. A CRM meeting read filtered by that same recording URI with a limit of two,
+2. One exact `documents.content.read` for every policy binding selected by the
+   Automation pack settings. Each binding declares a stable policy ID, governed
+   subjects, exact document URI and title, and an applicability reason. Policy
+   IDs and document URIs are unique; several policies may govern the same
+   subject so internal and external rules can be grounded together.
+3. The exact transcript selected by meeting ID and canonical recording URI.
+4. A CRM meeting read filtered by that same recording URI with a limit of two,
    so zero matches and duplicate matches remain distinguishable.
-4. Only the organization record URIs returned by that meeting, or a skipped
+5. Only the organization record URIs returned by that meeting, or a skipped
    step when the meeting has no organization relations.
-5. Only the project record URIs returned by those organizations, or a skipped
+6. Only the project record URIs returned by those organizations, or a skipped
    step when no project relations were observed.
-6. Only the task record URIs returned by those projects, or a skipped step when
+7. Only the task record URIs returned by those projects, or a skipped step when
    no task relations were observed.
 
 The plan is preflighted and checkpointed like any other operation plan. The
@@ -977,15 +982,18 @@ contract. A process restart does not change which source is current or which
 host-native tool and arguments are allowed.
 
 Context finalization is a local Automation transition backed by a Core commit
-and accepts only the completed exact plan. Automation requires at least one
-typed policy index row, a non-empty transcript whose segments reference known
-speakers, and exactly one typed CRM meeting whose normalized recording URI
-equals the transcript request. Every non-skipped related step must return every
-and only the referenced record IDs of its expected CRM type. Provider query
-filtering alone is not accepted as proof of identity, and a referenced record
-that is missing from the normalized result prevents finalization. Missing,
-empty, duplicate, mismatched, stale-lock, wrong-host, failed, blocked, or
-incomplete required sources fail before a context snapshot is written.
+and accepts only the completed exact plan. Automation requires the typed policy
+index to identify each configured policy exactly once by URI and title, and each
+page result to return that same identity, a non-empty bounded Markdown body, and
+its recomputed body fingerprint. It also requires a non-empty transcript whose
+segments reference known speakers and exactly one typed CRM meeting whose
+normalized recording URI equals the transcript request. Every non-skipped
+related step must return every and only the referenced record IDs of its expected
+CRM type. Provider query filtering alone is not accepted as proof of identity,
+and a referenced record that is missing from the normalized result prevents
+finalization. Missing, empty, duplicate, mismatched, stale-lock, wrong-host,
+failed, blocked, or incomplete required sources fail before a context snapshot
+is written.
 
 Core requires every entry in the resulting `context-snapshot/v1` to match
 exactly one normalized completed-plan output, its subject and role to match the
@@ -993,18 +1001,21 @@ declared run authority, and its effect set to match all passed plan effects
 before writing private restricted runtime state and synchronizing the run.
 Repeating finalization with the same completed plan is idempotent; a conflicting
 snapshot or run output fails closed. The run records the snapshot fingerprint,
-marks the completed CRM instance and transcript context sources loaded for this
-snapshot, and pauses before writes. Skipped relationship steps contribute no
-snapshot entry or effect. The CRM definition authority remains `declared`: a
-policy row index proves neither policy page content nor applicable policy
-selection.
+marks the completed CRM definition, CRM instance, and transcript context sources
+loaded for this snapshot, and pauses before writes. Policy snapshot entries carry
+machine-readable `applicability` with the configured subjects and reason.
+Skipped relationship steps contribute no snapshot entry or effect. The loaded
+definition authority proves exact configured selection, normalized page content,
+and provenance; it does not prove that policy prose was correctly interpreted or
+enforced.
 
 This snapshot is bounded grounding, not complete meeting-intake context. It
-loads the selected meeting and its observed organization-to-project-to-task
-chain, but not policy page bodies or participant profiles. Meeting participant
+loads only the explicitly bound policy pages, the selected meeting, and its
+observed organization-to-project-to-task chain; it does not load participant
+profiles or infer additional policies from the workspace. Meeting participant
 identifiers are provider People IDs and are not assumed to be CRM contact page
-URIs. Those remaining expansions require their own identity, content,
-applicability, authority, and disclosure contracts. A private connected
+URIs. Policy interpretation and participant expansion require their own
+judgment, identity, authority, and disclosure contracts. A private connected
 snapshot is not a provider probe, checked-in evidence, readiness result,
 live-health result, or proof that a host autonomously executed the plan.
 

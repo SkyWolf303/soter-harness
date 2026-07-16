@@ -146,6 +146,51 @@ function notionUpdateResponse(id, privateMarker = null) {
   };
 }
 
+function notionPageResponse({ uri, title, body, privateMarker = null }) {
+  return {
+    content: [{
+      type: 'text',
+      text: JSON.stringify({
+        metadata: { type: 'page' },
+        title,
+        url: uri,
+        text: 'Here is the result of "view" for the requested page.\n'
+          + '<page url="' + uri + '">\n'
+          + '<ancestor-path></ancestor-path>\n'
+          + '<properties>{"title":' + JSON.stringify(title) + '}</properties>\n'
+          + body + '\n'
+          + '</page>'
+      })
+    }],
+    isError: false,
+    ...(privateMarker ? { privateMarker } : {})
+  };
+}
+
+async function completeContextPolicyBodies({ root, execution, bindings, atSecond, markerPrefix }) {
+  let current = execution;
+  const markers = [];
+  for (const [index, binding] of [...bindings]
+    .sort((left, right) => left.id.localeCompare(right.id, 'en')).entries()) {
+    const marker = markerPrefix ? markerPrefix + index : null;
+    if (marker) markers.push(marker);
+    current = await completeDurableOperationPlanExecution({
+      root,
+      checkpointId: current.checkpoint.id,
+      callId: current.currentCall.id,
+      response: notionPageResponse({
+        uri: binding.documentUri,
+        title: binding.title,
+        body: '# ' + binding.title + '\n\nSynthetic applicable policy body ' + index + '.',
+        privateMarker: marker
+      }),
+      at: atSecond + '.' + String(index + 1).padStart(3, '0') + 'Z',
+      expectedHost: 'codex'
+    });
+  }
+  return { execution: current, markers };
+}
+
 function copyExternalPackArtifacts(sourceRoot, targetRoot) {
   const packDir = path.join(sourceRoot, 'soter', 'packs');
   for (const entry of fs.readdirSync(packDir, { withFileTypes: true })) {
@@ -230,6 +275,12 @@ function selftestProviderProbes(lock, providers) {
           state: 'passed',
           method: 'read-only',
           details: 'A schema-compatible read-only response was observed.'
+        },
+        {
+          id: 'documents.content.read',
+          state: 'passed',
+          method: 'read-only',
+          details: 'One exact title-bound document body normalized successfully.'
         },
         {
           id: 'crm.records.create',
@@ -1977,7 +2028,11 @@ export async function selftest(root) {
       expectedHost: 'codex'
     });
     const forwardBoundPlan = structuredClone(preparedConnectedContext.checkpoint.plan);
-    forwardBoundPlan.steps[3].inputBindings[0].sourceStepId = 'step.context-tasks';
+    const connectedOrganizationsIndex = forwardBoundPlan.steps.findIndex((step) => {
+      return step.id === 'step.context-organizations';
+    });
+    forwardBoundPlan.steps[connectedOrganizationsIndex]
+      .inputBindings[0].sourceStepId = 'step.context-tasks';
     let forwardBindingRejected = false;
     try {
       assertOperationPlanDocument(temp, forwardBoundPlan);
@@ -1985,7 +2040,8 @@ export async function selftest(root) {
       forwardBindingRejected = error.message.includes('earlier step');
     }
     const overwritingBoundPlan = structuredClone(preparedConnectedContext.checkpoint.plan);
-    overwritingBoundPlan.steps[3].input.ids = ['https://app.notion.com/fixed-broad-id'];
+    overwritingBoundPlan.steps[connectedOrganizationsIndex]
+      .input.ids = ['https://app.notion.com/fixed-broad-id'];
     let bindingOverwriteRejected = false;
     try {
       assertOperationPlanDocument(temp, overwritingBoundPlan);
@@ -1993,7 +2049,7 @@ export async function selftest(root) {
       bindingOverwriteRejected = error.message.includes('cannot overwrite');
     }
     const overlappingBoundPlan = structuredClone(preparedConnectedContext.checkpoint.plan);
-    overlappingBoundPlan.steps[3].inputBindings.push({
+    overlappingBoundPlan.steps[connectedOrganizationsIndex].inputBindings.push({
       id: 'binding.context-overlapping-organization-uris',
       sourceStepId: 'step.context-meeting-record',
       sourcePath: ['records', '*', 'fields', 'organizationUris'],
@@ -2018,21 +2074,22 @@ export async function selftest(root) {
       incompleteContextRejected = error.message.includes('completed operation plan');
     }
     const contextPolicyMarker = 'raw-connected-context-policy-marker';
+    const contextPolicyBindings = lock.settings['automation.meeting-intake'].policyBindings;
     const contextPolicyResponse = {
       content: [{
         type: 'text',
         text: JSON.stringify({
-          results: [{
+          results: contextPolicyBindings.map((binding) => ({
             __soterType: 'policy',
-            __soterId: 'https://app.notion.com/context-policy-selftest',
-            __soterFields: JSON.stringify({ name: 'Meeting intake policy index' })
-          }],
+            __soterId: binding.documentUri,
+            __soterFields: JSON.stringify({ name: binding.title })
+          })),
           has_more: false
         })
       }],
       privateMarker: contextPolicyMarker
     };
-    const connectedContextTranscript = await completeDurableOperationPlanExecution({
+    let connectedContextPolicy = await completeDurableOperationPlanExecution({
       root: temp,
       checkpointId: preparedConnectedContext.checkpoint.id,
       callId: preparedConnectedContext.currentCall.id,
@@ -2040,6 +2097,26 @@ export async function selftest(root) {
       at: '2026-07-15T12:00:05.000Z',
       expectedHost: 'codex'
     });
+    const contextPolicyBodyMarkers = [];
+    for (const [index, binding] of [...contextPolicyBindings]
+      .sort((left, right) => left.id.localeCompare(right.id, 'en')).entries()) {
+      const marker = 'raw-connected-context-policy-body-marker-' + index;
+      contextPolicyBodyMarkers.push(marker);
+      connectedContextPolicy = await completeDurableOperationPlanExecution({
+        root: temp,
+        checkpointId: preparedConnectedContext.checkpoint.id,
+        callId: connectedContextPolicy.currentCall.id,
+        response: notionPageResponse({
+          uri: binding.documentUri,
+          title: binding.title,
+          body: '# ' + binding.title + '\n\nSynthetic applicable policy body ' + index + '.',
+          privateMarker: marker
+        }),
+        at: '2026-07-15T12:00:05.' + String(index + 1).padStart(3, '0') + 'Z',
+        expectedHost: 'codex'
+      });
+    }
+    const connectedContextTranscript = connectedContextPolicy;
     const contextTranscriptMarker = 'raw-connected-context-transcript-marker';
     const contextTranscriptResponse = {
       structuredContent: {
@@ -2195,6 +2272,15 @@ export async function selftest(root) {
     const connectedAuthorities = new Map(
       finalizedConnectedContext.run.context.map((item) => [item.authority, item.status])
     );
+    const organizationRuntimeStep = connectedContextOrganization.checkpoint.steps.find((step) => {
+      return step.id === 'step.context-organizations';
+    });
+    const meetingRuntimeStep = connectedContextOrganization.checkpoint.steps.find((step) => {
+      return step.id === 'step.context-meeting-record';
+    });
+    const connectedPolicyEntries = finalizedConnectedContext.snapshot.entries.filter((entry) => {
+      return entry.applicability?.state === 'applicable';
+    });
     if (!incompleteContextRejected
       || !forwardBindingRejected
       || !bindingOverwriteRejected
@@ -2205,6 +2291,10 @@ export async function selftest(root) {
       || preparedConnectedContext.currentCall?.arguments?.data?.data_source_urls?.length !== 1
       || connectedContextTranscript.currentCall?.capability.id !== 'meeting.transcript.read'
       || connectedContextTranscript.currentCall?.arguments?.id !== 'context-selftest'
+      || connectedContextTranscript.checkpoint.steps
+        .filter((step) => step.id.startsWith('step.context-policy.'))
+        .some((step) => step.state !== 'completed'
+          || step.call?.capability.id !== 'documents.content.read')
       || connectedContextMeeting.currentCall?.capability.id !== 'crm.records.read'
       || connectedContextMeeting.currentCall?.arguments?.data?.params?.[0]
         !== connectedContextRecording
@@ -2212,9 +2302,8 @@ export async function selftest(root) {
         !== 'step.context-organizations'
       || connectedContextOrganization.currentCall?.arguments?.data?.params?.[0]
         !== contextOrganizationUri
-      || connectedContextOrganization.checkpoint.steps[3]
-        ?.bindingResolutions[0]?.sourceOutputFingerprint
-        !== connectedContextOrganization.checkpoint.steps[2]?.outputFingerprint
+      || organizationRuntimeStep?.bindingResolutions[0]?.sourceOutputFingerprint
+        !== meetingRuntimeStep?.outputFingerprint
       || connectedContextProject.checkpoint.currentStepId !== 'step.context-projects'
       || connectedContextProject.currentCall?.arguments?.data?.params?.[0]
         !== contextProjectUri
@@ -2222,11 +2311,18 @@ export async function selftest(root) {
       || connectedContextTask.currentCall?.arguments?.data?.params?.[0]
         !== contextTaskUri
       || completedConnectedContext.checkpoint.state !== 'completed'
-      || completedConnectedContext.checkpoint.result?.stepResults?.length !== 6
+      || completedConnectedContext.checkpoint.result?.stepResults?.length !== 9
       || finalizedConnectedContext.snapshot.containment !== 'connected'
-      || finalizedConnectedContext.snapshot.entries.length !== 6
+      || finalizedConnectedContext.snapshot.entries.length !== 9
+      || connectedPolicyEntries.length !== 3
+      || connectedPolicyEntries.some((entry) => {
+        return entry.role !== 'definition'
+          || entry.capability !== 'documents.content.read'
+          || entry.applicability.subjects.length !== 1
+          || !entry.value.document.bodyFingerprint.startsWith('sha256:');
+      })
       || finalizedConnectedContext.run.lifecycleState !== 'paused'
-      || connectedAuthorities.get('authority.crm.definition') !== 'declared'
+      || connectedAuthorities.get('authority.crm.definition') !== 'loaded'
       || connectedAuthorities.get('authority.crm.instance') !== 'loaded'
       || connectedAuthorities.get('authority.otter.provider') !== 'loaded'
       || connectedAuthorities.get('authority.notion.provider') !== 'declared'
@@ -2241,7 +2337,8 @@ export async function selftest(root) {
         contextMeetingMarker,
         contextOrganizationMarker,
         contextProjectMarker,
-        contextTaskMarker
+        contextTaskMarker,
+        ...contextPolicyBodyMarkers
       ]
         .some((marker) => connectedDurableContents.includes(marker))) {
       failures.push('connected context did not preserve bounded sources, exact identities, private durable recovery, and honest authority state');
@@ -2296,7 +2393,7 @@ export async function selftest(root) {
       at: '2026-07-15T12:00:08.000Z',
       expectedHost: 'codex'
     });
-    const mismatchTranscriptCall = await completeDurableOperationPlanExecution({
+    let mismatchTranscriptCall = await completeDurableOperationPlanExecution({
       root: temp,
       checkpointId: preparedMismatchContext.checkpoint.id,
       callId: preparedMismatchContext.currentCall.id,
@@ -2304,6 +2401,12 @@ export async function selftest(root) {
       at: '2026-07-15T12:00:09.000Z',
       expectedHost: 'codex'
     });
+    mismatchTranscriptCall = (await completeContextPolicyBodies({
+      root: temp,
+      execution: mismatchTranscriptCall,
+      bindings: contextPolicyBindings,
+      atSecond: '2026-07-15T12:00:09'
+    })).execution;
     const mismatchMeetingCall = await completeDurableOperationPlanExecution({
       root: temp,
       checkpointId: preparedMismatchContext.checkpoint.id,
@@ -2347,11 +2450,18 @@ export async function selftest(root) {
     } catch (error) {
       mismatchedMeetingRejected = error.message.includes('completed operation plan');
     }
+    const mismatchMeetingStep = completedMismatchContext.checkpoint.steps.find((step) => {
+      return step.id === 'step.context-meeting-record';
+    });
+    const mismatchRelatedSteps = completedMismatchContext.checkpoint.steps.filter((step) => {
+      return ['step.context-organizations', 'step.context-projects', 'step.context-tasks']
+        .includes(step.id);
+    });
     if (!mismatchedMeetingRejected
       || completedMismatchContext.checkpoint.state !== 'failed'
       || completedMismatchContext.currentCall !== null
-      || completedMismatchContext.checkpoint.steps[2]?.state !== 'failed'
-      || completedMismatchContext.checkpoint.steps.slice(3)
+      || mismatchMeetingStep?.state !== 'failed'
+      || mismatchRelatedSteps
         .some((step) => step.state !== 'pending' || step.call !== null)
       || fs.existsSync(path.join(
         temp,
@@ -2373,7 +2483,7 @@ export async function selftest(root) {
       at: '2026-07-15T12:00:12.000Z',
       expectedHost: 'codex'
     });
-    const emptyContextTranscript = await completeDurableOperationPlanExecution({
+    let emptyContextTranscript = await completeDurableOperationPlanExecution({
       root: temp,
       checkpointId: preparedEmptyContext.checkpoint.id,
       callId: preparedEmptyContext.currentCall.id,
@@ -2381,6 +2491,12 @@ export async function selftest(root) {
       at: '2026-07-15T12:00:13.000Z',
       expectedHost: 'codex'
     });
+    emptyContextTranscript = (await completeContextPolicyBodies({
+      root: temp,
+      execution: emptyContextTranscript,
+      bindings: contextPolicyBindings,
+      atSecond: '2026-07-15T12:00:13'
+    })).execution;
     const emptyContextMeeting = await completeDurableOperationPlanExecution({
       root: temp,
       checkpointId: preparedEmptyContext.checkpoint.id,
@@ -2419,14 +2535,18 @@ export async function selftest(root) {
       checkpointId: preparedEmptyContext.checkpoint.id,
       expectedHost: 'codex'
     });
+    const emptyRelatedSteps = completedEmptyContext.checkpoint.steps.filter((step) => {
+      return ['step.context-organizations', 'step.context-projects', 'step.context-tasks']
+        .includes(step.id);
+    });
     if (completedEmptyContext.checkpoint.state !== 'completed'
       || completedEmptyContext.currentCall !== null
-      || completedEmptyContext.checkpoint.steps.slice(3)
+      || emptyRelatedSteps
         .some((step) => step.state !== 'skipped'
           || step.call !== null
           || step.bindingResolutions[0]?.state !== 'empty')
-      || finalizedEmptyContext.snapshot.entries.length !== 3
-      || finalizedEmptyContext.snapshot.effectIds.length !== 3) {
+      || finalizedEmptyContext.snapshot.entries.length !== 6
+      || finalizedEmptyContext.snapshot.effectIds.length !== 6) {
       failures.push('empty output bindings emitted a broad provider read or produced false related context');
     }
     const missingRelationRunPath = 'soter/fixtures/meeting-intake/missing-relation-selftest.run.json';
@@ -2444,7 +2564,7 @@ export async function selftest(root) {
       at: '2026-07-15T12:00:16.000Z',
       expectedHost: 'codex'
     });
-    const missingRelationTranscript = await completeDurableOperationPlanExecution({
+    let missingRelationTranscript = await completeDurableOperationPlanExecution({
       root: temp,
       checkpointId: preparedMissingRelation.checkpoint.id,
       callId: preparedMissingRelation.currentCall.id,
@@ -2452,6 +2572,12 @@ export async function selftest(root) {
       at: '2026-07-15T12:00:17.000Z',
       expectedHost: 'codex'
     });
+    missingRelationTranscript = (await completeContextPolicyBodies({
+      root: temp,
+      execution: missingRelationTranscript,
+      bindings: contextPolicyBindings,
+      atSecond: '2026-07-15T12:00:17'
+    })).execution;
     const missingRelationMeeting = await completeDurableOperationPlanExecution({
       root: temp,
       checkpointId: preparedMissingRelation.checkpoint.id,
@@ -2505,11 +2631,14 @@ export async function selftest(root) {
     } catch (error) {
       missingRelationRejected = error.message.includes('every and only the records referenced');
     }
+    const missingTailSteps = completedMissingRelation.checkpoint.steps.filter((step) => {
+      return ['step.context-projects', 'step.context-tasks'].includes(step.id);
+    });
     if (!missingRelationRejected
       || missingRelationOrganization.currentCall?.arguments?.data?.params?.[0]
         !== missingOrganizationUri
       || completedMissingRelation.checkpoint.state !== 'completed'
-      || completedMissingRelation.checkpoint.steps.slice(4)
+      || missingTailSteps
         .some((step) => step.state !== 'skipped' || step.call !== null)
       || fs.existsSync(path.join(
         temp,
@@ -2669,6 +2798,83 @@ export async function selftest(root) {
       || rejectedMultiTargetRead.call.transport.tool !== null
       || rejectedMultiTargetRead.call.error?.kind !== 'validation') {
       failures.push('Notion read bridge silently relied on plan-gated cross-data-source SQL');
+    }
+    const definitionBinding = contextPolicyBindings[0];
+    const definitionInput = {
+      uri: definitionBinding.documentUri,
+      expectedTitle: definitionBinding.title
+    };
+    const preparedDefinitionRead = await prepareHostToolCall({
+      root: temp,
+      lock,
+      runId: 'run.meeting-intake.fixture',
+      callId: 'toolcall.selftest.notion-definition-read',
+      capability: 'documents.content.read',
+      authority: 'authority.crm.definition',
+      providerImplementation: connectedProviders.notion.id,
+      input: definitionInput,
+      at: FIXTURE_TIME
+    });
+    const definitionRawMarker = 'private-definition-read-marker';
+    const completedDefinitionRead = await completeHostToolCall({
+      root: temp,
+      lock,
+      call: preparedDefinitionRead.call,
+      input: definitionInput,
+      response: notionPageResponse({
+        uri: definitionBinding.documentUri,
+        title: definitionBinding.title,
+        body: '# ' + definitionBinding.title + '\n\nExact policy body.',
+        privateMarker: definitionRawMarker
+      }),
+      at: FIXTURE_TIME
+    });
+    const preparedMismatchedDefinition = await prepareHostToolCall({
+      root: temp,
+      lock,
+      runId: 'run.meeting-intake.fixture',
+      callId: 'toolcall.selftest.notion-definition-mismatch',
+      capability: 'documents.content.read',
+      authority: 'authority.crm.definition',
+      providerImplementation: connectedProviders.notion.id,
+      input: definitionInput,
+      at: FIXTURE_TIME
+    });
+    const mismatchedDefinition = await completeHostToolCall({
+      root: temp,
+      lock,
+      call: preparedMismatchedDefinition.call,
+      input: definitionInput,
+      response: notionPageResponse({
+        uri: definitionBinding.documentUri,
+        title: 'Unexpected policy title',
+        body: '# Unexpected\n\nWrong policy identity.'
+      }),
+      at: FIXTURE_TIME
+    });
+    const fixtureDefinitionRead = await invokeCapability({
+      root: temp,
+      lock,
+      capability: 'documents.content.read',
+      authority: 'authority.crm.definition',
+      containment: 'fixture',
+      input: definitionInput,
+      effectId: 'effect.meeting-intake.definition-read.fixture',
+      at: FIXTURE_TIME
+    });
+    if (preparedDefinitionRead.call.transport.operation !== 'fetch'
+      || preparedDefinitionRead.call.transport.tool !== 'mcp__codex_apps__notion_fetch'
+      || preparedDefinitionRead.call.arguments.id
+        !== definitionBinding.documentUri.slice(-32)
+      || completedDefinitionRead.call.state !== 'completed'
+      || completedDefinitionRead.output?.document.uri !== definitionBinding.documentUri
+      || !completedDefinitionRead.output?.document.bodyFingerprint?.startsWith('sha256:')
+      || JSON.stringify(completedDefinitionRead).includes(definitionRawMarker)
+      || mismatchedDefinition.call.state !== 'failed'
+      || mismatchedDefinition.call.error?.kind !== 'conflict'
+      || fixtureDefinitionRead.invocation.state !== 'passed'
+      || fixtureDefinitionRead.output?.document.title !== definitionBinding.title) {
+      failures.push('document definition read did not preserve exact identity, bounded normalization, fixture parity, and mismatch rejection');
     }
     const blockedHostWrite = await prepareHostToolCall({
       root: temp,
@@ -2928,7 +3134,7 @@ export async function selftest(root) {
     return false;
   }
   process.stdout.write(
-    'CORE SELFTEST PASS: deterministic lock, typed fixture reads/writes, exact-scope approval, deduplication, expected-version conflicts, rollback, read-after-write verification, resumable fixed and bound sequential operation plans, approval-bound connected update transactions with reverse compensation and read-only ambiguity reconciliation, bounded connected context finalization, resumable MCP host dispatch, exact-lock single and multi-step provider probes, schema drift rejection, connected readiness, expiry, honest states, and stale-lock detection.\n'
+    'CORE SELFTEST PASS: deterministic lock, typed fixture reads/writes, exact-scope approval, deduplication, expected-version conflicts, rollback, read-after-write verification, resumable fixed and bound sequential operation plans, approval-bound connected update transactions with reverse compensation and read-only ambiguity reconciliation, bounded connected context finalization with exact applicable policy bodies, resumable MCP host dispatch, exact-lock single and multi-step provider probes, schema drift rejection, connected readiness, expiry, honest states, and stale-lock detection.\n'
   );
   return true;
 }

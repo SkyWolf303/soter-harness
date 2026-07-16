@@ -83,13 +83,16 @@ time and resuming by checkpoint plus call ID. Plan v1 retains fixed inputs;
 plan v2 deterministically binds unique string-list references from earlier
 normalized outputs, fingerprints the resolution, and skips empty relations
 without a provider request. Meeting-intake Automation uses v2 for a bounded
-policy index read, exact transcript, CRM meeting matched by recording URI, and
+policy index read, every policy page explicitly selected in its pack-owned
+settings, the exact transcript, the CRM meeting matched by recording URI, and
 only the organizations, projects, and tasks referenced through that meeting.
-It requires every referenced related ID to be returned before finalizing, then
-asks Core to persist a private snapshot and pause the same run. It does not
-claim policy page bodies or participant profiles are loaded. Core mechanically
-binds every snapshot entry to exactly one normalized plan output and passed
-  effect before persisting it. The Notion provider returns deterministic
+It requires exact policy URI/title agreement and every referenced related ID to
+be returned before finalizing, then asks Core to persist a private snapshot and
+pause the same run. Each policy entry records its configured subjects and
+applicability reason; this does not claim the prose was interpreted or enforced.
+Participant profiles remain unloaded. Core mechanically binds every snapshot
+entry to exactly one normalized plan output and passed effect before persisting
+it. The Notion provider returns deterministic
   versions for normalized records. Its private readiness plan emits identity
   plus exact schema and one-row bounded read checks for every configured target,
   one visible host request at a time. The typed provider mapping binds current
@@ -254,15 +257,15 @@ Meeting intake also exposes `soter_prepare_meeting_intake_context` and
 `soter_finalize_meeting_intake_context`; the CLI equivalents are
 `context-connected-prepare` and `context-connected-finalize`. The prepare tool
 derives providers and authorities from the exact lock and returns the first
-ordinary plan call. After generic plan completion closes the three fixed reads
-and any nonempty organization, project, and task chain, finalization requires a
-non-empty speaker-consistent transcript, exactly one CRM meeting with the same
-normalized recording URI, and every and only requested related record ID. It
-stores the private snapshot under `.soter/state/context-snapshots`, updates the
-durable run, and pauses before writes. Policy rows remain an index, so the
-definition authority stays declared until a later capability loads and selects
-authoritative policy bodies. Participant People IDs remain references, not
-assumed CRM contact page URIs.
+ordinary plan call. After generic plan completion closes the policy index, every
+configured exact policy-page read, the transcript and meeting reads, and any
+nonempty organization, project, and task chain, finalization requires every
+policy URI/title pair and body fingerprint to match, a non-empty
+speaker-consistent transcript, exactly one CRM meeting with the same normalized
+recording URI, and every and only requested related record ID. It stores the
+private snapshot under `.soter/state/context-snapshots`, marks the definition
+authority loaded, updates the durable run, and pauses before writes. Participant
+People IDs remain references, not assumed CRM contact page URIs.
 
 Private run, call, and context-snapshot state lives under `.soter/state`, uses
 atomic restricted files, and is ignored by Git. `soter_list_host_calls` and

@@ -4,7 +4,7 @@
   "configuration": {
     "name": "meeting-intake",
     "path": "soter/configurations/meeting-intake.config.json",
-    "fingerprint": "sha256:40eb4c638ce390dc3568d4aacd6dd124fc671bdf0b76e63cc4ce3cd62e2a3511"
+    "fingerprint": "sha256:cd4d5cc193afa4cdeccc025814fdf83ae7842fe67f7aeea4e941ed73792af484"
   },
   "resolver": {
     "id": "core.resolver",
@@ -70,7 +70,7 @@
         {
           "path": "soter/contracts/context-snapshot.schema.json",
           "role": "definition",
-          "fingerprint": "sha256:e62f10a351e3914fcc6ecf80c6e925bd8de79ada8cec5c75c00bf650130809a6"
+          "fingerprint": "sha256:3a8fac1f2777241242e7719dc72a886bab0bd846de8e5c071c277919430f9f44"
         },
         {
           "path": "soter/contracts/doctor-result.schema.json",
@@ -190,7 +190,7 @@
         {
           "path": "soter/kernel/verify.mjs",
           "role": "implementation",
-          "fingerprint": "sha256:655e96ac9a26526fd9a5291956f881fefbd901617ca08359d09de831266e9c19"
+          "fingerprint": "sha256:b1e71dc0b657a32fe533be688ee90370262992cb082b48a098073636c9ed4e22"
         }
       ]
     },
@@ -272,7 +272,7 @@
         {
           "path": "soter/core/mcp/selftest.mjs",
           "role": "evaluation",
-          "fingerprint": "sha256:eb730529be6d72ecea65c25f332d5b6736c3f35998905c1d4f855b9ceae34bdb"
+          "fingerprint": "sha256:2a4de54af8c3b2229d74a19dc1713e50d5d260bc6ccfa3fd453efe1e95b1d85b"
         },
         {
           "path": "soter/core/mcp/server.mjs",
@@ -317,7 +317,7 @@
         {
           "path": "soter/core/selftest.mjs",
           "role": "evaluation",
-          "fingerprint": "sha256:75c6718b4251806f61298b49a05df3122f5a35cfaa0e5839bdabd7f88cf32d56"
+          "fingerprint": "sha256:e05f84961b359c44f04cf438d60082380e67bb9ebf8b595409fef6433b252975"
         },
         {
           "path": "soter/core/service.mjs",
@@ -350,12 +350,17 @@
       "evidenceMaturity": "declared",
       "source": "user",
       "reason": "The user selected the meeting-intake outcome for this named harness configuration.",
-      "manifestFingerprint": "sha256:ab78ccd206188d9de3ca9e352655b78cefa1cca7825eac56caaa4782f2e77629",
+      "manifestFingerprint": "sha256:0cda87fbac6fceee0826304517af1f90bd1a89e4117b10e97c08088b70208f1d",
       "artifacts": [
         {
           "path": "soter/automations/meeting-intake/context.mjs",
           "role": "implementation",
-          "fingerprint": "sha256:1a8cd40d87c2846489b015651cb7b972385bbb88419016725abca82e1621aeaf"
+          "fingerprint": "sha256:ca21c3bfe8daa8b2a2e3161b5921049b99713b3b1f099282a1b7ef174a21499a"
+        },
+        {
+          "path": "soter/automations/meeting-intake/settings.json",
+          "role": "definition",
+          "fingerprint": "sha256:602ad205c21f893c8cb7041b71c68c42cb8df5c1c9ac8670d6009169146f9b99"
         },
         {
           "path": "soter/scenarios/meeting-intake/grounded-and-gated.scenario.json",
@@ -382,7 +387,7 @@
       "evidenceMaturity": "declared",
       "source": "binding",
       "reason": "The configured CRM authorities live in Notion and require a record capability provider.",
-      "manifestFingerprint": "sha256:73e134fda395dd1bdda923f033c204277d327615092ef2c186b54f996d3b097c",
+      "manifestFingerprint": "sha256:3eb99687b11f5181f55f1b223887e2c76efab4138f2b02638e43d09d303102ec",
       "artifacts": [
         {
           "path": "soter/capabilities/crm.records.create.json",
@@ -400,9 +405,14 @@
           "fingerprint": "sha256:40f4bedeffe03351ed2f0bd98ffffdeb8dda8aced8f3194ffdc8c563191aeb6d"
         },
         {
+          "path": "soter/capabilities/documents.content.read.json",
+          "role": "definition",
+          "fingerprint": "sha256:cf232c4f9045a9d8253061f729409e3b99698fae57ef32006c97a1c3bb0101e7"
+        },
+        {
           "path": "soter/fixtures/providers/notion/crm-records.json",
           "role": "fixture",
-          "fingerprint": "sha256:39dfb1e500278bfc0439da9ea198a2f056b30dc4829b3cd6e7c2ce1a7007081b"
+          "fingerprint": "sha256:fb9da9a9c092400dc4aca899e2936e15ce1906055e2d701c072978cec151f210"
         },
         {
           "path": "soter/integrations/notion/crm-records.mapping.json",
@@ -412,12 +422,12 @@
         {
           "path": "soter/integrations/notion/fixture.mjs",
           "role": "implementation",
-          "fingerprint": "sha256:bc8ba8e62f7045d786670671115e7511359f87517c0458eb1e1fb8786425a11f"
+          "fingerprint": "sha256:3ba15917e9d150b53667c7b60bc5f687383a3849a32daaaec062a06fa37a1b82"
         },
         {
           "path": "soter/integrations/notion/mcp.mjs",
           "role": "implementation",
-          "fingerprint": "sha256:88e4342d5669c3138959b19a9b79f86806ca5dc13dff6ddbc0d1c2087e449d72"
+          "fingerprint": "sha256:955bc1f6b2b1ff34f5430f2169358888f1debb82534e7a4b6c79f2c5b7d956f1"
         },
         {
           "path": "soter/integrations/notion/settings.json",
@@ -427,12 +437,12 @@
         {
           "path": "soter/providers/provider.integration.notion.fixture.json",
           "role": "implementation",
-          "fingerprint": "sha256:71a59dbf0e9aac8c510ec230f8af5c7bf3791dcc3c3ce09246eb98ad30f9b14f"
+          "fingerprint": "sha256:117b1f18705432ee0b219906a3dcb627aa881f63bacbb83be19a49d61831b7df"
         },
         {
           "path": "soter/providers/provider.integration.notion.mcp.json",
           "role": "implementation",
-          "fingerprint": "sha256:81251d4a80c295f8720c8320a7028883ee6612490e85900f4083aca7abddb570"
+          "fingerprint": "sha256:aa87ad765159b6504a4d601e7cef290473e7893a6eb12acd9c8299a63f01efe6"
         }
       ]
     },
@@ -540,6 +550,11 @@
       "contractFingerprint": "sha256:2a3dcd892510cd9c07ef4f747ae4453174bc6be03c4bdca610fb984abc1a5498"
     },
     {
+      "id": "documents.content.read",
+      "version": "1.0.0",
+      "contractFingerprint": "sha256:0fa45de1ede9ee536d97fea389c5cc4ebba4390befd6252bce8500dfe8e5d2c6"
+    },
+    {
       "id": "meeting.transcript.read",
       "version": "1.0.0",
       "contractFingerprint": "sha256:afd4b6316a30d1c59780885fb76e95f22b1f387621cc70adefdb484233ffa1aa"
@@ -586,6 +601,20 @@
         "write"
       ],
       "reason": "Notion is the configured instance authority for bounded CRM record updates."
+    },
+    {
+      "capability": "documents.content.read",
+      "capabilityVersion": "1.0.0",
+      "providerPack": "integration.notion",
+      "providerVersion": "0.1.0",
+      "authorities": [
+        "authority.crm.definition"
+      ],
+      "effects": [
+        "disclosure",
+        "read"
+      ],
+      "reason": "Notion supplies the exact external policy document bodies selected by meeting intake."
     },
     {
       "capability": "meeting.transcript.read",
@@ -680,7 +709,36 @@
     },
     "automation.meeting-intake": {
       "stalenessReviewAfterDays": 7,
-      "summaryTemplate": "authority.crm.definition"
+      "summaryTemplate": "authority.crm.definition",
+      "policyBindings": [
+        {
+          "id": "policy.docs",
+          "subjects": [
+            "meeting-summary"
+          ],
+          "title": "Docs",
+          "documentUri": "https://app.notion.com/39ed79b5de3881dbb40dddf827bd6373",
+          "reason": "Meeting intake creates a governed meeting-summary document."
+        },
+        {
+          "id": "policy.meetings",
+          "subjects": [
+            "meeting"
+          ],
+          "title": "Meetings",
+          "documentUri": "https://app.notion.com/39ed79b5de388105b507f11ad35d2acd",
+          "reason": "Meeting intake reads and updates the source meeting record."
+        },
+        {
+          "id": "policy.tasks",
+          "subjects": [
+            "task"
+          ],
+          "title": "Tasks",
+          "documentUri": "https://app.notion.com/39dd79b5de388178b804fd5cf8e9eaa3",
+          "reason": "Meeting intake deduplicates and updates grounded task records."
+        }
+      ]
     }
   },
   "projections": [
@@ -695,5 +753,5 @@
       "fingerprint": "sha256:76ee7cf92f64ea6a927008daa4cf80dff943769d749b9bd9d27737a1420f57be"
     }
   ],
-  "graphFingerprint": "sha256:9ee19106cef9a258ae4b1b8a3e1ffb5f7657746fd30bac4c36ad8a0470dee985"
+  "graphFingerprint": "sha256:88890c8a1ba6c8898b456df87a9844111f7d77805d6d5f8e205817a4c726b113"
 }

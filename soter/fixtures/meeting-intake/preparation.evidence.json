@@ -9,7 +9,7 @@
     "id": "run.meeting-intake.fixture",
     "version": null
   },
-  "configurationLockFingerprint": "sha256:1123ed8dc6b3c9883d1311e6d245a61c804101b1080218b77591201a1ec6da73",
+  "configurationLockFingerprint": "sha256:aaff2821af23dd5b5a2cdbb5256479d6c76384261ac765d2e22271b1a71c1d5a",
   "dependencies": [
     {
       "id": "kernel.soter",
@@ -29,12 +29,12 @@
     {
       "id": "automation.meeting-intake",
       "version": "0.1.0",
-      "fingerprint": "sha256:ab78ccd206188d9de3ca9e352655b78cefa1cca7825eac56caaa4782f2e77629"
+      "fingerprint": "sha256:0cda87fbac6fceee0826304517af1f90bd1a89e4117b10e97c08088b70208f1d"
     },
     {
       "id": "integration.notion",
       "version": "0.1.0",
-      "fingerprint": "sha256:73e134fda395dd1bdda923f033c204277d327615092ef2c186b54f996d3b097c"
+      "fingerprint": "sha256:3eb99687b11f5181f55f1b223887e2c76efab4138f2b02638e43d09d303102ec"
     },
     {
       "id": "integration.otter",
@@ -52,7 +52,7 @@
     {
       "id": "integration.notion",
       "version": "0.1.0",
-      "manifestFingerprint": "sha256:73e134fda395dd1bdda923f033c204277d327615092ef2c186b54f996d3b097c",
+      "manifestFingerprint": "sha256:3eb99687b11f5181f55f1b223887e2c76efab4138f2b02638e43d09d303102ec",
       "evidenceMaturity": "declared"
     },
     {
@@ -124,7 +124,7 @@
     {
       "role": "run-envelope",
       "id": "run.meeting-intake.fixture",
-      "graphFingerprint": "sha256:9ee19106cef9a258ae4b1b8a3e1ffb5f7657746fd30bac4c36ad8a0470dee985"
+      "graphFingerprint": "sha256:88890c8a1ba6c8898b456df87a9844111f7d77805d6d5f8e205817a4c726b113"
     },
     {
       "role": "scenario",

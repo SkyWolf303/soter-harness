@@ -36,6 +36,12 @@
         "reason": "The automation must resolve authorities, policies, relationships, and existing records."
       },
       {
+        "id": "documents.content.read",
+        "version": "^1.0.0",
+        "optional": false,
+        "reason": "The automation must load each explicitly applicable external policy body before proposing governed records."
+      },
+      {
         "id": "crm.records.create",
         "version": "^1.0.0",
         "optional": false,
@@ -61,6 +67,10 @@
     {
       "path": "soter/automations/meeting-intake/context.mjs",
       "role": "implementation"
+    },
+    {
+      "path": "soter/automations/meeting-intake/settings.json",
+      "role": "definition"
     },
     {
       "path": "soter/scenarios/meeting-intake/happy-path.scenario.json",

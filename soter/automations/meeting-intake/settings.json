@@ -1,0 +1,55 @@
+{
+  "$contract": "soter://contracts/pack-settings/v1",
+  "contractVersion": "1.0.0",
+  "id": "settings.automation.meeting-intake",
+  "pack": "automation.meeting-intake",
+  "version": "0.1.0",
+  "required": true,
+  "schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["stalenessReviewAfterDays", "summaryTemplate", "policyBindings"],
+    "properties": {
+      "stalenessReviewAfterDays": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 90
+      },
+      "summaryTemplate": {
+        "type": "string",
+        "minLength": 3
+      },
+      "policyBindings": {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 10,
+        "uniqueItems": true,
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "subjects", "title", "documentUri", "reason"],
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^policy\\.[a-z0-9]+(?:[.-][a-z0-9]+)*$"
+            },
+            "subjects": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 10,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*$"
+              }
+            },
+            "title": { "type": "string", "minLength": 1, "maxLength": 200 },
+            "documentUri": { "type": "string", "minLength": 3, "maxLength": 2048 },
+            "reason": { "type": "string", "minLength": 20 }
+          }
+        }
+      }
+    }
+  },
+  "reason": "Meeting-intake behavior and its applicable external policy documents are user-selectable automation configuration that must be validated before context loading."
+}
