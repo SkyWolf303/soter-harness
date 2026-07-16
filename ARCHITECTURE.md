@@ -471,19 +471,23 @@ capability dispatch, authority-aware context snapshots, exact-scope approvals,
 transactional fixture writes, rollback proof, read-after-write verification,
 claim-scoped evidence, an offline doctor, contract-enforced aggregation of
 short-lived connected provider probes, and private durable checkpoints for
-host-dispatched calls and their run envelopes. Core now also has a fixed-input,
-sequential operation-plan contract and private checkpoint that emits one exact
-policy-bound call at a time, requires both checkpoint and current-call identity
-on resume, and recovers the next step after restart without retaining native
-provider responses. Meeting-intake Automation now uses that same Core service
-to prepare a bounded connected grounding plan: policy index, exact transcript,
-and exactly one CRM meeting matched by recording URI. Automation validates its
-domain completeness rules; Core binds every snapshot entry to an exact
-normalized plan output and passed effect, persists the private snapshot,
-updates the same durable run, and pauses before relationship expansion or
-writes. The transition deliberately leaves the definition authority declared
-because policy index rows do not contain authoritative page bodies. The current
-target includes the
+host-dispatched calls and their run envelopes. Core now also has versioned
+sequential operation-plan contracts: v1 retains fixed inputs, while v2 binds
+typed string-list references from earlier normalized outputs into later inputs.
+The private checkpoint emits one exact policy-bound call at a time, fingerprints
+each resolution, skips empty reference chains without a provider request,
+requires both checkpoint and current-call identity on resume, and recovers the
+next step after restart without retaining native provider responses.
+Meeting-intake Automation uses that same Core service to prepare a bounded
+connected grounding plan: policy index, exact transcript, exactly one CRM
+meeting matched by recording URI, and only the organizations, projects, and
+tasks referenced through that meeting. Automation validates domain completeness
+and rejects a related read that omits or adds an ID; Core binds every snapshot
+entry to an exact normalized plan output and passed effect, persists the private
+snapshot, updates the same durable run, and pauses before writes. The transition
+deliberately leaves the definition authority declared because policy index rows
+do not contain authoritative page bodies. Participant People IDs are not treated
+as CRM contact page URIs. The current target includes the
 first connected Otter provider mapping, exact transcript-fetch request
 translation, and identity-only probe producer. It also includes a read-only
 connected Notion provider whose pack-owned settings, provider field mapping,
@@ -497,11 +501,12 @@ domain compatibility unknown, and unobserved response shapes fail closed.
 Connected readiness still fails because Notion create and update
 implementations are intentionally absent and no current private probes are
 checked in. Repeatable exact-lock Notion schema/read evidence, observed Otter
-transcript conformance, host-started end-to-end dispatch, authority context
-loading beyond the bounded index/meeting/transcript snapshot, typed output
-binding for relationship traversal, approval-bound multi-call writes,
-compensation, live health, host judgment, and host conformance remain future
-proof boundaries.
+transcript conformance, host-started end-to-end dispatch, policy body loading and
+applicability, participant identity resolution, approval-bound multi-call
+writes, compensation, live health, host judgment, and host conformance remain
+future proof boundaries. The v2 plan contract is intentionally narrower than a
+general workflow language: arbitrary transforms, branching, parallelism,
+fan-out, retries, and compensation are not implemented.
 
 ### Change unit and completion gate
 

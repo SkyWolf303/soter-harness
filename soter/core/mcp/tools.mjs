@@ -155,7 +155,7 @@ export function createSoterMcpServer({ root, host }) {
 
   server.registerTool('soter_prepare_operation_plan', {
     title: 'Prepare Soter operation plan',
-    description: 'Validate and durably checkpoint an exact sequential capability plan, then emit only its first policy-bound native host call. This interface supplies no connected-write approval.',
+    description: 'Validate and durably checkpoint an exact sequential capability plan with fixed inputs or typed earlier-output bindings, then emit at most its first policy-bound native host call. Empty skip bindings emit no provider call. This interface supplies no connected-write approval.',
     inputSchema: {
       lock_path: z.string().min(1),
       run_path: z.string().min(1),
@@ -201,7 +201,7 @@ export function createSoterMcpServer({ root, host }) {
 
   server.registerTool('soter_prepare_meeting_intake_context', {
     title: 'Prepare connected meeting-intake context',
-    description: 'Build, preflight, and durably start the bounded connected source plan for one meeting-intake run. The plan loads the policy index, exact transcript, and matching CRM meeting record without writes.',
+    description: 'Build, preflight, and durably start the bounded connected source plan for one meeting-intake run. The plan loads the policy index, exact transcript, matching CRM meeting, and only its referenced organization-to-project-to-task chain without writes.',
     inputSchema: {
       lock_path: z.string().min(1),
       run_path: z.string().min(1),
@@ -231,7 +231,7 @@ export function createSoterMcpServer({ root, host }) {
 
   server.registerTool('soter_finalize_meeting_intake_context', {
     title: 'Finalize connected meeting-intake context',
-    description: 'Validate a completed exact context plan, require non-empty and identity-matched sources, persist one private context snapshot, update its durable run, and pause before related-context expansion or writes.',
+    description: 'Validate a completed exact context plan, require non-empty identity-matched fixed sources plus every requested related record, persist one private context snapshot, update its durable run, and pause before writes.',
     inputSchema: {
       checkpoint_id: z.string().min(1)
     },

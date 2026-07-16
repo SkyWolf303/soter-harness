@@ -420,8 +420,10 @@ The normative Core state shapes are the
 [host tool call](./soter/contracts/host-tool-call.schema.json),
 [provider probe call](./soter/contracts/provider-probe-call.schema.json),
 [durable host call checkpoint](./soter/contracts/host-call-checkpoint.schema.json),
-[sequential operation plan](./soter/contracts/operation-plan.schema.json),
-[durable operation-plan checkpoint](./soter/contracts/operation-plan-checkpoint.schema.json),
+[fixed-input sequential operation plan](./soter/contracts/operation-plan.schema.json),
+[fixed-input durable operation-plan checkpoint](./soter/contracts/operation-plan-checkpoint.schema.json),
+[bound sequential operation plan](./soter/contracts/operation-plan-v2.schema.json),
+[bound durable operation-plan checkpoint](./soter/contracts/operation-plan-checkpoint-v2.schema.json),
 [evidence record](./soter/contracts/evidence.schema.json), and
 [doctor result](./soter/contracts/doctor-result.schema.json). Connected
 integrations produce short-lived, secret-safe
@@ -793,9 +795,37 @@ tail rejects the plan without creating a checkpoint or performing earlier
 provider work. An effect-policy block remains an explicit blocked step rather
 than becoming implied approval.
 
-Before emitting the first call, Core writes one private
-`operation-plan-checkpoint/v1` bound to the exact lock, graph, host, run, source
-plan fingerprint, ordered runtime steps, and current call. Completion requires
+`operation-plan/v2` adds typed output-to-input bindings without adding a second
+execution engine. A step still declares a portable fixed input, but it may also
+declare one or more `inputBindings`. Each binding names an earlier source step,
+an exact path through that step's normalized portable output, a previously
+unset target path in the current input, the `unique-string-list` transform, and
+an explicit `onEmpty` policy. A binding may never read a current or future step,
+overwrite fixed input, traverse a fixed non-object value, or use a target path
+that duplicates or overlaps another binding target.
+
+Core resolves a bound input only after every named source output has completed
+and normalized. It recursively follows explicit `*` array segments, accepts
+only non-empty strings, removes duplicates, sorts the resulting list, and
+fingerprints the source output, bound values, and final resolved input. The v2
+checkpoint retains those resolutions so restart validation can derive and
+compare them again from the exact prior outputs. Invalid types, missing paths,
+tampering, or a changed resolution fail closed before a provider request is
+emitted.
+
+An empty binding is never interpreted as permission for a broad read.
+`onEmpty=skip-step` records a terminal skipped step with no host call, provider
+effect, or output; `onEmpty=fail-plan` records a deterministic plan failure.
+Core can preflight every v2 step's selected provider, authority, effect policy,
+module exports, and host route before the first request, but a data-dependent
+input can pass its final capability and translator validation only when its
+source output exists. A bad dynamic input therefore fails at that exact bound
+step rather than being represented as fully preflighted.
+
+Before emitting the first call, Core writes the corresponding private
+`operation-plan-checkpoint/v1` or `operation-plan-checkpoint/v2`, bound to the
+exact lock, graph, host, run, source plan fingerprint, ordered runtime steps,
+and current call. Completion requires
 both the checkpoint ID and exact current call ID. Core validates and normalizes
 the response, fingerprints the portable output, atomically advances the private
 plan checkpoint, and emits at most the next exact call. Core then synchronizes
@@ -805,31 +835,41 @@ idempotent; a different, late, or guessed call or response fails closed.
 Restart and compaction recovery load the same current call from private state
 rather than reconstructing it from conversation.
 
-The operation-plan checkpoint may retain normalized portable outputs because
+An operation-plan checkpoint may retain normalized portable outputs because
 later orchestration needs them, but it never retains the native provider body
 or credential values. The run records each typed invocation plus output
 fingerprints and the plan's current state. Plan state is private runtime state,
 not configuration, pack content, or distributable evidence.
 
-This first plan contract intentionally has no output-to-input binding,
-branching, parallelism, plan-level retry policy, compensation, approval-bound
-operation batch, or rollback. The current prepare interface passes no approval
-set, so a confirmation-gated write step becomes blocked with no provider
-arguments. Connected writes require later contracts that bind generated
-operations to an exact change-set fingerprint and approval, then verify or
-compensate every applied effect.
+Version 1 remains the fixed-input contract. Version 2 currently supports only
+the `unique-string-list` transform and sequential earlier-step references. It
+does not add arbitrary expressions, branching, parallelism, fan-out, plan-level
+retry policy, compensation, an approval-bound operation batch, or rollback.
+The current prepare interface passes no approval set. Version 1 represents a
+confirmation-gated write as a blocked step with no provider arguments; version
+2 rejects a plan containing that unavailable effect before it checkpoints or
+performs earlier reads. Connected writes require later contracts that bind
+generated operations to an exact change-set fingerprint and approval, then
+verify or compensate every applied effect.
 
 #### Bounded connected context finalization
 
 Meeting intake uses the operation-plan service as its connected context
 transport; it does not introduce a second provider execution path. Automation
 derives the selected connected provider implementations and authorities from
-the exact lock, then generates three fixed sources in order:
+the exact lock, then generates an `operation-plan/v2` with three fixed sources
+followed by three reference-bound sources:
 
 1. A bounded CRM policy index read under the definition authority.
 2. The exact transcript selected by meeting ID and canonical recording URI.
 3. A CRM meeting read filtered by that same recording URI with a limit of two,
    so zero matches and duplicate matches remain distinguishable.
+4. Only the organization record URIs returned by that meeting, or a skipped
+   step when the meeting has no organization relations.
+5. Only the project record URIs returned by those organizations, or a skipped
+   step when no project relations were observed.
+6. Only the task record URIs returned by those projects, or a skipped step when
+   no task relations were observed.
 
 The plan is preflighted and checkpointed like any other operation plan. The
 host completes each emitted request through the generic plan completion
@@ -840,10 +880,12 @@ Context finalization is a local Automation transition backed by a Core commit
 and accepts only the completed exact plan. Automation requires at least one
 typed policy index row, a non-empty transcript whose segments reference known
 speakers, and exactly one typed CRM meeting whose normalized recording URI
-equals the transcript request. Provider query filtering alone is not accepted
-as proof of identity. Missing, empty, duplicate, mismatched, stale-lock,
-wrong-host, failed, blocked, or incomplete sources fail before a context
-snapshot is written.
+equals the transcript request. Every non-skipped related step must return every
+and only the referenced record IDs of its expected CRM type. Provider query
+filtering alone is not accepted as proof of identity, and a referenced record
+that is missing from the normalized result prevents finalization. Missing,
+empty, duplicate, mismatched, stale-lock, wrong-host, failed, blocked, or
+incomplete required sources fail before a context snapshot is written.
 
 Core requires every entry in the resulting `context-snapshot/v1` to match
 exactly one normalized completed-plan output, its subject and role to match the
@@ -851,18 +893,20 @@ declared run authority, and its effect set to match all passed plan effects
 before writing private restricted runtime state and synchronizing the run.
 Repeating finalization with the same completed plan is idempotent; a conflicting
 snapshot or run output fails closed. The run records the snapshot fingerprint,
-marks the CRM instance and transcript context sources loaded for this snapshot,
-and pauses before related context expansion or writes. The CRM definition
-authority remains `declared`: a policy row index proves neither policy page
-content nor applicable policy selection.
+marks the completed CRM instance and transcript context sources loaded for this
+snapshot, and pauses before writes. Skipped relationship steps contribute no
+snapshot entry or effect. The CRM definition authority remains `declared`: a
+policy row index proves neither policy page content nor applicable policy
+selection.
 
-This initial snapshot is grounding, not complete meeting-intake context. It
-does not load policy bodies or traverse meeting-to-organization-to-project-to-
-task relationships. That expansion requires typed output-to-input bindings and
-empty-relation behavior so Core can follow only observed references without
-broadly disclosing an entire CRM target. A private connected snapshot is not a
-provider probe, checked-in evidence, readiness result, live-health result, or
-proof that a host autonomously executed the plan.
+This snapshot is bounded grounding, not complete meeting-intake context. It
+loads the selected meeting and its observed organization-to-project-to-task
+chain, but not policy page bodies or participant profiles. Meeting participant
+identifiers are provider People IDs and are not assumed to be CRM contact page
+URIs. Those remaining expansions require their own identity, content,
+applicability, authority, and disclosure contracts. A private connected
+snapshot is not a provider probe, checked-in evidence, readiness result,
+live-health result, or proof that a host autonomously executed the plan.
 
 Provider readiness uses a separate `provider-probe-call/v1` state machine. Core
 derives its probe plan from the exact lock and desired configuration, including

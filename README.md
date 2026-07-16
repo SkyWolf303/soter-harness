@@ -141,8 +141,11 @@ The main remaining gaps are structural and behavioral:
   context assembly, exact-scope approvals, transactional fixture writes,
   rollback, read-after-write verification, scoped evidence, and offline
   diagnosis, the policy-bound request/result state machine for resumable
-  host-dispatched MCP calls, and fixed-input sequential operation plans that
-  durably emit one exact call at a time. A shared Core service projects those
+  host-dispatched MCP calls, and versioned sequential operation plans that
+  durably emit one exact call at a time. Version 1 preserves fixed inputs;
+  version 2 binds typed string-list references from earlier normalized outputs,
+  fingerprints each resolution, and skips an empty relation without emitting a
+  broad provider read. A shared Core service projects those
   resumable handshakes through both the CLI and a local stdio MCP server
   configured for Codex and Claude. The first connected Otter declaration emits
   an exact `fetch({id})` request and an identity-only `get_user_info({})` probe
@@ -151,18 +154,21 @@ The main remaining gaps are structural and behavioral:
   pack-owned field mapping and user-configured target identities. Each call is
   limited to one target so cross-data-source SQL never becomes a hidden Notion
   plan requirement; several targets can now be expressed as explicit ordered
-  capability steps. The first connected context lifecycle now generates a
-  bounded three-source plan for the policy index, exact transcript, and CRM
-  meeting selected by the same recording URI; after all three normalize,
-  Automation validates domain completeness and Core binds every snapshot entry
-  to an exact plan output and passed effect before persisting one private
-  context snapshot and pausing the run. Policy page bodies and related
-  organization, contact, project, and task context are deliberately not claimed
-  as loaded. Its identity-only probe can establish authentication and
-  reachability while leaving target authority and schema compatibility unknown.
+  capability steps. The connected context lifecycle now generates a bounded
+  six-step plan for the policy index, exact transcript, CRM meeting selected by
+  the same recording URI, and only the organization-to-project-to-task chain
+  referenced by that meeting. Absent references skip with no provider call;
+  referenced records must all be returned before Automation can finalize the
+  private snapshot. Core binds every snapshot entry to an exact plan output and
+  passed effect before persisting it and pausing the run. Policy page bodies and
+  participant profiles remain deliberately unloaded; provider People IDs are
+  not assumed to be CRM contact page URIs. Its identity-only probe can establish
+  authentication and reachability while leaving target authority and schema
+  compatibility unknown.
   Connected Notion writes remain intentionally undeclared until plans support
-  output bindings, multi-call deduplication, compare-before-write, exact
-  change-set approval, read-after-write verification, and compensation.
+  approval-bound operation batches, multi-call deduplication,
+  compare-before-write, exact change-set approval, read-after-write
+  verification, and compensation.
   Checked-in connected
   response-shape evidence, host-started end-to-end dispatch, and host-level
   agent behavior remain unproven.
@@ -346,14 +352,20 @@ or completed a real external run. The equivalent CLI commands are
 `capability-prepare`, `capability-complete`, `plan-prepare`, `plan-complete`,
 `host-list`, `host-get`, and `host-fail`.
 
-The initial
-[operation-plan contract](./soter/contracts/operation-plan.schema.json) is
-intentionally small: one to fifty fixed-input capability steps execute in
-order, one call may be outstanding, and any blocked or failed step stops the
-plan. Core preflights every fixed step's binding, input, translator, and host
-route before emitting the first call, so an invalid tail cannot strand earlier
-provider work. The source plan and native response files supplied to the CLI
-use absolute private paths outside the repository:
+The versioned operation-plan contracts are intentionally small. Version 1 is a
+[fixed-input plan](./soter/contracts/operation-plan.schema.json); version 2 is a
+[typed bound plan](./soter/contracts/operation-plan-v2.schema.json). Both allow
+one to fifty sequential capability steps, one outstanding call, and
+stop-on-failure behavior. Version 2 can derive a unique, sorted string list from
+an exact path in an earlier normalized output and set an otherwise-unset input
+path. It fingerprints the source, values, and resolved input. An empty binding
+must explicitly skip the step or fail the plan; it never emits an unfiltered
+provider call. Core preflights every selected provider, authority, effect,
+module export, and host route before the first call. It fully validates a fixed
+input then, while a data-dependent input receives final capability and
+translator validation only after its source output exists. The source plan and
+native response files supplied to the CLI use absolute private paths outside
+the repository:
 
     node soter/core/cli.mjs plan-prepare \
       --lock soter/fixtures/meeting-intake/meeting-intake.lock.json \
@@ -365,13 +377,15 @@ use absolute private paths outside the repository:
       --call toolcall.plan-example.step-read \
       --response /private/transient/provider-response.json
 
-Core binds the plan, every step, and every response to the exact lock, graph,
-host, run, provider, capability, authority, input, and call ID. It stores
-normalized private outputs and fingerprints, never the raw host response. This
-version has no output-to-input binding, branching, parallelism, plan-level
-retry or compensation, approval-bound write batch, or rollback. Because the
-plan interface accepts no approval, a confirmation-gated write step blocks
-without emitting provider arguments.
+Core binds the plan, every step, every dynamic resolution, and every response
+to the exact lock, graph, host, run, provider, capability, authority, input, and
+call ID. It stores normalized private outputs and fingerprints, never the raw
+host response. Version 2 offers only `unique-string-list` bindings;
+arbitrary transforms, branching, fan-out, parallelism, plan-level retry or
+compensation, approval-bound write batches, and rollback remain unimplemented.
+Because the plan interface accepts no approval, v1 blocks a confirmation-gated
+write step without provider arguments, while v2 rejects a plan containing that
+unavailable effect before earlier work begins.
 
 Connected meeting-intake grounding uses that same plan service rather than a
 second orchestration engine:
@@ -390,10 +404,12 @@ checkpoint locally:
       --checkpoint checkpoint.plan.meeting-intake.connected-context.example
 
 Finalization requires at least one typed policy index row, a non-empty
-speaker-consistent transcript, and exactly one CRM meeting whose normalized
-recording URI matches the selected transcript. It stores the connected snapshot
-under `.soter/state/context-snapshots`, updates the same durable run, and pauses
-before relationship expansion or writes. The definition authority remains
+speaker-consistent transcript, exactly one CRM meeting whose normalized
+recording URI matches the selected transcript, and every referenced
+organization, project, and task from each non-skipped related step. Provider
+results outside the exact requested type, IDs, filters, or limit fail closed.
+It stores the connected snapshot under `.soter/state/context-snapshots`, updates
+the same durable run, and pauses before writes. The definition authority remains
 `declared`, because an index row is not the authoritative policy page body.
 
 `.soter/state` is private user runtime state and is ignored by Git. It may
@@ -434,12 +450,12 @@ runtime is connected or ready.
    outcomes, scenarios, capability needs, authorities, effects, and migration
    mapping.
 3. Finish the connected integration slice: add an exact-lock Notion target
-   schema/read probe; add typed output bindings that expand the initial context
-   snapshot through only the selected meeting's organization, projects, tasks,
-   participants, and policy bodies; validate Otter transcript normalization
-   with an explicitly authorized private meeting fixture; and prove host-started
-   Codex and Claude dispatch and checkpoint recovery through the configured
-   Core service. Then add an exact change-set approval-bound write plan,
+   schema/read probe; define bounded policy-content and applicability contracts;
+   define participant identity resolution without equating provider People IDs
+   with CRM contact URIs; validate Otter transcript normalization with an
+   explicitly authorized private meeting fixture; and prove host-started Codex
+   and Claude dispatch and checkpoint recovery through the configured Core
+   service. Then add an exact change-set approval-bound write plan,
    compare-before-write, read-after-write verification, compensation, and the
    separately authorized canary doctor level.
 4. Prove the full judgment and orchestration slice through both Claude and

@@ -579,7 +579,9 @@ async function selftest(root) {
       recording_uri: connectedRecording,
       at: '2026-07-15T12:00:09.000Z'
     });
-    if (preparedContext.checkpoint?.currentStepId !== 'step.context-definition-index'
+    if (preparedContext.checkpoint?.$contract
+        !== 'soter://contracts/operation-plan-checkpoint/v2'
+      || preparedContext.checkpoint?.currentStepId !== 'step.context-definition-index'
       || preparedContext.currentCall?.transport?.tool
         !== 'mcp__codex_apps__notion_notion_query_data_sources') {
       throw new Error('MCP connected context did not emit its exact first source call.');
@@ -590,8 +592,14 @@ async function selftest(root) {
     const contextMarkers = [
       'private-mcp-context-policy-marker',
       'private-mcp-context-transcript-marker',
-      'private-mcp-context-meeting-marker'
+      'private-mcp-context-meeting-marker',
+      'private-mcp-context-organization-marker',
+      'private-mcp-context-project-marker',
+      'private-mcp-context-task-marker'
     ];
+    const mcpOrganizationUri = 'https://app.notion.com/mcp-context-organization';
+    const mcpProjectUri = 'https://app.notion.com/mcp-context-project';
+    const mcpTaskUri = 'https://app.notion.com/mcp-context-task';
     const contextTranscript = await call(client, 'soter_complete_operation_plan', {
       checkpoint_id: preparedContext.checkpoint.id,
       call_id: preparedContext.currentCall.id,
@@ -643,7 +651,7 @@ async function selftest(root) {
       || contextMeeting.currentCall?.arguments?.data?.params?.[0] !== connectedRecording) {
       throw new Error('MCP connected context did not bind the matching meeting filter.');
     }
-    const contextCompleted = await call(client, 'soter_complete_operation_plan', {
+    const contextOrganization = await call(client, 'soter_complete_operation_plan', {
       checkpoint_id: preparedContext.checkpoint.id,
       call_id: contextMeeting.currentCall.id,
       response: {
@@ -656,8 +664,8 @@ async function selftest(root) {
                 title: 'MCP connected context',
                 meetingType: 'Project Sync',
                 recordingUri: connectedRecording,
-                organizationUris: '[]',
-                participantIds: '[]'
+                organizationUris: JSON.stringify([mcpOrganizationUri]),
+                participantIds: JSON.stringify(['person.retro'])
               })
             }],
             has_more: false
@@ -666,6 +674,91 @@ async function selftest(root) {
         privateMarker: contextMarkers[2]
       },
       at: '2026-07-15T12:00:12.000Z'
+    });
+    await client.close();
+    client = await connectClient(root);
+    const recoveredOrganization = await call(client, 'soter_get_host_call', {
+      checkpoint_id: preparedContext.checkpoint.id
+    });
+    if (recoveredOrganization.checkpoint?.currentStepId !== 'step.context-organizations'
+      || recoveredOrganization.currentCall?.id !== contextOrganization.currentCall.id
+      || recoveredOrganization.currentCall?.arguments?.data?.params?.[0]
+        !== mcpOrganizationUri
+      || recoveredOrganization.checkpoint.steps[3]
+        ?.bindingResolutions[0]?.sourceOutputFingerprint
+        !== recoveredOrganization.checkpoint.steps[2]?.outputFingerprint) {
+      throw new Error('MCP connected context did not recover its exact bound organization read.');
+    }
+    const contextProject = await call(client, 'soter_complete_operation_plan', {
+      checkpoint_id: preparedContext.checkpoint.id,
+      call_id: recoveredOrganization.currentCall.id,
+      response: {
+        structuredContent: {
+          result: {
+            results: [{
+              __soterType: 'organization',
+              __soterId: mcpOrganizationUri,
+              __soterFields: JSON.stringify({
+                name: 'MCP bound organization',
+                organizationType: 'Client',
+                tags: '[]',
+                projectUris: JSON.stringify([mcpProjectUri]),
+                contactUris: '[]'
+              })
+            }],
+            has_more: false
+          }
+        },
+        privateMarker: contextMarkers[3]
+      },
+      at: '2026-07-15T12:00:13.000Z'
+    });
+    const contextTask = await call(client, 'soter_complete_operation_plan', {
+      checkpoint_id: preparedContext.checkpoint.id,
+      call_id: contextProject.currentCall.id,
+      response: {
+        structuredContent: {
+          result: {
+            results: [{
+              __soterType: 'project',
+              __soterId: mcpProjectUri,
+              __soterFields: JSON.stringify({
+                name: 'MCP bound project',
+                projectType: 'Client Project',
+                status: 'Active',
+                organizationUris: JSON.stringify([mcpOrganizationUri]),
+                taskUris: JSON.stringify([mcpTaskUri])
+              })
+            }],
+            has_more: false
+          }
+        },
+        privateMarker: contextMarkers[4]
+      },
+      at: '2026-07-15T12:00:14.000Z'
+    });
+    const contextCompleted = await call(client, 'soter_complete_operation_plan', {
+      checkpoint_id: preparedContext.checkpoint.id,
+      call_id: contextTask.currentCall.id,
+      response: {
+        structuredContent: {
+          result: {
+            results: [{
+              __soterType: 'task',
+              __soterId: mcpTaskUri,
+              __soterFields: JSON.stringify({
+                title: 'MCP bound task',
+                status: 'Open',
+                context: 'Bound from the selected project only.',
+                projectUris: JSON.stringify([mcpProjectUri])
+              })
+            }],
+            has_more: false
+          }
+        },
+        privateMarker: contextMarkers[5]
+      },
+      at: '2026-07-15T12:00:15.000Z'
     });
     const finalizedContext = await call(client, 'soter_finalize_meeting_intake_context', {
       checkpoint_id: preparedContext.checkpoint.id
@@ -681,8 +774,13 @@ async function selftest(root) {
       finalizedContext.runPath
     ].map((file) => fs.readFileSync(path.join(root, file), 'utf8')).join('\n');
     if (contextCompleted.checkpoint?.state !== 'completed'
+      || contextCompleted.checkpoint?.result?.stepResults?.length !== 6
+      || contextProject.checkpoint?.currentStepId !== 'step.context-projects'
+      || contextProject.currentCall?.arguments?.data?.params?.[0] !== mcpProjectUri
+      || contextTask.checkpoint?.currentStepId !== 'step.context-tasks'
+      || contextTask.currentCall?.arguments?.data?.params?.[0] !== mcpTaskUri
       || finalizedContext.snapshot?.containment !== 'connected'
-      || finalizedContext.snapshot?.entries?.length !== 3
+      || finalizedContext.snapshot?.entries?.length !== 6
       || finalizedContext.run?.lifecycleState !== 'paused'
       || cliFinalizedContext.snapshotPath !== finalizedContext.snapshotPath
       || contextMarkers.some((marker) => contextDurableContents.includes(marker))) {

@@ -148,7 +148,8 @@ function sealCheckpoint(checkpoint) {
 }
 
 function assertCheckpoint(root, checkpoint) {
-  if (checkpoint?.$contract === 'soter://contracts/operation-plan-checkpoint/v1') {
+  if (checkpoint?.$contract === 'soter://contracts/operation-plan-checkpoint/v1'
+    || checkpoint?.$contract === 'soter://contracts/operation-plan-checkpoint/v2') {
     return assertOperationPlanCheckpoint(root, checkpoint);
   }
   contractFailures(
@@ -1020,9 +1021,15 @@ export function commitDurableContextSnapshot({
   const completedSteps = checkpoint.steps.filter((step) => {
     return step.state === 'completed' && step.call && step.output && step.outputFingerprint;
   });
-  if (completedSteps.length !== checkpoint.steps.length
+  const terminalContextSteps = checkpoint.steps.every((step) => {
+    return step.state === 'completed' || step.state === 'skipped';
+  });
+  if (!terminalContextSteps
+    || completedSteps.length < 1
     || snapshot.entries.length !== completedSteps.length) {
-    throw new Error('Context snapshot must represent every completed operation-plan output exactly once.');
+    throw new Error(
+      'Context snapshot must represent every completed output exactly once and omit only explicitly skipped steps.'
+    );
   }
   if (new Set(snapshot.entries.map((entry) => entry.id)).size !== snapshot.entries.length) {
     throw new Error('Context snapshot entry identifiers must be unique.');

@@ -21,7 +21,9 @@
       "fields": [
         { "portable": "name", "provider": "Name", "decode": "scalar" },
         { "portable": "organizationType", "provider": "Type", "decode": "scalar" },
-        { "portable": "tags", "provider": "Tags", "decode": "json" }
+        { "portable": "tags", "provider": "Tags", "decode": "json" },
+        { "portable": "projectUris", "provider": "Projects", "decode": "json" },
+        { "portable": "contactUris", "provider": "Contacts", "decode": "json" }
       ]
     },
     {
@@ -44,7 +46,8 @@
         { "portable": "name", "provider": "Name", "decode": "scalar" },
         { "portable": "projectType", "provider": "Type", "decode": "scalar" },
         { "portable": "status", "provider": "Status", "decode": "scalar" },
-        { "portable": "organizationUris", "provider": "Organization", "decode": "json" }
+        { "portable": "organizationUris", "provider": "Organization", "decode": "json" },
+        { "portable": "taskUris", "provider": "Tasks", "decode": "json" }
       ]
     },
     {
@@ -82,7 +85,7 @@
   "limitations": [
     "Policy rows identify definition documents but do not load or interpret their page bodies; domain context assembly requires a separate bounded fetch step.",
     "The connected translator consumes one mapped record type per host call; Core must durably orchestrate several targets as explicit plan steps rather than relying on cross-data-source SQL.",
-    "The current mapping does not expose the organization-to-project/contact and project-to-task relation fields required for reference-bound related-context expansion.",
+    "Organization projects and contacts plus project tasks are exposed as provider relation URIs; meeting participant people identifiers are not assumed to be CRM contact record URIs.",
     "The mapping normalizes provider rows only. It does not infer missing project relationships or convert provider status vocabularies into domain decisions.",
     "Schema compatibility is not established by this declaration; an exact-lock private probe must observe current target schemas."
   ]

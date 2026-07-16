@@ -800,6 +800,96 @@ export async function selftest(root) {
       || JSON.stringify(completedPlan).includes('raw-plan-')) {
       failures.push('durable operation plan did not preserve exact sequential dispatch, recovery, idempotency, and response minimization');
     }
+    const failedBindingRunPath = 'soter/fixtures/meeting-intake/failed-binding-selftest.run.json';
+    const failedBindingRun = readJson(
+      path.join(temp, 'soter/fixtures/meeting-intake/preflight.run.json')
+    );
+    failedBindingRun.id = 'run.meeting-intake.failed-binding-selftest';
+    writeJson(path.join(temp, failedBindingRunPath), failedBindingRun);
+    const failedBindingPlan = {
+      $contract: 'soter://contracts/operation-plan/v2',
+      contractVersion: '2.0.0',
+      id: 'plan.meeting-intake.failed-binding-selftest',
+      runId: failedBindingRun.id,
+      createdAt: FIXTURE_TIME,
+      mode: 'sequential',
+      failurePolicy: 'stop',
+      reason: 'Prove empty fail-plan bindings stop deterministically without emitting a broad provider request.',
+      steps: [
+        {
+          id: 'step.binding-source-meeting',
+          capability: 'crm.records.read',
+          authority: 'authority.crm.instance',
+          providerImplementation: connectedProviders.notion.id,
+          input: { recordTypes: ['meeting'], limit: 1 },
+          inputBindings: [],
+          reason: 'Read one meeting that has no organization relations.'
+        },
+        {
+          id: 'step.binding-required-organizations',
+          capability: 'crm.records.read',
+          authority: 'authority.crm.instance',
+          providerImplementation: connectedProviders.notion.id,
+          input: { recordTypes: ['organization'], limit: 100 },
+          inputBindings: [{
+            id: 'binding.required-organization-uris',
+            sourceStepId: 'step.binding-source-meeting',
+            sourcePath: ['records', '*', 'fields', 'organizationUris'],
+            targetPath: ['ids'],
+            transform: 'unique-string-list',
+            onEmpty: 'fail-plan'
+          }],
+          reason: 'Require at least one referenced organization without allowing an unfiltered read.'
+        }
+      ]
+    };
+    const invalidBoundTailPlan = structuredClone(failedBindingPlan);
+    invalidBoundTailPlan.id = 'plan.meeting-intake.invalid-bound-tail-selftest';
+    invalidBoundTailPlan.steps[1].providerImplementation = 'provider.missing.connected';
+    let invalidBoundTailRejected = false;
+    try {
+      await prepareDurableOperationPlanExecution({
+        root: temp,
+        lockPath,
+        runPath: failedBindingRunPath,
+        plan: invalidBoundTailPlan,
+        at: FIXTURE_TIME,
+        expectedHost: 'codex'
+      });
+    } catch (error) {
+      invalidBoundTailRejected = error.message.includes(
+        'step.binding-required-organizations cannot be prepared'
+      );
+    }
+    const preparedFailedBinding = await prepareDurableOperationPlanExecution({
+      root: temp,
+      lockPath,
+      runPath: failedBindingRunPath,
+      plan: failedBindingPlan,
+      at: FIXTURE_TIME,
+      expectedHost: 'codex'
+    });
+    const completedFailedBinding = await completeDurableOperationPlanExecution({
+      root: temp,
+      checkpointId: preparedFailedBinding.checkpoint.id,
+      callId: preparedFailedBinding.currentCall.id,
+      response: firstPlanResponse,
+      at: '2026-07-15T12:00:03.500Z',
+      expectedHost: 'codex'
+    });
+    if (!invalidBoundTailRejected
+      || fs.existsSync(path.join(
+        temp,
+        '.soter/state/host-calls/checkpoint.plan.meeting-intake.invalid-bound-tail-selftest.json'
+      ))
+      || completedFailedBinding.checkpoint.state !== 'failed'
+      || completedFailedBinding.currentCall !== null
+      || completedFailedBinding.checkpoint.steps[1]?.state !== 'failed'
+      || completedFailedBinding.checkpoint.steps[1]?.call !== null
+      || completedFailedBinding.checkpoint.steps[1]?.resolvedInput?.ids?.length !== 0
+      || completedFailedBinding.checkpoint.steps[1]?.bindingResolutions[0]?.state !== 'empty') {
+      failures.push('bound plan preflight or empty fail-plan semantics allowed unsafe provider work');
+    }
     const connectedContextRecording = 'https://otter.ai/u/context-selftest';
     const connectedContextRunPath = 'soter/fixtures/meeting-intake/connected-context-selftest.run.json';
     const connectedContextRun = readJson(
@@ -817,6 +907,37 @@ export async function selftest(root) {
       at: '2026-07-15T12:00:04.000Z',
       expectedHost: 'codex'
     });
+    const forwardBoundPlan = structuredClone(preparedConnectedContext.checkpoint.plan);
+    forwardBoundPlan.steps[3].inputBindings[0].sourceStepId = 'step.context-tasks';
+    let forwardBindingRejected = false;
+    try {
+      assertOperationPlanDocument(temp, forwardBoundPlan);
+    } catch (error) {
+      forwardBindingRejected = error.message.includes('earlier step');
+    }
+    const overwritingBoundPlan = structuredClone(preparedConnectedContext.checkpoint.plan);
+    overwritingBoundPlan.steps[3].input.ids = ['https://app.notion.com/fixed-broad-id'];
+    let bindingOverwriteRejected = false;
+    try {
+      assertOperationPlanDocument(temp, overwritingBoundPlan);
+    } catch (error) {
+      bindingOverwriteRejected = error.message.includes('cannot overwrite');
+    }
+    const overlappingBoundPlan = structuredClone(preparedConnectedContext.checkpoint.plan);
+    overlappingBoundPlan.steps[3].inputBindings.push({
+      id: 'binding.context-overlapping-organization-uris',
+      sourceStepId: 'step.context-meeting-record',
+      sourcePath: ['records', '*', 'fields', 'organizationUris'],
+      targetPath: ['ids', 'nested'],
+      transform: 'unique-string-list',
+      onEmpty: 'skip-step'
+    });
+    let bindingOverlapRejected = false;
+    try {
+      assertOperationPlanDocument(temp, overlappingBoundPlan);
+    } catch (error) {
+      bindingOverlapRejected = error.message.includes('duplicate or overlap');
+    }
     let incompleteContextRejected = false;
     try {
       finalizeMeetingIntakeConnectedContext({
@@ -876,6 +997,12 @@ export async function selftest(root) {
       expectedHost: 'codex'
     });
     const contextMeetingMarker = 'raw-connected-context-meeting-marker';
+    const contextOrganizationMarker = 'raw-connected-context-organization-marker';
+    const contextProjectMarker = 'raw-connected-context-project-marker';
+    const contextTaskMarker = 'raw-connected-context-task-marker';
+    const contextOrganizationUri = 'https://app.notion.com/context-organization-selftest';
+    const contextProjectUri = 'https://app.notion.com/context-project-selftest';
+    const contextTaskUri = 'https://app.notion.com/context-task-selftest';
     const contextMeetingResponse = {
       structuredContent: {
         result: {
@@ -886,8 +1013,8 @@ export async function selftest(root) {
               title: 'Connected context selftest',
               meetingType: 'Project Sync',
               recordingUri: connectedContextRecording,
-              organizationUris: '[]',
-              participantIds: '[]'
+              organizationUris: JSON.stringify([contextOrganizationUri]),
+              participantIds: JSON.stringify(['person.retro'])
             })
           }],
           has_more: false
@@ -895,12 +1022,89 @@ export async function selftest(root) {
       },
       privateMarker: contextMeetingMarker
     };
-    const completedConnectedContext = await completeDurableOperationPlanExecution({
+    const connectedContextOrganization = await completeDurableOperationPlanExecution({
       root: temp,
       checkpointId: preparedConnectedContext.checkpoint.id,
       callId: connectedContextMeeting.currentCall.id,
       response: contextMeetingResponse,
       at: '2026-07-15T12:00:07.000Z',
+      expectedHost: 'codex'
+    });
+    const connectedContextProject = await completeDurableOperationPlanExecution({
+      root: temp,
+      checkpointId: preparedConnectedContext.checkpoint.id,
+      callId: connectedContextOrganization.currentCall.id,
+      response: {
+        structuredContent: {
+          result: {
+            results: [{
+              __soterType: 'organization',
+              __soterId: contextOrganizationUri,
+              __soterFields: JSON.stringify({
+                name: 'Bound organization',
+                organizationType: 'Client',
+                tags: '[]',
+                projectUris: JSON.stringify([contextProjectUri]),
+                contactUris: '[]'
+              })
+            }],
+            has_more: false
+          }
+        },
+        privateMarker: contextOrganizationMarker
+      },
+      at: '2026-07-15T12:00:08.000Z',
+      expectedHost: 'codex'
+    });
+    const connectedContextTask = await completeDurableOperationPlanExecution({
+      root: temp,
+      checkpointId: preparedConnectedContext.checkpoint.id,
+      callId: connectedContextProject.currentCall.id,
+      response: {
+        structuredContent: {
+          result: {
+            results: [{
+              __soterType: 'project',
+              __soterId: contextProjectUri,
+              __soterFields: JSON.stringify({
+                name: 'Bound project',
+                projectType: 'Client Project',
+                status: 'Active',
+                organizationUris: JSON.stringify([contextOrganizationUri]),
+                taskUris: JSON.stringify([contextTaskUri])
+              })
+            }],
+            has_more: false
+          }
+        },
+        privateMarker: contextProjectMarker
+      },
+      at: '2026-07-15T12:00:09.000Z',
+      expectedHost: 'codex'
+    });
+    const completedConnectedContext = await completeDurableOperationPlanExecution({
+      root: temp,
+      checkpointId: preparedConnectedContext.checkpoint.id,
+      callId: connectedContextTask.currentCall.id,
+      response: {
+        structuredContent: {
+          result: {
+            results: [{
+              __soterType: 'task',
+              __soterId: contextTaskUri,
+              __soterFields: JSON.stringify({
+                title: 'Bound task',
+                status: 'Open',
+                context: 'Derived only from the selected project relation.',
+                projectUris: JSON.stringify([contextProjectUri])
+              })
+            }],
+            has_more: false
+          }
+        },
+        privateMarker: contextTaskMarker
+      },
+      at: '2026-07-15T12:00:10.000Z',
       expectedHost: 'codex'
     });
     const finalizedConnectedContext = finalizeMeetingIntakeConnectedContext({
@@ -923,6 +1127,11 @@ export async function selftest(root) {
       finalizedConnectedContext.run.context.map((item) => [item.authority, item.status])
     );
     if (!incompleteContextRejected
+      || !forwardBindingRejected
+      || !bindingOverwriteRejected
+      || !bindingOverlapRejected
+      || preparedConnectedContext.checkpoint.$contract
+        !== 'soter://contracts/operation-plan-checkpoint/v2'
       || preparedConnectedContext.currentCall?.capability.id !== 'crm.records.read'
       || preparedConnectedContext.currentCall?.arguments?.data?.data_source_urls?.length !== 1
       || connectedContextTranscript.currentCall?.capability.id !== 'meeting.transcript.read'
@@ -930,9 +1139,23 @@ export async function selftest(root) {
       || connectedContextMeeting.currentCall?.capability.id !== 'crm.records.read'
       || connectedContextMeeting.currentCall?.arguments?.data?.params?.[0]
         !== connectedContextRecording
+      || connectedContextOrganization.checkpoint.currentStepId
+        !== 'step.context-organizations'
+      || connectedContextOrganization.currentCall?.arguments?.data?.params?.[0]
+        !== contextOrganizationUri
+      || connectedContextOrganization.checkpoint.steps[3]
+        ?.bindingResolutions[0]?.sourceOutputFingerprint
+        !== connectedContextOrganization.checkpoint.steps[2]?.outputFingerprint
+      || connectedContextProject.checkpoint.currentStepId !== 'step.context-projects'
+      || connectedContextProject.currentCall?.arguments?.data?.params?.[0]
+        !== contextProjectUri
+      || connectedContextTask.checkpoint.currentStepId !== 'step.context-tasks'
+      || connectedContextTask.currentCall?.arguments?.data?.params?.[0]
+        !== contextTaskUri
       || completedConnectedContext.checkpoint.state !== 'completed'
+      || completedConnectedContext.checkpoint.result?.stepResults?.length !== 6
       || finalizedConnectedContext.snapshot.containment !== 'connected'
-      || finalizedConnectedContext.snapshot.entries.length !== 3
+      || finalizedConnectedContext.snapshot.entries.length !== 6
       || finalizedConnectedContext.run.lifecycleState !== 'paused'
       || connectedAuthorities.get('authority.crm.definition') !== 'declared'
       || connectedAuthorities.get('authority.crm.instance') !== 'loaded'
@@ -943,7 +1166,14 @@ export async function selftest(root) {
         !== fingerprintJson(finalizedConnectedContext.snapshot)
       || (process.platform !== 'win32'
         && (fs.statSync(connectedSnapshotFile).mode & 0o777) !== 0o600)
-      || [contextPolicyMarker, contextTranscriptMarker, contextMeetingMarker]
+      || [
+        contextPolicyMarker,
+        contextTranscriptMarker,
+        contextMeetingMarker,
+        contextOrganizationMarker,
+        contextProjectMarker,
+        contextTaskMarker
+      ]
         .some((marker) => connectedDurableContents.includes(marker))) {
       failures.push('connected context did not preserve bounded sources, exact identities, private durable recovery, and honest authority state');
     }
@@ -1013,7 +1243,7 @@ export async function selftest(root) {
       at: '2026-07-15T12:00:10.000Z',
       expectedHost: 'codex'
     });
-    await completeDurableOperationPlanExecution({
+    const completedMismatchContext = await completeDurableOperationPlanExecution({
       root: temp,
       checkpointId: preparedMismatchContext.checkpoint.id,
       callId: mismatchMeetingCall.currentCall.id,
@@ -1046,14 +1276,177 @@ export async function selftest(root) {
         expectedHost: 'codex'
       });
     } catch (error) {
-      mismatchedMeetingRejected = error.message.includes('exactly one CRM meeting record');
+      mismatchedMeetingRejected = error.message.includes('completed operation plan');
     }
     if (!mismatchedMeetingRejected
+      || completedMismatchContext.checkpoint.state !== 'failed'
+      || completedMismatchContext.currentCall !== null
+      || completedMismatchContext.checkpoint.steps[2]?.state !== 'failed'
+      || completedMismatchContext.checkpoint.steps.slice(3)
+        .some((step) => step.state !== 'pending' || step.call !== null)
       || fs.existsSync(path.join(
         temp,
         '.soter/state/context-snapshots/context.meeting-intake.connected.mismatch-selftest.json'
       ))) {
       failures.push('connected context accepted a CRM meeting that did not match the selected recording identity');
+    }
+    const emptyContextRunPath = 'soter/fixtures/meeting-intake/empty-context-selftest.run.json';
+    const emptyContextRun = structuredClone(connectedContextRun);
+    emptyContextRun.id = 'run.meeting-intake.empty-context-selftest';
+    writeJson(path.join(temp, emptyContextRunPath), emptyContextRun);
+    const preparedEmptyContext = await prepareMeetingIntakeConnectedContext({
+      root: temp,
+      lockPath,
+      runPath: emptyContextRunPath,
+      snapshotId: 'context.meeting-intake.connected.empty-selftest',
+      meetingId: 'meeting.empty-context-selftest',
+      recordingUri: connectedContextRecording,
+      at: '2026-07-15T12:00:12.000Z',
+      expectedHost: 'codex'
+    });
+    const emptyContextTranscript = await completeDurableOperationPlanExecution({
+      root: temp,
+      checkpointId: preparedEmptyContext.checkpoint.id,
+      callId: preparedEmptyContext.currentCall.id,
+      response: contextPolicyResponse,
+      at: '2026-07-15T12:00:13.000Z',
+      expectedHost: 'codex'
+    });
+    const emptyContextMeeting = await completeDurableOperationPlanExecution({
+      root: temp,
+      checkpointId: preparedEmptyContext.checkpoint.id,
+      callId: emptyContextTranscript.currentCall.id,
+      response: contextTranscriptResponse,
+      at: '2026-07-15T12:00:14.000Z',
+      expectedHost: 'codex'
+    });
+    const completedEmptyContext = await completeDurableOperationPlanExecution({
+      root: temp,
+      checkpointId: preparedEmptyContext.checkpoint.id,
+      callId: emptyContextMeeting.currentCall.id,
+      response: {
+        structuredContent: {
+          result: {
+            results: [{
+              __soterType: 'meeting',
+              __soterId: 'https://app.notion.com/empty-context-meeting',
+              __soterFields: JSON.stringify({
+                title: 'Meeting without related CRM records',
+                meetingType: 'General',
+                recordingUri: connectedContextRecording,
+                organizationUris: '[]',
+                participantIds: '[]'
+              })
+            }],
+            has_more: false
+          }
+        }
+      },
+      at: '2026-07-15T12:00:15.000Z',
+      expectedHost: 'codex'
+    });
+    const finalizedEmptyContext = finalizeMeetingIntakeConnectedContext({
+      root: temp,
+      checkpointId: preparedEmptyContext.checkpoint.id,
+      expectedHost: 'codex'
+    });
+    if (completedEmptyContext.checkpoint.state !== 'completed'
+      || completedEmptyContext.currentCall !== null
+      || completedEmptyContext.checkpoint.steps.slice(3)
+        .some((step) => step.state !== 'skipped'
+          || step.call !== null
+          || step.bindingResolutions[0]?.state !== 'empty')
+      || finalizedEmptyContext.snapshot.entries.length !== 3
+      || finalizedEmptyContext.snapshot.effectIds.length !== 3) {
+      failures.push('empty output bindings emitted a broad provider read or produced false related context');
+    }
+    const missingRelationRunPath = 'soter/fixtures/meeting-intake/missing-relation-selftest.run.json';
+    const missingRelationRun = structuredClone(connectedContextRun);
+    missingRelationRun.id = 'run.meeting-intake.missing-relation-selftest';
+    writeJson(path.join(temp, missingRelationRunPath), missingRelationRun);
+    const missingOrganizationUri = 'https://app.notion.com/missing-bound-organization';
+    const preparedMissingRelation = await prepareMeetingIntakeConnectedContext({
+      root: temp,
+      lockPath,
+      runPath: missingRelationRunPath,
+      snapshotId: 'context.meeting-intake.connected.missing-relation-selftest',
+      meetingId: 'meeting.missing-relation-selftest',
+      recordingUri: connectedContextRecording,
+      at: '2026-07-15T12:00:16.000Z',
+      expectedHost: 'codex'
+    });
+    const missingRelationTranscript = await completeDurableOperationPlanExecution({
+      root: temp,
+      checkpointId: preparedMissingRelation.checkpoint.id,
+      callId: preparedMissingRelation.currentCall.id,
+      response: contextPolicyResponse,
+      at: '2026-07-15T12:00:17.000Z',
+      expectedHost: 'codex'
+    });
+    const missingRelationMeeting = await completeDurableOperationPlanExecution({
+      root: temp,
+      checkpointId: preparedMissingRelation.checkpoint.id,
+      callId: missingRelationTranscript.currentCall.id,
+      response: contextTranscriptResponse,
+      at: '2026-07-15T12:00:18.000Z',
+      expectedHost: 'codex'
+    });
+    const missingRelationOrganization = await completeDurableOperationPlanExecution({
+      root: temp,
+      checkpointId: preparedMissingRelation.checkpoint.id,
+      callId: missingRelationMeeting.currentCall.id,
+      response: {
+        structuredContent: {
+          result: {
+            results: [{
+              __soterType: 'meeting',
+              __soterId: 'https://app.notion.com/missing-relation-meeting',
+              __soterFields: JSON.stringify({
+                title: 'Meeting with a missing organization relation',
+                meetingType: 'Project Sync',
+                recordingUri: connectedContextRecording,
+                organizationUris: JSON.stringify([missingOrganizationUri]),
+                participantIds: '[]'
+              })
+            }],
+            has_more: false
+          }
+        }
+      },
+      at: '2026-07-15T12:00:19.000Z',
+      expectedHost: 'codex'
+    });
+    const completedMissingRelation = await completeDurableOperationPlanExecution({
+      root: temp,
+      checkpointId: preparedMissingRelation.checkpoint.id,
+      callId: missingRelationOrganization.currentCall.id,
+      response: {
+        structuredContent: { result: { results: [], has_more: false } }
+      },
+      at: '2026-07-15T12:00:20.000Z',
+      expectedHost: 'codex'
+    });
+    let missingRelationRejected = false;
+    try {
+      finalizeMeetingIntakeConnectedContext({
+        root: temp,
+        checkpointId: preparedMissingRelation.checkpoint.id,
+        expectedHost: 'codex'
+      });
+    } catch (error) {
+      missingRelationRejected = error.message.includes('every and only the records referenced');
+    }
+    if (!missingRelationRejected
+      || missingRelationOrganization.currentCall?.arguments?.data?.params?.[0]
+        !== missingOrganizationUri
+      || completedMissingRelation.checkpoint.state !== 'completed'
+      || completedMissingRelation.checkpoint.steps.slice(4)
+        .some((step) => step.state !== 'skipped' || step.call !== null)
+      || fs.existsSync(path.join(
+        temp,
+        '.soter/state/context-snapshots/context.meeting-intake.connected.missing-relation-selftest.json'
+      ))) {
+      failures.push('missing bound records were accepted as complete related context');
     }
     const blockedWritePlan = await prepareDurableOperationPlanExecution({
       root: temp,
@@ -1404,7 +1797,7 @@ export async function selftest(root) {
     return false;
   }
   process.stdout.write(
-    'CORE SELFTEST PASS: deterministic lock, typed fixture reads/writes, exact-scope approval, deduplication, expected-version conflicts, rollback, read-after-write verification, resumable sequential operation plans, bounded connected context finalization, resumable MCP host dispatch, connected probe readiness, expiry, exact-lock binding, honest states, and stale-lock detection.\n'
+    'CORE SELFTEST PASS: deterministic lock, typed fixture reads/writes, exact-scope approval, deduplication, expected-version conflicts, rollback, read-after-write verification, resumable fixed and bound sequential operation plans, bounded connected context finalization, resumable MCP host dispatch, connected probe readiness, expiry, exact-lock binding, honest states, and stale-lock detection.\n'
   );
   return true;
 }

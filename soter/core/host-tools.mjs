@@ -88,6 +88,58 @@ function terminalCall(base, state, completedAt, error) {
   };
 }
 
+export async function preflightHostToolBinding({
+  root,
+  lock,
+  capability,
+  authority,
+  containment = 'connected',
+  providerImplementation,
+  approvedEffects = []
+}) {
+  const resolvedRoot = path.resolve(root);
+  const { binding, provider } = selectedProvider(
+    resolvedRoot,
+    lock,
+    capability,
+    containment,
+    providerImplementation
+  );
+  assertMcpRuntime(provider);
+  assertAuthority(lock, binding, provider, authority);
+  loadProviderMappings(resolvedRoot, provider);
+  const contract = capabilityContract(resolvedRoot, capability);
+  const decisions = evaluateEffectPolicy(lock, contract.effects, approvedEffects);
+  if (decisions.some((item) => item.decision === 'blocked')) {
+    throw Object.assign(
+      new Error('Effect policy blocks ' + capability + ' before bound input resolution.'),
+      { kind: 'authorization' }
+    );
+  }
+  const implementation = await loadProviderModule(resolvedRoot, provider, null);
+  if (typeof implementation[provider.runtime.prepareExport] !== 'function'
+    || typeof implementation[provider.runtime.completeExport] !== 'function') {
+    throw Object.assign(
+      new Error('MCP translator prepare and completion exports must both be functions.'),
+      { kind: 'validation' }
+    );
+  }
+  for (const logicalTool of provider.runtime.tools) {
+    resolveHostTool(resolvedRoot, lock, provider, logicalTool);
+  }
+  return {
+    capability: { id: capability, version: contract.version },
+    provider: {
+      pack: provider.pack,
+      implementation: provider.id,
+      version: provider.version,
+      containment: provider.containment
+    },
+    authority,
+    policyDecisions: decisions
+  };
+}
+
 export async function prepareHostToolCall({
   root,
   lock,

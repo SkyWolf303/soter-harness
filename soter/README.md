@@ -29,7 +29,7 @@ fields make that distinction mechanical.
   or runtime storage.
 - core contains provider-neutral resolution, preflight, evidence, offline and
   connected doctor operations, a shared execution service, and separate
-  resumable capability-call, fixed-input sequential operation-plan, and
+  resumable capability-call, versioned sequential operation-plan, and
   provider-probe bridges. The CLI and local Soter MCP server are thin interfaces
   over that service; future graphical interfaces must consume the same boundary.
 - fixtures contains generated, cross-linked examples of exact locks, run
@@ -71,18 +71,24 @@ for each host adapter. A connected read is limited to one record type and data
 source per host call, avoiding a hidden dependency on plan-gated
 cross-data-source SQL. Core can now orchestrate several such reads through one
 private sequential operation-plan checkpoint, emitting one exact call at a
-time and resuming by checkpoint plus call ID. Meeting-intake Automation uses
-that plan for a bounded policy index read, exact transcript, and CRM meeting
-matched by recording URI, then asks Core to persist a private snapshot and
-pause the same run. It does not claim policy bodies or related CRM records are
-loaded. Core mechanically binds every snapshot entry to exactly one normalized
-plan output and passed effect before persisting it. The Notion provider returns
+time and resuming by checkpoint plus call ID. Plan v1 retains fixed inputs;
+plan v2 deterministically binds unique string-list references from earlier
+normalized outputs, fingerprints the resolution, and skips empty relations
+without a provider request. Meeting-intake Automation uses v2 for a bounded
+policy index read, exact transcript, CRM meeting matched by recording URI, and
+only the organizations, projects, and tasks referenced through that meeting.
+It requires every referenced related ID to be returned before finalizing, then
+asks Core to persist a private snapshot and pause the same run. It does not
+claim policy page bodies or participant profiles are loaded. Core mechanically
+binds every snapshot entry to exactly one normalized plan output and passed
+effect before persisting it. The Notion provider returns
 deterministic versions for normalized records. Its identity probe proves only
 authentication and reachability;
 configured target access and schema/read compatibility remain unknown. Notion
 create and update implementations are intentionally absent until Soter adds
-typed output binding, multi-call deduplication, compare-before-write, exact
-change-set approval, read-after-write verification, and compensation.
+approval-bound operation batches, multi-call deduplication,
+compare-before-write, exact change-set approval, read-after-write verification,
+and compensation.
 Host-started end-to-end dispatch is unproven, and
 the checked-in connected doctor therefore still reports `ready=failed`. This
 increment does not fetch a user's meeting, prove provider transcript or Notion
@@ -154,25 +160,31 @@ partial state, and rejects stale or tampered checkpoints.
 
 The same service exposes `soter_prepare_operation_plan` and
 `soter_complete_operation_plan`; the CLI equivalents are `plan-prepare` and
-`plan-complete`. The initial plan contract executes fixed portable inputs in
-order with one outstanding call and stop-on-failure behavior. Every completion
-must include the exact checkpoint and current call IDs. Normalized outputs stay
-in private state while raw host responses do not. The interface supplies no
-write approval, so confirmation-gated steps block without arguments. Output
-bindings, branching, parallelism, plan-level retries, compensation,
+`plan-complete`. Plan v1 executes fixed portable inputs. Plan v2 additionally
+binds a unique, sorted string list from an exact earlier normalized output path
+into an unset later input path. Empty bindings explicitly skip or fail; they do
+not become broad reads. Both versions allow one outstanding call and
+stop-on-failure behavior. Every completion must include the exact checkpoint
+and current call IDs. Normalized outputs and binding fingerprints stay in
+private state while raw host responses do not. The interface supplies no write
+approval: v1 represents a confirmation-gated step as blocked, while v2 rejects
+the unavailable effect before beginning earlier work. Arbitrary transforms,
+branching, fan-out, parallelism, plan-level retries, compensation,
 approval-bound write batches, and rollback remain future contracts.
 
 Meeting intake also exposes `soter_prepare_meeting_intake_context` and
 `soter_finalize_meeting_intake_context`; the CLI equivalents are
 `context-connected-prepare` and `context-connected-finalize`. The prepare tool
 derives providers and authorities from the exact lock and returns the first
-ordinary plan call. After generic plan completion closes all three sources,
-finalization requires a non-empty speaker-consistent transcript and exactly one
-CRM meeting with the same normalized recording URI. It stores the private
-snapshot under `.soter/state/context-snapshots`, updates the durable run, and
-pauses before relationship expansion or writes. Policy rows remain an index,
-so the definition authority stays declared until a later capability loads and
-selects authoritative policy bodies.
+ordinary plan call. After generic plan completion closes the three fixed reads
+and any nonempty organization, project, and task chain, finalization requires a
+non-empty speaker-consistent transcript, exactly one CRM meeting with the same
+normalized recording URI, and every and only requested related record ID. It
+stores the private snapshot under `.soter/state/context-snapshots`, updates the
+durable run, and pauses before writes. Policy rows remain an index, so the
+definition authority stays declared until a later capability loads and selects
+authoritative policy bodies. Participant People IDs remain references, not
+assumed CRM contact page URIs.
 
 Private run, call, and context-snapshot state lives under `.soter/state`, uses
 atomic restricted files, and is ignored by Git. `soter_list_host_calls` and

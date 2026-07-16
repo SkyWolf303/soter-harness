@@ -166,7 +166,32 @@ function decodedFields(mapping, row) {
   return fields;
 }
 
-export function completeMcp({ capability, authority, response, at, mappings }) {
+function assertRequestedRecords(records, input) {
+  const requestedTypes = new Set(input.recordTypes);
+  const requestedIds = input.ids ? new Set(input.ids) : null;
+  const ids = records.map((record) => record.id);
+  if (records.length > requestLimit(input)
+    || new Set(ids).size !== ids.length
+    || records.some((record) => !requestedTypes.has(record.type))
+    || (requestedIds && records.some((record) => !requestedIds.has(record.id)))) {
+    throw providerError(
+      'validation',
+      'Notion returned duplicate records or records outside the exact requested type, id, or limit.'
+    );
+  }
+  for (const record of records) {
+    for (const [field, value] of Object.entries(input.filters || {})) {
+      if (String(record.fields[field]) !== String(value)) {
+        throw providerError(
+          'validation',
+          'Notion returned a record that does not match requested filter ' + field + '.'
+        );
+      }
+    }
+  }
+}
+
+export function completeMcp({ capability, authority, input, response, at, mappings }) {
   if (capability !== 'crm.records.read') {
     throw providerError('validation', 'Notion MCP read adapter does not implement ' + capability + '.');
   }
@@ -193,6 +218,7 @@ export function completeMcp({ capability, authority, response, at, mappings }) {
       fields
     };
   });
+  assertRequestedRecords(records, input);
   return {
     records,
     provenance: {

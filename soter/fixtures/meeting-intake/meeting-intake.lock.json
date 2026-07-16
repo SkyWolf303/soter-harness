@@ -25,7 +25,7 @@
       "evidenceMaturity": "declared",
       "source": "base",
       "reason": "Required kernel foundation: Governs how Soter systems are defined, validated, evaluated, changed, versioned, and packaged.",
-      "manifestFingerprint": "sha256:40bf6aa591645812897b31f08db3cf7324e9c8871d78dd438af0ca68f28569ea",
+      "manifestFingerprint": "sha256:79c23579d532c6bcc4da75cf60c85066c5eb4aa494da7c585514ce141f47c21c",
       "artifacts": [
         {
           "path": "soter/contracts/approval.schema.json",
@@ -93,9 +93,19 @@
           "fingerprint": "sha256:a139bbf65ec8c12252586e7ee87866866674d0eea63d3e92ba1b8a874fa051a6"
         },
         {
+          "path": "soter/contracts/operation-plan-checkpoint-v2.schema.json",
+          "role": "definition",
+          "fingerprint": "sha256:62d22ab3b9f39539cf65fb5f501e1000b562bc21dc12b0723c8023cf5f635022"
+        },
+        {
           "path": "soter/contracts/operation-plan-checkpoint.schema.json",
           "role": "definition",
           "fingerprint": "sha256:b5c3010e90d8127078be962df61c19e5079665107994b7aad72b0600e658860f"
+        },
+        {
+          "path": "soter/contracts/operation-plan-v2.schema.json",
+          "role": "definition",
+          "fingerprint": "sha256:dc18ae73cd0f0e5b77ab2542367524dc1511900a89a7cc2213d9d86445b98f6f"
         },
         {
           "path": "soter/contracts/operation-plan.schema.json",
@@ -207,7 +217,7 @@
         {
           "path": "soter/core/host-tools.mjs",
           "role": "implementation",
-          "fingerprint": "sha256:33aa27c5724fefec7433cf70a3b1198854b599baef5e8ffb8b679c2a35f5ca1e"
+          "fingerprint": "sha256:240b499e93587a8734047cff51de5a17863c594b23c2330a3fbc77b574957adf"
         },
         {
           "path": "soter/core/lib/canonical-json.mjs",
@@ -217,7 +227,7 @@
         {
           "path": "soter/core/mcp/selftest.mjs",
           "role": "evaluation",
-          "fingerprint": "sha256:d5ef42a997482165b065119d0c46efdecab6aa91a4e53b2b79ccd52f2cc79b07"
+          "fingerprint": "sha256:5ce69ace65a128f625d612ec3ecc84998551439dee869dfc7f2812dcbb1a42c7"
         },
         {
           "path": "soter/core/mcp/server.mjs",
@@ -227,12 +237,12 @@
         {
           "path": "soter/core/mcp/tools.mjs",
           "role": "implementation",
-          "fingerprint": "sha256:98acae03ad2f42b8f78cc47e576007029c13d8f46ef92ae5c4e391aad8fb180f"
+          "fingerprint": "sha256:d35d1a07503a0f50c7d26258621824ab9e76c365f9c1b9f82d4612772fed4ce2"
         },
         {
           "path": "soter/core/operation-plans.mjs",
           "role": "implementation",
-          "fingerprint": "sha256:41d525ef34979e182a3a21497644e21c97f451c1ec4fa334573343eff693244a"
+          "fingerprint": "sha256:87f8a32c38ca4cbd540f96624a3b05c83bcd61229abdaa51043c35799061b651"
         },
         {
           "path": "soter/core/provider-probes.mjs",
@@ -257,12 +267,12 @@
         {
           "path": "soter/core/selftest.mjs",
           "role": "evaluation",
-          "fingerprint": "sha256:4f43037fd69b5e5d91f148ef41cc7aabb3b8973c05778a95a7641ca547ca9cdf"
+          "fingerprint": "sha256:c56af76f0550a6c3466c17ff634a050ddc3c252dc09a55ee952778e737505fb5"
         },
         {
           "path": "soter/core/service.mjs",
           "role": "implementation",
-          "fingerprint": "sha256:2c98e089573d17abaa23ff2ddc26008e5c38a10c921b825e783e5570d80ef10a"
+          "fingerprint": "sha256:f8ed58276335b188cee6f299cea49aa5f3aa61a0e24b085eb12c9398e7d1714c"
         },
         {
           "path": "soter/core/transaction.mjs",
@@ -295,7 +305,7 @@
         {
           "path": "soter/automations/meeting-intake/context.mjs",
           "role": "implementation",
-          "fingerprint": "sha256:4ba01ec0f7f8124df95f0c77f95226c55fa2249a714a0ad585cdb1952046ac83"
+          "fingerprint": "sha256:1a8cd40d87c2846489b015651cb7b972385bbb88419016725abca82e1621aeaf"
         },
         {
           "path": "soter/scenarios/meeting-intake/grounded-and-gated.scenario.json",
@@ -347,7 +357,7 @@
         {
           "path": "soter/integrations/notion/crm-records.mapping.json",
           "role": "definition",
-          "fingerprint": "sha256:0eb11830b043fd6a1941db005e732463cbe26f3492daf94240e635d82160155a"
+          "fingerprint": "sha256:4d9d8f3e11f963dee2e20bd2dd9525f549a6ef8dc3df366991da129c19451b05"
         },
         {
           "path": "soter/integrations/notion/fixture.mjs",
@@ -357,7 +367,7 @@
         {
           "path": "soter/integrations/notion/mcp.mjs",
           "role": "implementation",
-          "fingerprint": "sha256:bedcee58c50df8276a9aa81e9df9b749158133105158018f786726f164d5f23a"
+          "fingerprint": "sha256:69f9a9e27e5ad0d5d3819b7e5efdeb5bdebc56598f76dcc29751a16dafb2ef26"
         },
         {
           "path": "soter/integrations/notion/settings.json",
@@ -372,7 +382,7 @@
         {
           "path": "soter/providers/provider.integration.notion.mcp.json",
           "role": "implementation",
-          "fingerprint": "sha256:8fd599fd043509f263e7199b2f60bdc4906ca6d07c26071881070f8200dfda86"
+          "fingerprint": "sha256:59d91177d323897f8b17173c3e5669444a812ef06845258f91725ff693babea2"
         }
       ]
     },
@@ -635,5 +645,5 @@
       "fingerprint": "sha256:76ee7cf92f64ea6a927008daa4cf80dff943769d749b9bd9d27737a1420f57be"
     }
   ],
-  "graphFingerprint": "sha256:6ffc8ae885e3cb4faee72783a63f6c684088b2cf58a8c183cd744e1a9790cc44"
+  "graphFingerprint": "sha256:f4b45fc46431f86e3a8664b7fefcdc3345351d6c556b27dc841eea8517fa1454"
 }
