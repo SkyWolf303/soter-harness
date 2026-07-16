@@ -9,7 +9,7 @@
     "id": "run.meeting-intake.fixture",
     "version": null
   },
-  "configurationLockFingerprint": "sha256:af8d2f73a99e82cae0f977532731285e96d8db55882fdee2648e2d8f15a99b9b",
+  "configurationLockFingerprint": "sha256:1123ed8dc6b3c9883d1311e6d245a61c804101b1080218b77591201a1ec6da73",
   "dependencies": [
     {
       "id": "kernel.soter",
@@ -124,7 +124,7 @@
     {
       "role": "run-envelope",
       "id": "run.meeting-intake.fixture",
-      "graphFingerprint": "sha256:5020719c8660e68a08f69326a4aa6cd515573c4f3cd545504b3a286fe1998040"
+      "graphFingerprint": "sha256:9ee19106cef9a258ae4b1b8a3e1ffb5f7657746fd30bac4c36ad8a0470dee985"
     },
     {
       "role": "scenario",

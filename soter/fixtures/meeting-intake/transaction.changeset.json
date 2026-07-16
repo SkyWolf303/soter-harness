@@ -4,9 +4,9 @@
   "id": "changeset.meeting-intake.transaction-fixture",
   "runId": "run.meeting-intake.transaction-fixture",
   "createdAt": "2026-07-15T12:00:00.000Z",
-  "configurationLockFingerprint": "sha256:af8d2f73a99e82cae0f977532731285e96d8db55882fdee2648e2d8f15a99b9b",
+  "configurationLockFingerprint": "sha256:1123ed8dc6b3c9883d1311e6d245a61c804101b1080218b77591201a1ec6da73",
   "state": "committed",
-  "scopeFingerprint": "sha256:705e3652b3c6b78adacc36d9a813d39cc26075542fdf54e4db39007df92225f2",
+  "scopeFingerprint": "sha256:6bf1ede40995d535b40c7efb37d68270e5817abcb562880da1e83576e9753394",
   "operations": [
     {
       "id": "operation.summary.create",

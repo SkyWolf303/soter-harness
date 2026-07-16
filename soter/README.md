@@ -227,11 +227,25 @@ checkpoint ID, exact call ID, and native response—never an approval document.
 The first write must start before the approval expires (at most fifteen minutes
 after creation). Verification and compensation may continue afterward.
 
+For a `needs-attention` checkpoint, prepare one read-only observation with:
+
+    node soter/core/cli.mjs connected-transaction-reconcile --checkpoint ID
+
+Execute the returned exact read and pass its response to
+`connected-transaction-complete`; MCP uses
+`soter_reconcile_connected_transaction` followed by
+`soter_advance_connected_transaction`. Reconciliation never accepts approval or
+retries a write. Approved fields resume an ambiguous update, prior fields close
+that update and recover earlier verified effects, and only prior fields prove
+ambiguous compensation. Missing, divergent, or failed reads remain paused and
+can be observed again later through another bounded attempt.
+
 This is an external saga, not an ACID transaction. `completed` means every
 approved update was read back. `rolled-back` means verified earlier updates were
 restored after a later deterministic failure. `failed` means no ambiguous write
 remains. `needs-attention` means Core cannot prove whether an external effect or
-its compensation occurred and will not guess or retry it automatically. Mapped
+its compensation occurred. It will not guess or retry it automatically; its
+reconciliation history records exact minimized observations instead. Mapped
 creates remain blocked until their selected provider has a governed automatic
 compensation route. Local self-tests use synthetic host results and do not prove
 connected credentials, write permission, response conformance, or live health.

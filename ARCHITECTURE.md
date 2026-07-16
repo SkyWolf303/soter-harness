@@ -323,7 +323,10 @@ later operation conflicts, Core restores verified earlier updates in reverse
 order and verifies each restoration. An unknown write outcome is not
 represented as rollback: the checkpoint enters `needs-attention` for
 reconciliation because external systems do not provide an ACID transaction
-boundary.
+boundary. Reconciliation emits only an exact record read. Approved state can
+resume the batch, prior state can close or continue rollback, and missing,
+divergent, failed-read, or unproven compensation state remains paused. It never
+replays the ambiguous write.
 
 The stdio self-test terminates and restarts the server between preparation and
 completion, repairs planted partial cross-file updates, rejects stale and
@@ -546,7 +549,11 @@ mapped fields, verifies each applied patch, compensates verified updates in
 reverse after a later conflict, and recovers the exact current host call after
 restart. It preflights every operation and recovery route before the first
 effect so an invalid tail cannot strand earlier changes. The CLI alone
-originates the authorized checkpoint; MCP only advances it. Synthetic local tests prove this Core state machine, not connected
+originates the authorized checkpoint; MCP only advances it or requests a
+checkpoint-bound read-only reconciliation. Reconciliation histories classify
+approved, prior, missing, divergent, and failed-read observations and resume
+only when the normalized record proves a safe transition. Synthetic local
+tests prove this Core state machine, not connected
 credentials, provider write conformance, or a live end-to-end write. Observed Otter
 transcript conformance, host-started end-to-end dispatch, policy body loading and
 applicability, participant identity resolution, compensated creates, live

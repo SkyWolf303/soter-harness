@@ -22,7 +22,8 @@ import {
   completeConnectedTransactionCall,
   connectedTransactionCurrentCall,
   createConnectedTransactionCheckpoint,
-  failConnectedTransactionCall
+  failConnectedTransactionCall,
+  prepareConnectedTransactionReconciliation
 } from './connected-transaction-runtime.mjs';
 import {
   createContextAssemblyEvidence,
@@ -38,8 +39,10 @@ import {
   completeDurableProviderProbeExecution,
   completeDurableOperationPlanExecution,
   completeDurableConnectedTransactionExecution,
+  failDurableHostExecution,
   getDurableHostExecution,
   prepareDurableConnectedTransactionExecution,
+  prepareDurableConnectedTransactionReconciliation,
   prepareDurableProviderProbeExecution,
   prepareDurableOperationPlanExecution
 } from './service.mjs';
@@ -950,6 +953,155 @@ export async function selftest(root) {
         !== ambiguousCheckpoint.checkpointFingerprint) {
       failures.push('connected transaction overstated a failed write transport as safely rolled back');
     }
+    let reconciledApproved = await prepareConnectedTransactionReconciliation({
+      root: temp,
+      lock,
+      checkpoint: ambiguousCheckpoint,
+      at: '2026-07-15T12:00:03.000Z'
+    });
+    const approvedReconciliationCall = connectedTransactionCurrentCall(reconciledApproved);
+    const approvedReconciliationResponse = notionTaskReadResponse(updateRecordId, {
+      ...updatePriorFields,
+      status: 'Open'
+    }, 'private-connected-reconciliation-marker');
+    reconciledApproved = (await completeConnectedTransactionCall({
+      root: temp,
+      lock,
+      checkpoint: reconciledApproved,
+      callId: approvedReconciliationCall.id,
+      response: approvedReconciliationResponse,
+      at: '2026-07-15T12:00:04.000Z'
+    })).checkpoint;
+    const replayedReconciliation = await completeConnectedTransactionCall({
+      root: temp,
+      lock,
+      checkpoint: reconciledApproved,
+      callId: approvedReconciliationCall.id,
+      response: approvedReconciliationResponse,
+      at: '2026-07-15T12:00:05.000Z'
+    });
+    const tamperedReconciliation = structuredClone(reconciledApproved);
+    tamperedReconciliation.operations[0].reconciliations[0].outcome = 'diverged';
+    delete tamperedReconciliation.checkpointFingerprint;
+    tamperedReconciliation.checkpointFingerprint = fingerprintJson(tamperedReconciliation);
+    let tamperedReconciliationRejected = false;
+    try {
+      assertConnectedTransactionCheckpoint(temp, tamperedReconciliation);
+    } catch (error) {
+      tamperedReconciliationRejected = error.message.includes('reconciliation');
+    }
+    if (reconciledApproved.state !== 'completed'
+      || reconciledApproved.operations[0].ambiguities[0].resolution !== 'approved-fields'
+      || reconciledApproved.operations[0].reconciliations[0].outcome !== 'approved-fields'
+      || reconciledApproved.operations[0].appliedVersion
+        !== notionTaskVersion(updateRecordId, { ...updatePriorFields, status: 'Open' })
+      || replayedReconciliation.idempotent !== true
+      || !tamperedReconciliationRejected
+      || JSON.stringify(reconciledApproved).includes('private-connected-reconciliation-marker')) {
+      failures.push('connected reconciliation did not prove and resume an ambiguous approved update exactly');
+    }
+
+    let reconciledPrior = await prepareConnectedTransactionReconciliation({
+      root: temp,
+      lock,
+      checkpoint: ambiguousCheckpoint,
+      at: '2026-07-15T12:00:03.000Z'
+    });
+    reconciledPrior = (await completeConnectedTransactionCall({
+      root: temp,
+      lock,
+      checkpoint: reconciledPrior,
+      callId: connectedTransactionCurrentCall(reconciledPrior).id,
+      response: notionTaskReadResponse(updateRecordId, updatePriorFields),
+      at: '2026-07-15T12:00:04.000Z'
+    })).checkpoint;
+    if (reconciledPrior.state !== 'failed'
+      || reconciledPrior.operations[0].ambiguities[0].resolution !== 'prior-fields') {
+      failures.push('connected reconciliation did not close a proved no-change ambiguity without retrying the write');
+    }
+
+    let reconciledDiverged = await prepareConnectedTransactionReconciliation({
+      root: temp,
+      lock,
+      checkpoint: ambiguousCheckpoint,
+      at: '2026-07-15T12:00:03.000Z'
+    });
+    reconciledDiverged = (await completeConnectedTransactionCall({
+      root: temp,
+      lock,
+      checkpoint: reconciledDiverged,
+      callId: connectedTransactionCurrentCall(reconciledDiverged).id,
+      response: notionTaskReadResponse(updateRecordId, {
+        ...updatePriorFields,
+        status: 'Unexpected concurrent value'
+      }),
+      at: '2026-07-15T12:00:04.000Z'
+    })).checkpoint;
+    reconciledDiverged = await prepareConnectedTransactionReconciliation({
+      root: temp,
+      lock,
+      checkpoint: reconciledDiverged,
+      at: '2026-07-15T12:00:05.000Z'
+    });
+    reconciledDiverged = (await completeConnectedTransactionCall({
+      root: temp,
+      lock,
+      checkpoint: reconciledDiverged,
+      callId: connectedTransactionCurrentCall(reconciledDiverged).id,
+      response: notionTaskReadResponse(updateRecordId, updatePriorFields),
+      at: '2026-07-15T12:00:06.000Z'
+    })).checkpoint;
+    if (reconciledDiverged.state !== 'failed'
+      || reconciledDiverged.operations[0].reconciliations.length !== 2
+      || reconciledDiverged.operations[0].reconciliations[0].outcome !== 'diverged'
+      || reconciledDiverged.operations[0].reconciliations[1].outcome !== 'prior-fields') {
+      failures.push('connected reconciliation guessed at divergent state or could not retry its read safely');
+    }
+    let reconciledMissing = await prepareConnectedTransactionReconciliation({
+      root: temp,
+      lock,
+      checkpoint: ambiguousCheckpoint,
+      at: '2026-07-15T12:00:03.000Z'
+    });
+    reconciledMissing = (await completeConnectedTransactionCall({
+      root: temp,
+      lock,
+      checkpoint: reconciledMissing,
+      callId: connectedTransactionCurrentCall(reconciledMissing).id,
+      response: { structuredContent: { result: { results: [], has_more: false } } },
+      at: '2026-07-15T12:00:04.000Z'
+    })).checkpoint;
+    let failedReconciliationRead = await prepareConnectedTransactionReconciliation({
+      root: temp,
+      lock,
+      checkpoint: ambiguousCheckpoint,
+      at: '2026-07-15T12:00:03.000Z'
+    });
+    const failedReconciliationCall = connectedTransactionCurrentCall(failedReconciliationRead);
+    failedReconciliationRead = await failConnectedTransactionCall({
+      root: temp,
+      lock,
+      checkpoint: failedReconciliationRead,
+      callId: failedReconciliationCall.id,
+      error: { kind: 'unavailable', message: 'Injected reconciliation read failure.' },
+      at: '2026-07-15T12:00:04.000Z'
+    });
+    const replayedReconciliationFailure = await failConnectedTransactionCall({
+      root: temp,
+      lock,
+      checkpoint: failedReconciliationRead,
+      callId: failedReconciliationCall.id,
+      error: { kind: 'unavailable', message: 'Injected reconciliation read failure.' },
+      at: '2026-07-15T12:00:05.000Z'
+    });
+    if (reconciledMissing.state !== 'needs-attention'
+      || reconciledMissing.operations[0].reconciliations[0].outcome !== 'missing'
+      || failedReconciliationRead.state !== 'needs-attention'
+      || failedReconciliationRead.operations[0].reconciliations[0].outcome !== 'read-failed'
+      || replayedReconciliationFailure.checkpointFingerprint
+        !== failedReconciliationRead.checkpointFingerprint) {
+      failures.push('connected reconciliation did not preserve missing or failed read ambiguity for safe retry');
+    }
 
     const rollbackProposal = structuredClone(updateProposal);
     const rollbackRecordId = 'https://www.notion.so/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
@@ -1089,6 +1241,7 @@ export async function selftest(root) {
       at: '2026-07-15T12:00:04.000Z'
     })).checkpoint;
     const compensationCall = connectedTransactionCurrentCall(rollbackCheckpoint);
+    const compensationAmbiguityStart = structuredClone(rollbackCheckpoint);
     rollbackCheckpoint = (await completeConnectedTransactionCall({
       root: temp,
       lock,
@@ -1114,6 +1267,53 @@ export async function selftest(root) {
         !== 'operation.task.first-status-update'
       || rollbackCheckpoint.result?.error?.kind !== 'conflict') {
       failures.push('connected transaction did not compensate verified updates in reverse after a later conflict');
+    }
+    let reconciledCompensation = await failConnectedTransactionCall({
+      root: temp,
+      lock,
+      checkpoint: compensationAmbiguityStart,
+      callId: compensationCall.id,
+      error: { kind: 'unavailable', message: 'Injected compensation transport ambiguity.' },
+      at: '2026-07-15T12:00:05.000Z'
+    });
+    const unresolvedCompensation = structuredClone(reconciledCompensation);
+    reconciledCompensation = await prepareConnectedTransactionReconciliation({
+      root: temp,
+      lock,
+      checkpoint: reconciledCompensation,
+      at: '2026-07-15T12:00:06.000Z'
+    });
+    reconciledCompensation = (await completeConnectedTransactionCall({
+      root: temp,
+      lock,
+      checkpoint: reconciledCompensation,
+      callId: connectedTransactionCurrentCall(reconciledCompensation).id,
+      response: notionTaskReadResponse(updateRecordId, updatePriorFields),
+      at: '2026-07-15T12:00:07.000Z'
+    })).checkpoint;
+    let compensationStillApplied = await prepareConnectedTransactionReconciliation({
+      root: temp,
+      lock,
+      checkpoint: unresolvedCompensation,
+      at: '2026-07-15T12:00:06.000Z'
+    });
+    compensationStillApplied = (await completeConnectedTransactionCall({
+      root: temp,
+      lock,
+      checkpoint: compensationStillApplied,
+      callId: connectedTransactionCurrentCall(compensationStillApplied).id,
+      response: notionTaskReadResponse(updateRecordId, {
+        ...updatePriorFields,
+        status: 'Open'
+      }),
+      at: '2026-07-15T12:00:07.000Z'
+    })).checkpoint;
+    if (reconciledCompensation.state !== 'rolled-back'
+      || reconciledCompensation.operations[0].ambiguities[0].resolution !== 'prior-fields'
+      || compensationStillApplied.state !== 'needs-attention'
+      || compensationStillApplied.operations[0].reconciliations[0].outcome
+        !== 'approved-fields') {
+      failures.push('connected reconciliation overstated or failed to prove an ambiguous compensation');
     }
 
     const durableConnectedRun = structuredClone(envelope);
@@ -1205,6 +1405,103 @@ export async function selftest(root) {
       || durableConnectedCheckpointText.includes('private-durable-connected')
       || durableConnectedRunText.includes('private-durable-connected')) {
       failures.push('durable connected transaction did not persist, recover, minimize, and synchronize its exact run');
+    }
+
+    const durableReconciliationProposal = structuredClone(updateProposal);
+    durableReconciliationProposal.id = 'changeset.meeting-intake.durable-reconciliation-selftest';
+    durableReconciliationProposal.runId = 'run.meeting-intake.durable-reconciliation-selftest';
+    durableReconciliationProposal.scopeFingerprint = changeSetScopeFingerprint(
+      durableReconciliationProposal
+    );
+    const durableReconciliationBatch = compileConnectedOperationBatch({
+      root: temp,
+      lock,
+      changeSet: durableReconciliationProposal,
+      id: 'batch.meeting-intake.durable-reconciliation-selftest',
+      createdAt: FIXTURE_TIME
+    });
+    const durableReconciliationApproval = approveConnectedOperationBatch({
+      root: temp,
+      batch: durableReconciliationBatch,
+      changeSet: durableReconciliationProposal,
+      id: 'approval.meeting-intake.durable-reconciliation-selftest',
+      actor: 'fixture.user',
+      reason: 'Approve one exact update so durable read-only ambiguity reconciliation can be proven.',
+      createdAt: FIXTURE_TIME,
+      expiresAt: '2026-07-15T12:05:00.000Z'
+    });
+    const durableReconciliationRun = structuredClone(envelope);
+    durableReconciliationRun.id = durableReconciliationProposal.runId;
+    const durableReconciliationRunPath = 'soter/fixtures/meeting-intake/durable-reconciliation-selftest.run.json';
+    writeJson(path.join(temp, durableReconciliationRunPath), durableReconciliationRun);
+    let durableReconciliation = await prepareDurableConnectedTransactionExecution({
+      root: temp,
+      lockPath,
+      runPath: durableReconciliationRunPath,
+      batch: durableReconciliationBatch,
+      changeSet: durableReconciliationProposal,
+      approval: durableReconciliationApproval,
+      at: FIXTURE_TIME,
+      expectedHost: 'codex'
+    });
+    durableReconciliation = await completeDurableConnectedTransactionExecution({
+      root: temp,
+      checkpointId: durableReconciliation.checkpoint.id,
+      callId: durableReconciliation.currentCall.id,
+      response: notionTaskReadResponse(updateRecordId, updatePriorFields),
+      at: '2026-07-15T12:00:01.000Z',
+      expectedHost: 'codex'
+    });
+    durableReconciliation = await failDurableHostExecution({
+      root: temp,
+      checkpointId: durableReconciliation.checkpoint.id,
+      callId: durableReconciliation.currentCall.id,
+      errorKind: 'unavailable',
+      message: 'Injected durable write ambiguity.',
+      at: '2026-07-15T12:00:02.000Z',
+      expectedHost: 'codex'
+    });
+    durableReconciliation = await prepareDurableConnectedTransactionReconciliation({
+      root: temp,
+      checkpointId: durableReconciliation.checkpoint.id,
+      at: '2026-07-15T12:00:03.000Z',
+      expectedHost: 'codex'
+    });
+    const duplicateDurableReconciliation = await prepareDurableConnectedTransactionReconciliation({
+      root: temp,
+      checkpointId: durableReconciliation.checkpoint.id,
+      at: '2026-07-15T12:00:03.500Z',
+      expectedHost: 'codex'
+    });
+    const rehydratedDurableReconciliation = getDurableHostExecution({
+      root: temp,
+      checkpointId: durableReconciliation.checkpoint.id,
+      expectedHost: 'codex'
+    });
+    durableReconciliation = await completeDurableConnectedTransactionExecution({
+      root: temp,
+      checkpointId: durableReconciliation.checkpoint.id,
+      callId: rehydratedDurableReconciliation.currentCall.id,
+      response: notionTaskReadResponse(updateRecordId, {
+        ...updatePriorFields,
+        status: 'Open'
+      }, 'private-durable-reconciliation-marker'),
+      at: '2026-07-15T12:00:04.000Z',
+      expectedHost: 'codex'
+    });
+    const durableReconciliationText = [
+      durableReconciliation.checkpointPath,
+      durableReconciliation.runPath
+    ].map((file) => fs.readFileSync(path.join(temp, file), 'utf8')).join('\n');
+    if (duplicateDurableReconciliation.checkpoint.checkpointFingerprint
+        !== rehydratedDurableReconciliation.checkpoint.checkpointFingerprint
+      || rehydratedDurableReconciliation.currentCall?.transport.operation
+        !== 'query_data_sources'
+      || durableReconciliation.checkpoint.state !== 'completed'
+      || durableReconciliation.run.effects.length !== 3
+      || durableReconciliation.run.lifecycleState !== 'executing'
+      || durableReconciliationText.includes('private-durable-reconciliation-marker')) {
+      failures.push('durable connected reconciliation did not recover, resume, minimize, and synchronize its exact run');
     }
     const createProposal = structuredClone(connectedProposal);
     createProposal.id = 'changeset.meeting-intake.connected-create-selftest';
@@ -2631,7 +2928,7 @@ export async function selftest(root) {
     return false;
   }
   process.stdout.write(
-    'CORE SELFTEST PASS: deterministic lock, typed fixture reads/writes, exact-scope approval, deduplication, expected-version conflicts, rollback, read-after-write verification, resumable fixed and bound sequential operation plans, approval-bound connected update transactions with reverse compensation, bounded connected context finalization, resumable MCP host dispatch, exact-lock single and multi-step provider probes, schema drift rejection, connected readiness, expiry, honest states, and stale-lock detection.\n'
+    'CORE SELFTEST PASS: deterministic lock, typed fixture reads/writes, exact-scope approval, deduplication, expected-version conflicts, rollback, read-after-write verification, resumable fixed and bound sequential operation plans, approval-bound connected update transactions with reverse compensation and read-only ambiguity reconciliation, bounded connected context finalization, resumable MCP host dispatch, exact-lock single and multi-step provider probes, schema drift rejection, connected readiness, expiry, honest states, and stale-lock detection.\n'
   );
   return true;
 }

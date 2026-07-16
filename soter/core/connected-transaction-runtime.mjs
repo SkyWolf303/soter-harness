@@ -82,6 +82,39 @@ function callIdForStage(checkpoint, runtimeOperation, stage) {
     + '.' + idPart(runtimeOperation.id) + '.' + idPart(stage);
 }
 
+function reconciliationId(runtimeOperation) {
+  return 'reconciliation.' + idPart(runtimeOperation.id) + '.'
+    + (runtimeOperation.reconciliations.length + 1);
+}
+
+function callIdForReconciliation(checkpoint, runtimeOperation, id) {
+  return 'toolcall.transaction.' + idPart(checkpoint.batch.id.slice('batch.'.length))
+    + '.' + idPart(runtimeOperation.id) + '.reconcile.' + id.split('.').at(-1);
+}
+
+function unresolvedAmbiguity(checkpoint) {
+  const matches = checkpoint.operations.flatMap((operation) => {
+    return operation.ambiguities
+      .filter((ambiguity) => ambiguity.status === 'unresolved')
+      .map((ambiguity) => ({ operation, ambiguity }));
+  });
+  if (matches.length > 1) {
+    throw new Error('Connected transaction has more than one unresolved ambiguity.');
+  }
+  return matches[0] || null;
+}
+
+function reconciliationForCurrent(checkpoint) {
+  if (checkpoint.current?.stage !== 'reconcile') return null;
+  const operation = checkpoint.operations.find((item) => {
+    return item.id === checkpoint.current.operationId;
+  });
+  const reconciliation = operation?.reconciliations.find((item) => {
+    return item.id === checkpoint.current.reconciliationId;
+  });
+  return reconciliation ? { operation, reconciliation } : null;
+}
+
 export function assertConnectedTransactionCheckpoint(root, checkpoint) {
   const resolvedRoot = path.resolve(root);
   validate(
@@ -121,6 +154,8 @@ export function assertConnectedTransactionCheckpoint(root, checkpoint) {
     }
   });
   const requested = [];
+  const ambiguityIds = [];
+  const reconciliationIds = [];
   for (const runtimeOperation of checkpoint.operations) {
     const source = sourceOperation(checkpoint, runtimeOperation);
     for (const name of [
@@ -155,6 +190,91 @@ export function assertConnectedTransactionCheckpoint(root, checkpoint) {
       }
       if (record.call.state === 'requested') requested.push({ runtimeOperation, stage, record });
     }
+    for (const ambiguity of runtimeOperation.ambiguities) {
+      ambiguityIds.push(ambiguity.id);
+      const sourcePhase = runtimeOperation[phaseName(ambiguity.stage)];
+      if ((ambiguity.status === 'unresolved') !== (ambiguity.resolvedAt === null)
+        || (ambiguity.status === 'unresolved') !== (ambiguity.resolution === null)
+        || (ambiguity.callId !== null && sourcePhase?.call.id !== ambiguity.callId)) {
+        throw new Error('Connected transaction ambiguity resolution state is inconsistent.');
+      }
+    }
+    for (const reconciliation of runtimeOperation.reconciliations) {
+      reconciliationIds.push(reconciliation.id);
+      const ambiguity = runtimeOperation.ambiguities.find((item) => {
+        return item.id === reconciliation.ambiguityId;
+      });
+      const record = reconciliation.phase;
+      validate(
+        resolvedRoot,
+        record.call,
+        'soter/contracts/host-tool-call.schema.json',
+        'Connected transaction reconciliation call'
+      );
+      const expectedInput = inputForStage(source, runtimeOperation, 'verify');
+      const observation = record.call.state === 'completed' && ambiguity
+        ? classifyReconciliation(record.output, source, runtimeOperation, ambiguity)
+        : { record: null, outcome: 'read-failed' };
+      if (!ambiguity
+        || record.call.id !== callIdForReconciliation(
+          checkpoint,
+          runtimeOperation,
+          reconciliation.id
+        )
+        || record.call.runId !== checkpoint.run.id
+        || record.call.configurationLockFingerprint !== checkpoint.configurationLock.fingerprint
+        || record.call.graphFingerprint !== checkpoint.graphFingerprint
+        || fingerprintJson(record.call.host) !== fingerprintJson(checkpoint.host)
+        || record.call.provider.implementation !== source.provider.implementation
+        || record.call.provider.pack !== source.provider.pack
+        || record.call.provider.version !== source.provider.version
+        || record.call.provider.containment !== 'connected'
+        || record.call.capability.id !== 'crm.records.read'
+        || record.call.authority !== source.authority
+        || record.call.inputFingerprint !== fingerprintJson(expectedInput)
+        || record.outputFingerprint !== (record.output ? fingerprintJson(record.output) : null)
+        || record.call.outputFingerprint !== record.outputFingerprint
+        || fingerprintJson(record.call.error) !== fingerprintJson(record.error)
+        || (record.call.state === 'requested') !== (reconciliation.outcome === null)
+        || (['failed', 'blocked'].includes(record.call.state))
+          !== (reconciliation.outcome === 'read-failed')
+        || (record.call.state === 'completed'
+          && (reconciliation.outcome !== observation.outcome
+            || reconciliation.observedVersion !== (observation.record?.version || null)))
+        || (record.call.state !== 'completed' && reconciliation.observedVersion !== null)) {
+        throw new Error('Connected transaction reconciliation does not match its ambiguity and read call.');
+      }
+      if (record.call.state === 'requested') {
+        requested.push({
+          runtimeOperation,
+          stage: 'reconcile',
+          record,
+          reconciliation
+        });
+      }
+    }
+    for (const ambiguity of runtimeOperation.ambiguities) {
+      const resolvingOutcomes = runtimeOperation.reconciliations
+        .filter((item) => item.ambiguityId === ambiguity.id)
+        .map((item) => item.outcome)
+        .filter((outcome) => outcome === 'prior-fields' || outcome === 'approved-fields');
+      const expectedResolution = ambiguity.stage === 'compensate'
+        || ambiguity.stage === 'compensation-verify'
+        ? resolvingOutcomes.includes('prior-fields') ? 'prior-fields' : null
+        : resolvingOutcomes.includes('approved-fields')
+          ? 'approved-fields'
+          : resolvingOutcomes.includes('prior-fields')
+            ? 'prior-fields'
+            : null;
+      if ((ambiguity.status === 'resolved' && ambiguity.resolution !== expectedResolution)
+        || (ambiguity.status === 'unresolved' && expectedResolution !== null)) {
+        throw new Error('Connected transaction ambiguity does not match its reconciliation history.');
+      }
+    }
+  }
+  if (new Set(ambiguityIds).size !== ambiguityIds.length
+    || new Set(reconciliationIds).size !== reconciliationIds.length) {
+    throw new Error('Connected transaction ambiguity and reconciliation IDs must be unique.');
   }
   if (requested.length > 1) {
     throw new Error('Connected transaction has more than one outstanding host call.');
@@ -163,15 +283,25 @@ export function assertConnectedTransactionCheckpoint(root, checkpoint) {
     const operation = checkpoint.operations.find((item) => {
       return item.id === checkpoint.current.operationId;
     });
-    const phase = operation?.[phaseName(checkpoint.current.stage)];
+    const reconciliation = checkpoint.current.stage === 'reconcile'
+      ? operation?.reconciliations.find((item) => {
+        return item.id === checkpoint.current.reconciliationId;
+      })
+      : null;
+    const phase = reconciliation?.phase || operation?.[phaseName(checkpoint.current.stage)];
     const expectedState = checkpoint.current.stage === 'compare' ? 'comparing'
       : checkpoint.current.stage === 'write' ? 'writing'
         : checkpoint.current.stage === 'verify' ? 'verifying'
           : checkpoint.current.stage === 'compensate' ? 'compensating'
-            : 'compensation-verifying';
+            : checkpoint.current.stage === 'compensation-verify'
+              ? 'compensation-verifying'
+              : 'reconciling';
     if (!phase || phase.call.id !== checkpoint.current.callId
       || phase.call.state !== 'requested' || checkpoint.state !== 'requested'
-      || operation.state !== expectedState || requested.length !== 1) {
+      || operation.state !== expectedState || requested.length !== 1
+      || (checkpoint.current.stage === 'reconcile') !== Boolean(reconciliation)
+      || (checkpoint.current.stage === 'reconcile')
+        !== (checkpoint.current.reconciliationId !== null)) {
       throw new Error('Connected transaction current call is not the exact requested phase.');
     }
   } else if (checkpoint.state === 'requested') {
@@ -180,6 +310,15 @@ export function assertConnectedTransactionCheckpoint(root, checkpoint) {
     throw new Error('Terminal connected transaction retains an outstanding host call.');
   } else if (checkpoint.result?.state !== checkpoint.state) {
     throw new Error('Terminal connected transaction result does not match checkpoint state.');
+  }
+  const unresolved = unresolvedAmbiguity(checkpoint);
+  const expectsUnresolved = checkpoint.state === 'needs-attention'
+    || checkpoint.current?.stage === 'reconcile';
+  if (expectsUnresolved !== Boolean(unresolved)
+    || (checkpoint.current?.stage === 'reconcile'
+      && unresolved?.ambiguity.id
+        !== reconciliationForCurrent(checkpoint)?.reconciliation.ambiguityId)) {
+    throw new Error('Connected transaction state does not match its unresolved ambiguity.');
   }
   if (checkpoint.result) {
     const expectedApplied = checkpoint.operations
@@ -204,6 +343,9 @@ export function assertConnectedTransactionCheckpoint(root, checkpoint) {
 
 export function connectedTransactionCurrentCall(checkpoint) {
   if (checkpoint?.$contract !== CONTRACT || !checkpoint.current) return null;
+  if (checkpoint.current.stage === 'reconcile') {
+    return reconciliationForCurrent(checkpoint)?.reconciliation.phase.call || null;
+  }
   const operation = checkpoint.operations.find((item) => {
     return item.id === checkpoint.current.operationId;
   });
@@ -233,6 +375,22 @@ function fieldsMatch(record, expected) {
   });
 }
 
+function classifyReconciliation(output, source, runtimeOperation, ambiguity) {
+  const record = recordFor(output, source);
+  if (!record) return { record: null, outcome: 'missing' };
+  const compensation = ambiguity.stage === 'compensate'
+    || ambiguity.stage === 'compensation-verify';
+  const approved = fieldsMatch(record, source.input.patch);
+  const prior = Boolean(runtimeOperation.priorFields
+    && fieldsMatch(record, runtimeOperation.priorFields));
+  const outcome = compensation && prior ? 'prior-fields'
+    : !compensation && approved ? 'approved-fields'
+      : prior ? 'prior-fields'
+        : approved ? 'approved-fields'
+          : 'diverged';
+  return { record, outcome };
+}
+
 function completedResult(checkpoint, state, error = null) {
   return {
     state,
@@ -242,8 +400,38 @@ function completedResult(checkpoint, state, error = null) {
     compensatedOperationIds: checkpoint.operations
       .filter((operation) => operation.state === 'compensated')
       .map((operation) => operation.id),
-    error: error || checkpoint.operations.findLast((operation) => operation.error)?.error || null
+    error: error || (state === 'completed'
+      ? null
+      : checkpoint.operations.findLast((operation) => operation.error)?.error || null)
   };
+}
+
+function markNeedsAttention({ checkpoint, runtimeOperation, stage, callId, at, error }) {
+  if (!['write', 'verify', 'compensate', 'compensation-verify'].includes(stage)) {
+    throw new Error('Unsupported connected transaction ambiguity stage ' + stage + '.');
+  }
+  if (unresolvedAmbiguity(checkpoint)) {
+    throw new Error('Connected transaction already has an unresolved ambiguity.');
+  }
+  const ambiguity = {
+    id: 'ambiguity.' + idPart(runtimeOperation.id) + '.'
+      + (runtimeOperation.ambiguities.length + 1),
+    stage,
+    callId,
+    createdAt: at,
+    error: structuredClone(error),
+    status: 'unresolved',
+    resolvedAt: null,
+    resolution: null
+  };
+  runtimeOperation.ambiguities.push(ambiguity);
+  runtimeOperation.state = 'needs-attention';
+  runtimeOperation.error = structuredClone(error);
+  checkpoint.state = 'needs-attention';
+  checkpoint.current = null;
+  checkpoint.updatedAt = at;
+  checkpoint.result = completedResult(checkpoint, 'needs-attention', error);
+  return checkpoint;
 }
 
 async function requestStage({ root, lock, checkpoint, runtimeOperation, stage, at }) {
@@ -279,12 +467,27 @@ async function requestStage({ root, lock, checkpoint, runtimeOperation, stage, a
     }
   } catch (error) {
     const authorizationError = { kind: 'authorization', message: error.message };
-    runtimeOperation.state = checkpoint.startedAt ? 'needs-attention' : 'failed';
-    runtimeOperation.error = authorizationError;
-    checkpoint.state = checkpoint.startedAt ? 'needs-attention' : 'failed';
-    checkpoint.current = null;
-    checkpoint.result = completedResult(checkpoint, checkpoint.state, authorizationError);
-    checkpoint.updatedAt = at;
+    if (checkpoint.startedAt === null) {
+      runtimeOperation.state = 'failed';
+      runtimeOperation.error = authorizationError;
+      checkpoint.state = 'failed';
+      checkpoint.current = null;
+      checkpoint.result = completedResult(checkpoint, 'failed', authorizationError);
+      checkpoint.updatedAt = at;
+    } else if (stage === 'compare' || stage === 'write') {
+      runtimeOperation.state = 'failed';
+      runtimeOperation.error = authorizationError;
+      await beginRollback({ root, lock, checkpoint, at, error: authorizationError });
+    } else {
+      markNeedsAttention({
+        checkpoint,
+        runtimeOperation,
+        stage,
+        callId: null,
+        at,
+        error: authorizationError
+      });
+    }
     return checkpoint;
   }
   const prepared = await prepareHostToolCall({
@@ -310,11 +513,19 @@ async function requestStage({ root, lock, checkpoint, runtimeOperation, stage, a
     if ((stage === 'compare' || stage === 'write') && applied) {
       return beginRollback({ root, lock, checkpoint, at, error: prepared.call.error });
     }
-    checkpoint.state = stage === 'verify' || stage.startsWith('compensat')
-      ? 'needs-attention'
-      : 'failed';
-    if (checkpoint.state === 'needs-attention') runtimeOperation.state = 'needs-attention';
-    checkpoint.result = completedResult(checkpoint, checkpoint.state, prepared.call.error);
+    if (stage === 'verify' || stage.startsWith('compensat')) {
+      markNeedsAttention({
+        checkpoint,
+        runtimeOperation,
+        stage,
+        callId: prepared.call.id,
+        at,
+        error: prepared.call.error
+      });
+    } else {
+      checkpoint.state = 'failed';
+      checkpoint.result = completedResult(checkpoint, 'failed', prepared.call.error);
+    }
     return checkpoint;
   }
   runtimeOperation.state = stage === 'compare' ? 'comparing'
@@ -327,7 +538,8 @@ async function requestStage({ root, lock, checkpoint, runtimeOperation, stage, a
   checkpoint.current = {
     operationId: runtimeOperation.id,
     stage,
-    callId: prepared.call.id
+    callId: prepared.call.id,
+    reconciliationId: null
   };
   checkpoint.updatedAt = at;
   checkpoint.result = null;
@@ -442,6 +654,8 @@ export async function createConnectedTransactionCheckpoint({
       verification: null,
       compensation: null,
       compensationVerification: null,
+      ambiguities: [],
+      reconciliations: [],
       error: null
     })),
     current: null,
@@ -464,10 +678,203 @@ export async function createConnectedTransactionCheckpoint({
   return seal(checkpoint);
 }
 
+export async function prepareConnectedTransactionReconciliation({ root, lock, checkpoint, at }) {
+  const resolvedRoot = path.resolve(root);
+  assertConnectedTransactionCheckpoint(resolvedRoot, checkpoint);
+  if (checkpoint.configurationLock.fingerprint !== fingerprintLock(lock)
+    || checkpoint.graphFingerprint !== lock.graphFingerprint) {
+    throw new Error('Connected transaction reconciliation does not match the exact lock and graph.');
+  }
+  if (checkpoint.state !== 'needs-attention') {
+    throw new Error('Only a needs-attention connected transaction can begin reconciliation.');
+  }
+  const unresolved = unresolvedAmbiguity(checkpoint);
+  if (!unresolved) {
+    throw new Error('Connected transaction has no unresolved ambiguity to reconcile.');
+  }
+  const next = structuredClone(checkpoint);
+  delete next.checkpointFingerprint;
+  const runtimeOperation = next.operations.find((operation) => {
+    return operation.id === unresolved.operation.id;
+  });
+  const ambiguity = runtimeOperation.ambiguities.find((item) => {
+    return item.id === unresolved.ambiguity.id;
+  });
+  if (runtimeOperation.reconciliations.length >= 20) {
+    throw new Error('Connected transaction reconciliation attempt limit has been reached.');
+  }
+  const id = reconciliationId(runtimeOperation);
+  const source = sourceOperation(next, runtimeOperation);
+  const input = inputForStage(source, runtimeOperation, 'verify');
+  const prepared = await prepareHostToolCall({
+    root: resolvedRoot,
+    lock,
+    runId: next.run.id,
+    callId: callIdForReconciliation(next, runtimeOperation, id),
+    capability: 'crm.records.read',
+    authority: source.authority,
+    containment: 'connected',
+    providerImplementation: source.provider.implementation,
+    input,
+    at,
+    approvedEffects: []
+  });
+  const reconciliation = {
+    id,
+    ambiguityId: ambiguity.id,
+    createdAt: at,
+    phase: phase(prepared.call, null, prepared.call.error),
+    outcome: prepared.call.state === 'requested' ? null : 'read-failed',
+    observedVersion: null
+  };
+  runtimeOperation.reconciliations.push(reconciliation);
+  next.updatedAt = at;
+  if (prepared.call.state === 'requested') {
+    runtimeOperation.state = 'reconciling';
+    next.state = 'requested';
+    next.current = {
+      operationId: runtimeOperation.id,
+      stage: 'reconcile',
+      callId: prepared.call.id,
+      reconciliationId: reconciliation.id
+    };
+    next.result = null;
+  } else {
+    runtimeOperation.state = 'needs-attention';
+    next.state = 'needs-attention';
+    next.current = null;
+    next.result = completedResult(next, 'needs-attention', prepared.call.error);
+  }
+  return seal(next);
+}
+
+async function continueAfterApplied({ root, lock, checkpoint, at }) {
+  const pending = checkpoint.operations.find((operation) => operation.state === 'pending');
+  if (pending) {
+    return requestStage({
+      root,
+      lock,
+      checkpoint,
+      runtimeOperation: pending,
+      stage: 'compare',
+      at
+    });
+  }
+  checkpoint.state = 'completed';
+  checkpoint.current = null;
+  checkpoint.result = completedResult(checkpoint, 'completed');
+  return checkpoint;
+}
+
+async function continueRollback({ root, lock, checkpoint, at }) {
+  const prior = [...checkpoint.operations].reverse().find((operation) => {
+    return operation.state === 'applied';
+  });
+  if (prior) {
+    return requestStage({
+      root,
+      lock,
+      checkpoint,
+      runtimeOperation: prior,
+      stage: 'compensate',
+      at
+    });
+  }
+  checkpoint.state = 'rolled-back';
+  checkpoint.current = null;
+  checkpoint.result = completedResult(checkpoint, 'rolled-back');
+  return checkpoint;
+}
+
+async function completeReconciliation({ root, lock, checkpoint, currentCall, response, at }) {
+  const current = reconciliationForCurrent(checkpoint);
+  if (!current) throw new Error('Connected transaction reconciliation current call is missing.');
+  const { operation: runtimeOperation, reconciliation } = current;
+  const source = sourceOperation(checkpoint, runtimeOperation);
+  const input = inputForStage(source, runtimeOperation, 'verify');
+  const completed = await completeHostToolCall({
+    root,
+    lock,
+    call: currentCall,
+    input,
+    response,
+    at
+  });
+  reconciliation.phase = phase(completed.call, completed.output, completed.call.error);
+  checkpoint.current = null;
+  checkpoint.updatedAt = at;
+  if (completed.call.state !== 'completed') {
+    reconciliation.outcome = 'read-failed';
+    reconciliation.observedVersion = null;
+    runtimeOperation.state = 'needs-attention';
+    runtimeOperation.error = completed.call.error;
+    checkpoint.state = 'needs-attention';
+    checkpoint.result = completedResult(checkpoint, 'needs-attention', completed.call.error);
+    return checkpoint;
+  }
+
+  const ambiguity = runtimeOperation.ambiguities.find((item) => {
+    return item.id === reconciliation.ambiguityId && item.status === 'unresolved';
+  });
+  if (!ambiguity) throw new Error('Connected transaction reconciliation ambiguity is missing.');
+  const observation = classifyReconciliation(
+    completed.output,
+    source,
+    runtimeOperation,
+    ambiguity
+  );
+  const { record } = observation;
+  reconciliation.observedVersion = record?.version || null;
+  const compensation = ambiguity.stage === 'compensate'
+    || ambiguity.stage === 'compensation-verify';
+  reconciliation.outcome = observation.outcome;
+
+  if ((!compensation && reconciliation.outcome === 'approved-fields')
+    || (compensation && reconciliation.outcome === 'prior-fields')) {
+    ambiguity.status = 'resolved';
+    ambiguity.resolvedAt = at;
+    ambiguity.resolution = reconciliation.outcome;
+    if (compensation) {
+      runtimeOperation.state = 'compensated';
+      return continueRollback({ root, lock, checkpoint, at });
+    }
+    runtimeOperation.state = 'applied';
+    runtimeOperation.appliedVersion = record.version;
+    return continueAfterApplied({ root, lock, checkpoint, at });
+  }
+
+  if (!compensation && reconciliation.outcome === 'prior-fields') {
+    ambiguity.status = 'resolved';
+    ambiguity.resolvedAt = at;
+    ambiguity.resolution = 'prior-fields';
+    runtimeOperation.state = 'failed';
+    return beginRollback({
+      root,
+      lock,
+      checkpoint,
+      at,
+      error: ambiguity.error
+    });
+  }
+
+  runtimeOperation.state = 'needs-attention';
+  checkpoint.state = 'needs-attention';
+  checkpoint.result = completedResult(checkpoint, 'needs-attention', ambiguity.error);
+  return checkpoint;
+}
+
 function priorReplay(checkpoint, callId, response) {
   for (const operation of checkpoint.operations) {
-    for (const name of ['compare', 'write', 'verification', 'compensation', 'compensationVerification']) {
-      const call = operation[name]?.call;
+    const records = [
+      operation.compare,
+      operation.write,
+      operation.verification,
+      operation.compensation,
+      operation.compensationVerification,
+      ...operation.reconciliations.map((item) => item.phase)
+    ];
+    for (const record of records) {
+      const call = record?.call;
       if (call?.id !== callId || !call.responseFingerprint) continue;
       if (call.responseFingerprint !== fingerprintJson(response)) {
         throw new Error('Connected transaction replay does not match the exact completed call response.');
@@ -499,6 +906,17 @@ export async function completeConnectedTransactionCall({ root, lock, checkpoint,
   });
   const source = sourceOperation(next, runtimeOperation);
   const stage = next.current.stage;
+  if (stage === 'reconcile') {
+    await completeReconciliation({
+      root: resolvedRoot,
+      lock,
+      checkpoint: next,
+      currentCall,
+      response,
+      at
+    });
+    return { checkpoint: seal(next), idempotent: false };
+  }
   const input = inputForStage(source, runtimeOperation, stage);
   const completed = await completeHostToolCall({
     root: resolvedRoot,
@@ -521,8 +939,14 @@ export async function completeConnectedTransactionCall({ root, lock, checkpoint,
       runtimeOperation.state = 'failed';
       await beginRollback({ root: resolvedRoot, lock, checkpoint: next, at, error: completed.call.error });
     } else {
-      next.state = 'needs-attention';
-      next.result = completedResult(next, 'needs-attention', completed.call.error);
+      markNeedsAttention({
+        checkpoint: next,
+        runtimeOperation,
+        stage,
+        callId: completed.call.id,
+        at,
+        error: completed.call.error
+      });
     }
     return { checkpoint: seal(next), idempotent: false };
   }
@@ -557,22 +981,21 @@ export async function completeConnectedTransactionCall({ root, lock, checkpoint,
         message: 'Read-after-write did not observe the exact approved field patch.'
       };
       if (!runtimeOperation.appliedVersion) {
-        runtimeOperation.state = 'needs-attention';
-        next.state = 'needs-attention';
-        next.result = completedResult(next, 'needs-attention', runtimeOperation.error);
+        markNeedsAttention({
+          checkpoint: next,
+          runtimeOperation,
+          stage,
+          callId: completed.call.id,
+          at,
+          error: runtimeOperation.error
+        });
       } else {
         runtimeOperation.state = 'applied';
         await beginRollback({ root: resolvedRoot, lock, checkpoint: next, at, error: runtimeOperation.error });
       }
     } else {
       runtimeOperation.state = 'applied';
-      const pending = next.operations.find((operation) => operation.state === 'pending');
-      if (pending) {
-        await requestStage({ root: resolvedRoot, lock, checkpoint: next, runtimeOperation: pending, stage: 'compare', at });
-      } else {
-        next.state = 'completed';
-        next.result = completedResult(next, 'completed');
-      }
+      await continueAfterApplied({ root: resolvedRoot, lock, checkpoint: next, at });
     }
   } else if (stage === 'compensate') {
     await requestStage({
@@ -590,17 +1013,17 @@ export async function completeConnectedTransactionCall({ root, lock, checkpoint,
         kind: 'conflict',
         message: 'Compensation verification did not observe the captured prior fields.'
       };
-      next.state = 'needs-attention';
-      next.result = completedResult(next, 'needs-attention', runtimeOperation.error);
+      markNeedsAttention({
+        checkpoint: next,
+        runtimeOperation,
+        stage,
+        callId: completed.call.id,
+        at,
+        error: runtimeOperation.error
+      });
     } else {
       runtimeOperation.state = 'compensated';
-      const prior = [...next.operations].reverse().find((operation) => operation.state === 'applied');
-      if (prior) {
-        await requestStage({ root: resolvedRoot, lock, checkpoint: next, runtimeOperation: prior, stage: 'compensate', at });
-      } else {
-        next.state = 'rolled-back';
-        next.result = completedResult(next, 'rolled-back');
-      }
+      await continueRollback({ root: resolvedRoot, lock, checkpoint: next, at });
     }
   }
   return { checkpoint: seal(next), idempotent: false };
@@ -616,7 +1039,8 @@ export async function failConnectedTransactionCall({ root, lock, checkpoint, cal
       operation.write,
       operation.verification,
       operation.compensation,
-      operation.compensationVerification
+      operation.compensationVerification,
+      ...operation.reconciliations.map((item) => item.phase)
     ]).filter(Boolean).find((record) => record.call.id === callId);
     if (prior?.call.state === 'failed'
       && prior.error?.kind === error.kind
@@ -630,6 +1054,24 @@ export async function failConnectedTransactionCall({ root, lock, checkpoint, cal
   const operation = next.operations.find((item) => item.id === next.current.operationId);
   const stage = next.current.stage;
   const failedCall = failHostToolCall({ root: resolvedRoot, lock, call: currentCall, error, at });
+  if (stage === 'reconcile') {
+    const reconciliation = operation.reconciliations.find((item) => {
+      return item.id === next.current.reconciliationId;
+    });
+    if (!reconciliation) {
+      throw new Error('Connected transaction reconciliation failure is missing its exact attempt.');
+    }
+    reconciliation.phase = phase(failedCall, null, failedCall.error);
+    reconciliation.outcome = 'read-failed';
+    reconciliation.observedVersion = null;
+    operation.error = failedCall.error;
+    operation.state = 'needs-attention';
+    next.current = null;
+    next.updatedAt = at;
+    next.state = 'needs-attention';
+    next.result = completedResult(next, 'needs-attention', failedCall.error);
+    return seal(next);
+  }
   operation[phaseName(stage)] = phase(failedCall, null, failedCall.error);
   operation.error = failedCall.error;
   operation.state = 'failed';
@@ -637,10 +1079,18 @@ export async function failConnectedTransactionCall({ root, lock, checkpoint, cal
   next.updatedAt = at;
   if (stage === 'compare' && next.operations.some((item) => item.state === 'applied')) {
     await beginRollback({ root: resolvedRoot, lock, checkpoint: next, at, error: failedCall.error });
+  } else if (stage === 'compare') {
+    next.state = 'failed';
+    next.result = completedResult(next, 'failed', failedCall.error);
   } else {
-    next.state = stage === 'compare' ? 'failed' : 'needs-attention';
-    if (next.state === 'needs-attention') operation.state = 'needs-attention';
-    next.result = completedResult(next, next.state, failedCall.error);
+    markNeedsAttention({
+      checkpoint: next,
+      runtimeOperation: operation,
+      stage,
+      callId: failedCall.id,
+      at,
+      error: failedCall.error
+    });
   }
   return seal(next);
 }

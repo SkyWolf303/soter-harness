@@ -9,7 +9,7 @@
     "id": "meeting-intake",
     "version": null
   },
-  "configurationLockFingerprint": "sha256:af8d2f73a99e82cae0f977532731285e96d8db55882fdee2648e2d8f15a99b9b",
+  "configurationLockFingerprint": "sha256:1123ed8dc6b3c9883d1311e6d245a61c804101b1080218b77591201a1ec6da73",
   "dependencies": [
     {
       "id": "kernel.soter",
@@ -132,7 +132,7 @@
     },
     {
       "role": "configuration-lock",
-      "fingerprint": "sha256:af8d2f73a99e82cae0f977532731285e96d8db55882fdee2648e2d8f15a99b9b"
+      "fingerprint": "sha256:1123ed8dc6b3c9883d1311e6d245a61c804101b1080218b77591201a1ec6da73"
     }
   ],
   "effects": [],

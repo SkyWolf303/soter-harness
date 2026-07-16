@@ -914,15 +914,43 @@ any write closes as `failed`.
 External providers do not supply an ACID boundary. A transport failure during a
 write, a missing post-write record, an unverified compensation, or another
 ambiguous effect closes as `needs-attention`. Core must not retry an ambiguous
-write automatically or claim rollback. Recovery requires provider
-reconciliation against the exact checkpoint before a new operation batch and
-approval can be created.
+write automatically or claim rollback.
+
+An exact `needs-attention` checkpoint may begin read-only reconciliation. Core
+binds each reconciliation attempt to the unresolved operation, ambiguity,
+lock, graph, host, provider, authority, record ID, and checkpoint. It emits one
+ordinary `crm.records.read` request and stores only the normalized result and
+fingerprints. Reconciliation does not accept approval, emit provider arguments
+for a write, or reuse the ambiguous call. Attempts are bounded to twenty per
+operation so an unavailable or unstable provider cannot grow private state
+without limit.
+
+Core classifies the exact record observation as:
+
+- `approved-fields` when every approved patched field has the approved value;
+- `prior-fields` when every captured overwritten field has its compared value;
+- `missing` when the exact record is absent;
+- `diverged` when the record matches neither state; or
+- `read-failed` when the reconciliation request cannot be completed and
+  normalized.
+
+For an ambiguous update or verification, `approved-fields` proves the desired
+effect and resumes the remaining batch; `prior-fields` proves that operation
+does not remain applied and begins or completes rollback of earlier verified
+updates. For ambiguous compensation, only `prior-fields` proves restoration and
+continues reverse recovery. Missing, divergent, read-failed, or still-approved
+compensation state remains `needs-attention`. Core never converts those states
+into an automatic write retry. A later read-only attempt may observe a stable
+resolvable state; otherwise a human must reconcile provider state before a new
+operation batch and approval are created.
 
 Mapped creates remain non-executable while the selected provider declares no
 automatic compensation route. Generic capability and operation-plan interfaces
 still accept no connected-write approval. The trusted CLI can create an exact
-approval and start the transaction; MCP can only load, complete, or fail the
-already-authorized checkpoint by exact checkpoint and current-call identity.
+approval and start the transaction. CLI and MCP can load, complete, fail, or
+request read-only reconciliation of the already-authorized checkpoint by exact
+checkpoint and current-call identity; MCP still cannot originate or widen
+approval.
 
 #### Bounded connected context finalization
 

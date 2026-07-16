@@ -58,12 +58,13 @@
         "required": [
           "id", "sequence", "state", "priorFields", "priorVersion",
           "appliedVersion", "compare", "write", "verification",
-          "compensation", "compensationVerification", "error"
+          "compensation", "compensationVerification", "ambiguities",
+          "reconciliations", "error"
         ],
         "properties": {
           "id": { "type": "string", "minLength": 1 },
           "sequence": { "type": "integer", "minimum": 1 },
-          "state": { "enum": ["pending", "comparing", "writing", "verifying", "applied", "failed", "needs-attention", "compensating", "compensation-verifying", "compensated"] },
+          "state": { "enum": ["pending", "comparing", "writing", "verifying", "applied", "failed", "needs-attention", "reconciling", "compensating", "compensation-verifying", "compensated"] },
           "priorFields": { "type": ["object", "null"] },
           "priorVersion": { "type": ["string", "null"] },
           "appliedVersion": { "type": ["string", "null"] },
@@ -72,17 +73,29 @@
           "verification": { "$ref": "#/$defs/phase" },
           "compensation": { "$ref": "#/$defs/phase" },
           "compensationVerification": { "$ref": "#/$defs/phase" },
+          "ambiguities": {
+            "type": "array", "maxItems": 20,
+            "items": { "$ref": "#/$defs/ambiguity" }
+          },
+          "reconciliations": {
+            "type": "array", "maxItems": 20,
+            "items": { "$ref": "#/$defs/reconciliation" }
+          },
           "error": { "type": ["object", "null"] }
         }
       }
     },
     "current": {
       "type": ["object", "null"], "additionalProperties": false,
-      "required": ["operationId", "stage", "callId"],
+      "required": ["operationId", "stage", "callId", "reconciliationId"],
       "properties": {
         "operationId": { "type": "string", "minLength": 1 },
-        "stage": { "enum": ["compare", "write", "verify", "compensate", "compensation-verify"] },
-        "callId": { "type": "string", "pattern": "^toolcall\\.[a-z0-9]+(?:[.-][a-z0-9]+)*$" }
+        "stage": { "enum": ["compare", "write", "verify", "compensate", "compensation-verify", "reconcile"] },
+        "callId": { "type": "string", "pattern": "^toolcall\\.[a-z0-9]+(?:[.-][a-z0-9]+)*$" },
+        "reconciliationId": {
+          "type": ["string", "null"],
+          "pattern": "^reconciliation\\.[a-z0-9]+(?:[.-][a-z0-9]+)*$"
+        }
       }
     },
     "result": {
@@ -114,8 +127,57 @@
   },
   "$defs": {
     "fingerprint": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "ambiguity": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "id", "stage", "callId", "createdAt", "error", "status",
+        "resolvedAt", "resolution"
+      ],
+      "properties": {
+        "id": { "type": "string", "pattern": "^ambiguity\\.[a-z0-9]+(?:[.-][a-z0-9]+)*$" },
+        "stage": { "enum": ["write", "verify", "compensate", "compensation-verify"] },
+        "callId": {
+          "type": ["string", "null"],
+          "pattern": "^toolcall\\.[a-z0-9]+(?:[.-][a-z0-9]+)*$"
+        },
+        "createdAt": { "type": "string", "minLength": 20 },
+        "error": { "type": "object" },
+        "status": { "enum": ["unresolved", "resolved"] },
+        "resolvedAt": { "type": ["string", "null"], "minLength": 20 },
+        "resolution": { "enum": ["approved-fields", "prior-fields", null] }
+      }
+    },
+    "reconciliation": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "id", "ambiguityId", "createdAt", "phase", "outcome", "observedVersion"
+      ],
+      "properties": {
+        "id": { "type": "string", "pattern": "^reconciliation\\.[a-z0-9]+(?:[.-][a-z0-9]+)*$" },
+        "ambiguityId": { "type": "string", "pattern": "^ambiguity\\.[a-z0-9]+(?:[.-][a-z0-9]+)*$" },
+        "createdAt": { "type": "string", "minLength": 20 },
+        "phase": { "$ref": "#/$defs/requiredPhase" },
+        "outcome": {
+          "enum": ["approved-fields", "prior-fields", "missing", "diverged", "read-failed", null]
+        },
+        "observedVersion": {
+          "type": ["string", "null"],
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        }
+      }
+    },
     "phase": {
       "type": ["object", "null"], "additionalProperties": false,
+      "required": ["call", "output", "outputFingerprint", "error"],
+      "properties": {
+        "call": { "type": "object" },
+        "output": { "type": ["object", "null"] },
+        "outputFingerprint": { "type": ["string", "null"], "pattern": "^sha256:[a-f0-9]{64}$" },
+        "error": { "type": ["object", "null"] }
+      }
+    },
+    "requiredPhase": {
+      "type": "object", "additionalProperties": false,
       "required": ["call", "output", "outputFingerprint", "error"],
       "properties": {
         "call": { "type": "object" },

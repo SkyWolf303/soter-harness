@@ -13,7 +13,8 @@ import {
   completeConnectedTransactionCall,
   connectedTransactionCurrentCall,
   createConnectedTransactionCheckpoint,
-  failConnectedTransactionCall
+  failConnectedTransactionCall,
+  prepareConnectedTransactionReconciliation
 } from './connected-transaction-runtime.mjs';
 import {
   assertOperationPlanCheckpoint,
@@ -365,8 +366,17 @@ function connectedTransactionRunEntry(checkpoint) {
         operation.write,
         operation.verification,
         operation.compensation,
-        operation.compensationVerification
-      ].filter(Boolean).map((phase) => fingerprintJson(phase.call))
+        operation.compensationVerification,
+        ...operation.reconciliations.map((item) => item.phase)
+      ].filter(Boolean).map((phase) => fingerprintJson(phase.call)),
+      ambiguities: operation.ambiguities,
+      reconciliations: operation.reconciliations.map((item) => ({
+        id: item.id,
+        ambiguityId: item.ambiguityId,
+        outcome: item.outcome,
+        observedVersion: item.observedVersion,
+        outputFingerprint: item.phase.outputFingerprint
+      }))
     })),
     current: checkpoint.current,
     result: checkpoint.result
@@ -409,6 +419,12 @@ function syncRunWithConnectedTransaction(run, checkpoint) {
     ]) {
       const call = operation[name]?.call;
       if (call) next = syncRunWithCheckpoint(next, { kind: 'capability', call });
+    }
+    for (const reconciliation of operation.reconciliations) {
+      next = syncRunWithCheckpoint(next, {
+        kind: 'capability',
+        call: reconciliation.phase.call
+      });
     }
   }
   const entry = connectedTransactionRunEntry(checkpoint);
@@ -837,6 +853,30 @@ export async function prepareDurableConnectedTransactionExecution({
     throw new Error('Durable connected transaction checkpoint already exists: ' + checkpoint.id + '.');
   }
   return persistDurableCheckpoint(resolvedRoot, checkpoint, durable.run);
+}
+
+export async function prepareDurableConnectedTransactionReconciliation({
+  root,
+  checkpointId,
+  at,
+  expectedHost
+}) {
+  const state = exactCheckpoint(root, checkpointId, expectedHost);
+  const checkpoint = state.checkpoint;
+  if (checkpoint.kind !== 'connected-transaction') {
+    throw new Error('Checkpoint ' + checkpointId + ' is not a connected transaction.');
+  }
+  if (checkpoint.state === 'requested' && checkpoint.current?.stage === 'reconcile') {
+    return durableResult(root, state);
+  }
+  const run = durableRunForCheckpoint(root, state.lockFile, state.lock, checkpoint);
+  const next = await prepareConnectedTransactionReconciliation({
+    root,
+    lock: state.lock,
+    checkpoint,
+    at: atOrNow(at)
+  });
+  return persistDurableCheckpoint(root, next, run);
 }
 
 export async function prepareDurableProviderProbeExecution(options) {
@@ -1559,7 +1599,8 @@ export function listDurableHostExecutions({ root, state, expectedHost }) {
               operation.write,
               operation.verification,
               operation.compensation,
-              operation.compensationVerification
+              operation.compensationVerification,
+              ...operation.reconciliations.map((item) => item.phase)
             ]).filter(Boolean).findLast((phase) => phase.call)?.call
         : checkpoint.$contract === 'soter://contracts/provider-probe-plan-checkpoint/v1'
           ? providerProbePlanCurrentCall(checkpoint)

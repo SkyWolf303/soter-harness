@@ -175,8 +175,11 @@ The main remaining gaps are structural and behavioral:
   compare-before-write, exact approval validation, read-after-write
   verification, reverse compensation of verified prior updates, restart-safe
   call identity, and an honest `needs-attention` state for ambiguous external
-  effects. The CLI can originate the exact approval-bound checkpoint; MCP can
-  only recover and advance it by checkpoint and call ID. This is proven with
+  effects. Exact read-only reconciliation can prove approved or prior state and
+  resume safely, while missing, divergent, failed-read, or unproven
+  compensation state stays paused without replaying a write. The CLI can
+  originate the exact approval-bound checkpoint; MCP can only recover, advance,
+  or request its checkpoint-bound reconciliation read. This is proven with
   synthetic host results, not live provider write evidence.
   Checked-in connected
   response-shape evidence, host-started end-to-end dispatch, and host-level

@@ -159,6 +159,88 @@ function runCli(root, args) {
   return JSON.parse(invoked.stdout);
 }
 
+function prepareCliConnectedTransactionFixture({ root, privateInputRoot, suffix, recordId, priorFields }) {
+  const sourceRun = JSON.parse(fs.readFileSync(path.join(root, runPath), 'utf8'));
+  sourceRun.id = 'run.meeting-intake.' + suffix;
+  const sourceRunPath = 'soter/fixtures/meeting-intake/' + suffix + '.run.json';
+  fs.writeFileSync(path.join(root, sourceRunPath), JSON.stringify(sourceRun, null, 2) + '\n');
+  const input = {
+    recordType: 'task',
+    id: recordId,
+    expectedVersion: fingerprintJson({ type: 'task', id: recordId, fields: priorFields }),
+    patch: { status: 'Open' }
+  };
+  const changeSet = {
+    $contract: 'soter://contracts/change-set/v1',
+    contractVersion: '1.0.0',
+    id: 'changeset.meeting-intake.' + suffix,
+    runId: sourceRun.id,
+    createdAt: fixtureTime,
+    configurationLockFingerprint: sourceRun.configurationLock.fingerprint,
+    state: 'proposed',
+    scopeFingerprint: 'sha256:' + '0'.repeat(64),
+    operations: [{
+      id: 'operation.task.' + suffix + '-status-update',
+      capability: 'crm.records.update',
+      authority: 'authority.crm.instance',
+      reason: 'Prove exact connected transaction behavior through CLI and MCP projections.',
+      input,
+      inputFingerprint: fingerprintJson(input),
+      state: 'pending',
+      effectId: null,
+      outputFingerprint: null,
+      error: null
+    }],
+    approvalId: null,
+    transaction: {
+      checkpointFingerprint: 'sha256:' + '0'.repeat(64),
+      state: 'not-started',
+      rollbackState: 'not-required',
+      restoredFingerprint: null
+    },
+    verification: {
+      state: 'unknown',
+      effectId: null,
+      criteria: ['Compare, update, verify, and reconcile through exact durable calls.'],
+      observedFingerprint: null
+    }
+  };
+  changeSet.scopeFingerprint = changeSetScopeFingerprint(changeSet);
+  const changeSetPath = 'soter/fixtures/meeting-intake/' + suffix + '.changeset.json';
+  fs.writeFileSync(path.join(root, changeSetPath), JSON.stringify(changeSet, null, 2) + '\n');
+  const batch = runCli(root, [
+    'connected-batch-preview',
+    '--lock', lockPath,
+    '--change-set', changeSetPath,
+    '--batch-id', 'batch.meeting-intake.' + suffix,
+    '--at', fixtureTime
+  ]);
+  const batchPath = path.join(privateInputRoot, suffix + '.batch.json');
+  fs.writeFileSync(batchPath, JSON.stringify(batch, null, 2) + '\n', { mode: 0o600 });
+  const approval = runCli(root, [
+    'connected-batch-approve',
+    '--batch', batchPath,
+    '--change-set', changeSetPath,
+    '--approval-id', 'approval.meeting-intake.' + suffix,
+    '--actor', 'mcp-selftest-user',
+    '--reason', 'Authorize only this exact mapped update for projection verification.',
+    '--expires-at', '2026-07-15T12:05:00.000Z',
+    '--at', fixtureTime
+  ]);
+  const approvalPath = path.join(privateInputRoot, suffix + '.approval.json');
+  fs.writeFileSync(approvalPath, JSON.stringify(approval, null, 2) + '\n', { mode: 0o600 });
+  const transaction = runCli(root, [
+    'connected-transaction-prepare',
+    '--lock', lockPath,
+    '--run', sourceRunPath,
+    '--batch', batchPath,
+    '--change-set', changeSetPath,
+    '--approval', approvalPath,
+    '--at', fixtureTime
+  ]);
+  return { transaction, approval };
+}
+
 async function assertWrongHostRejected(root) {
   const client = await connectClient(root, 'claude');
   try {
@@ -194,7 +276,8 @@ async function selftest(root) {
       'soter_prepare_capability_call',
       'soter_prepare_meeting_intake_context',
       'soter_prepare_operation_plan',
-      'soter_prepare_provider_probe'
+      'soter_prepare_provider_probe',
+      'soter_reconcile_connected_transaction'
     ];
     if (JSON.stringify(names) !== JSON.stringify(expectedNames)) {
       throw new Error('Unexpected Soter MCP tools: ' + names.join(', '));
@@ -351,6 +434,80 @@ async function selftest(root) {
           || connectedDurableText.includes(marker);
       })) {
       throw new Error('CLI-authorized MCP transaction did not resume, verify, and minimize exactly.');
+    }
+
+    const reconciliationRecordId = 'https://www.notion.so/dddddddddddddddddddddddddddddddd';
+    const reconciliationPriorFields = {
+      title: 'MCP reconciliation task',
+      status: 'Backlog',
+      context: null,
+      projectUris: []
+    };
+    let projectedReconciliation = prepareCliConnectedTransactionFixture({
+      root,
+      privateInputRoot,
+      suffix: 'mcp-connected-reconciliation',
+      recordId: reconciliationRecordId,
+      priorFields: reconciliationPriorFields
+    }).transaction;
+    projectedReconciliation = await call(client, 'soter_advance_connected_transaction', {
+      checkpoint_id: projectedReconciliation.checkpoint.id,
+      call_id: projectedReconciliation.currentCall.id,
+      response: notionTaskResponse(reconciliationRecordId, reconciliationPriorFields),
+      at: '2026-07-15T12:00:01.000Z'
+    });
+    projectedReconciliation = await call(client, 'soter_fail_host_call', {
+      checkpoint_id: projectedReconciliation.checkpoint.id,
+      call_id: projectedReconciliation.currentCall.id,
+      error_kind: 'unavailable',
+      message: 'Injected MCP write ambiguity.',
+      at: '2026-07-15T12:00:02.000Z'
+    });
+    projectedReconciliation = await call(client, 'soter_reconcile_connected_transaction', {
+      checkpoint_id: projectedReconciliation.checkpoint.id,
+      at: '2026-07-15T12:00:03.000Z'
+    });
+    const divergedReconciliationMarker = 'private-mcp-reconciliation-diverged-marker';
+    projectedReconciliation = await call(client, 'soter_advance_connected_transaction', {
+      checkpoint_id: projectedReconciliation.checkpoint.id,
+      call_id: projectedReconciliation.currentCall.id,
+      response: notionTaskResponse(reconciliationRecordId, {
+        ...reconciliationPriorFields,
+        status: 'Unexpected concurrent value'
+      }, divergedReconciliationMarker),
+      at: '2026-07-15T12:00:04.000Z'
+    });
+    projectedReconciliation = runCli(root, [
+      'connected-transaction-reconcile',
+      '--checkpoint', projectedReconciliation.checkpoint.id,
+      '--at', '2026-07-15T12:00:05.000Z'
+    ]);
+    const approvedReconciliationMarker = 'private-mcp-reconciliation-approved-marker';
+    projectedReconciliation = await call(client, 'soter_advance_connected_transaction', {
+      checkpoint_id: projectedReconciliation.checkpoint.id,
+      call_id: projectedReconciliation.currentCall.id,
+      response: notionTaskResponse(reconciliationRecordId, {
+        ...reconciliationPriorFields,
+        status: 'Open'
+      }, approvedReconciliationMarker),
+      at: '2026-07-15T12:00:06.000Z'
+    });
+    const projectedReconciliationText = [
+      projectedReconciliation.checkpointPath,
+      projectedReconciliation.runPath
+    ].map((file) => fs.readFileSync(path.join(root, file), 'utf8')).join('\n');
+    if (projectedReconciliation.checkpoint.state !== 'completed'
+      || projectedReconciliation.checkpoint.operations[0].reconciliations.length !== 2
+      || projectedReconciliation.checkpoint.operations[0].reconciliations[0].outcome
+        !== 'diverged'
+      || projectedReconciliation.checkpoint.operations[0].reconciliations[1].outcome
+        !== 'approved-fields'
+      || projectedReconciliation.run.effects.length !== 4
+      || [divergedReconciliationMarker, approvedReconciliationMarker].some((marker) => {
+        return JSON.stringify(projectedReconciliation).includes(marker)
+          || projectedReconciliationText.includes(marker);
+      })) {
+      throw new Error('CLI and MCP reconciliation projections retried a write, drifted, or persisted a native response.');
     }
 
     await expectToolError(client, 'soter_prepare_capability_call', {

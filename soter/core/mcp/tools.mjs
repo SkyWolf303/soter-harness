@@ -14,6 +14,7 @@ import {
   getDurableHostExecution,
   listDurableHostExecutions,
   prepareDurableCapabilityExecution,
+  prepareDurableConnectedTransactionReconciliation,
   prepareDurableOperationPlanExecution,
   prepareDurableProviderProbeExecution
 } from '../service.mjs';
@@ -50,7 +51,7 @@ export function createSoterMcpServer({ root, host }) {
   const server = new McpServer(
     { name: 'soter-core', version: '0.1.0' },
     {
-      instructions: 'Soter Core validates exact locks and runs for the active ' + host + ' host projection, then saves a private durable checkpoint before emitting a provider-neutral operation resolved to an exact native host tool. After compaction or restart, use soter_list_host_calls and soter_get_host_call to recover pending work. Invoke exactly currentCall.transport.tool when currentCall is present; otherwise invoke the legacy checkpoint.call.transport.tool. Return both checkpoint.id and currentCall.id for sequential plans and connected transactions because a successful completion may emit the next exact call. A completed meeting-intake context plan must be finalized with soter_finalize_meeting_intake_context before its snapshot is used. Always pass the requested arguments through the separately configured provider MCP route and return the native result unchanged. Never fabricate a provider response. Soter does not invoke providers or persist raw responses. MCP cannot originate or alter connected-write approval; it may only resume a transaction already authorized and checkpointed by the trusted CLI.'
+      instructions: 'Soter Core validates exact locks and runs for the active ' + host + ' host projection, then saves a private durable checkpoint before emitting a provider-neutral operation resolved to an exact native host tool. After compaction or restart, use soter_list_host_calls and soter_get_host_call to recover pending work. Invoke exactly currentCall.transport.tool when currentCall is present; otherwise invoke the legacy checkpoint.call.transport.tool. Return both checkpoint.id and currentCall.id for sequential plans and connected transactions because a successful completion may emit the next exact call. A needs-attention connected transaction may use soter_reconcile_connected_transaction to emit one exact read-only observation; reconciliation never retries a write and remains paused for missing or divergent state. A completed meeting-intake context plan must be finalized with soter_finalize_meeting_intake_context before its snapshot is used. Always pass the requested arguments through the separately configured provider MCP route and return the native result unchanged. Never fabricate a provider response. Soter does not invoke providers or persist raw responses. MCP cannot originate or alter connected-write approval; it may only resume a transaction already authorized and checkpointed by the trusted CLI.'
     }
   );
 
@@ -225,6 +226,28 @@ export function createSoterMcpServer({ root, host }) {
     return result(
       completed,
       'Advanced the exact approval-bound connected transaction without persisting the native provider response.'
+    );
+  });
+
+  server.registerTool('soter_reconcile_connected_transaction', {
+    title: 'Reconcile Soter connected transaction',
+    description: 'For an exact needs-attention transaction, checkpoint one read-only record observation that can prove approved state, prior state, missing state, or divergence. This tool never accepts approval and never retries a write.',
+    inputSchema: {
+      checkpoint_id: z.string().min(1),
+      at: z.string().min(20).optional()
+    },
+    outputSchema: resultSchema,
+    annotations: statefulAnnotations
+  }, async (input) => {
+    const prepared = await prepareDurableConnectedTransactionReconciliation({
+      root,
+      checkpointId: input.checkpoint_id,
+      at: input.at,
+      expectedHost: host
+    });
+    return result(
+      prepared,
+      'Prepared one exact read-only reconciliation call; no provider call or write was executed.'
     );
   });
 

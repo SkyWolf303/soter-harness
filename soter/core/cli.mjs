@@ -35,6 +35,7 @@ import {
   listDurableHostExecutions,
   prepareDurableCapabilityExecution,
   prepareDurableConnectedTransactionExecution,
+  prepareDurableConnectedTransactionReconciliation,
   prepareDurableOperationPlanExecution,
   prepareDurableProviderProbeExecution
 } from './service.mjs';
@@ -509,6 +510,37 @@ async function main() {
     return;
   }
 
+  if (command === 'connected-transaction-reconcile') {
+    if (option(args, '--output')) {
+      throw new Error(
+        'Connected transaction checkpoints are private runtime state and cannot be exported into the repository.'
+      );
+    }
+    const prepared = await prepareDurableConnectedTransactionReconciliation({
+      root,
+      checkpointId: requiredOption(args, '--checkpoint'),
+      at: createdAt
+    });
+    if (json) {
+      print(prepared);
+    } else {
+      const call = prepared.currentCall;
+      process.stdout.write(
+        'Prepared read-only reconciliation for ' + prepared.checkpoint.batch.id + '.\n'
+          + (call
+            ? 'Provider operation: ' + call.transport.server + '/'
+              + call.transport.operation + '\n'
+              + 'Native host tool: ' + call.transport.tool + '\n'
+              + 'Exact call ID: ' + call.id + '\n'
+            : 'Host request emitted: no\n')
+          + 'Durable checkpoint: ' + prepared.checkpointPath + '\n'
+          + 'Writes authorized or retried by reconciliation: 0\n'
+      );
+    }
+    if (prepared.checkpoint.state !== 'requested') process.exitCode = 1;
+    return;
+  }
+
   if (command === 'context-connected-prepare') {
     const prepared = await prepareMeetingIntakeConnectedContext({
       root,
@@ -828,7 +860,7 @@ async function main() {
   }
 
   throw new Error(
-    'Usage: node soter/core/cli.mjs <resolve|prepare|context|context-connected-prepare|context-connected-finalize|transaction|connected-batch-preview|connected-batch-approve|connected-transaction-prepare|connected-transaction-complete|doctor|probe-prepare|probe-complete|capability-prepare|capability-complete|plan-prepare|plan-complete|host-fail|host-get|host-list|fixtures|selftest> [options]\n'
+    'Usage: node soter/core/cli.mjs <resolve|prepare|context|context-connected-prepare|context-connected-finalize|transaction|connected-batch-preview|connected-batch-approve|connected-transaction-prepare|connected-transaction-complete|connected-transaction-reconcile|doctor|probe-prepare|probe-complete|capability-prepare|capability-complete|plan-prepare|plan-complete|host-fail|host-get|host-list|fixtures|selftest> [options]\n'
       + '  resolve [--config PATH] [--output PATH] [--json]\n'
       + '  prepare --lock PATH [--scenario PATH] [--output PATH] [--evidence-dir PATH] [--json]\n'
       + '  context --lock PATH --meeting-id ID --recording-uri URI [--scenario PATH] [--json]\n'
@@ -839,6 +871,7 @@ async function main() {
       + '  connected-batch-approve --batch PATH --change-set PATH --approval-id ID --actor ACTOR --reason TEXT --expires-at TIME [--json]\n'
       + '  connected-transaction-prepare --lock PATH --run PATH --batch PATH --change-set PATH --approval PATH [--json]\n'
       + '  connected-transaction-complete --checkpoint ID --call ID --response ABSOLUTE_PRIVATE_PATH [--json]\n'
+      + '  connected-transaction-reconcile --checkpoint ID [--json]\n'
       + '  doctor --lock PATH [--level offline|connected] [--probe PATH ...] [--probe-checkpoint ID ...] [--config PATH] [--json]\n'
       + '  probe-prepare --lock PATH --provider ID [--output PATH] [--json]\n'
       + '  probe-complete --checkpoint ID [--call ID] --response ABSOLUTE_PRIVATE_PATH [--probe-output PATH] [--json]\n'
