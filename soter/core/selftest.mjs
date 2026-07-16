@@ -623,6 +623,81 @@ export async function selftest(root) {
       createdAt: FIXTURE_TIME,
       providerProbes: probes
     });
+    const failedOtterAttempt = {
+      $contract: 'soter://contracts/provider-probe-attempt/v1',
+      contractVersion: '1.0.0',
+      id: 'probeattempt.selftest.otter-unavailable',
+      probeId: 'probe.integration.otter.unavailable-selftest',
+      checkpointId: 'checkpoint.probecall.selftest.otter-unavailable',
+      attemptedAt: '2026-07-15T11:58:00.000Z',
+      failedAt: '2026-07-15T11:59:00.000Z',
+      validUntil: '2026-07-15T12:04:00.000Z',
+      state: 'failed',
+      configuration: {
+        name: lock.configuration.name,
+        lockFingerprint: fingerprintLock(lock)
+      },
+      host: {
+        id: lock.host.id,
+        adapter: lock.host.adapter,
+        version: lock.host.version
+      },
+      provider: {
+        pack: connectedProviders.otter.pack,
+        implementation: connectedProviders.otter.id,
+        version: connectedProviders.otter.version,
+        containment: 'connected'
+      },
+      scope: {
+        credentialRefs: ['secret-ref.otter'],
+        authorities: ['authority.otter.provider'],
+        capabilities: ['meeting.transcript.read']
+      },
+      failure: {
+        kind: 'unavailable',
+        errorFingerprint: 'sha256:' + '1'.repeat(64),
+        step: null,
+        callId: 'probecall.selftest.otter-unavailable',
+        transport: {
+          protocol: 'mcp',
+          server: 'otter',
+          operation: 'get_user_info',
+          tool: 'mcp__otter__get_user_info'
+        }
+      },
+      sourceCheckpointFingerprint: 'sha256:' + '2'.repeat(64),
+      privacy: {
+        scope: 'private',
+        rawProviderResponsePersisted: false,
+        hostCredentialValuesPersisted: false,
+        providerArgumentsIncluded: false,
+        providerErrorMessageIncluded: false
+      }
+    };
+    const connectedWithFailedAttempt = runConnectedDoctor({
+      root: temp,
+      lock,
+      doctorId: 'doctor.meeting-intake.failed-attempt-selftest',
+      evidenceId: 'evidence.meeting-intake.doctor.fixture',
+      createdAt: FIXTURE_TIME,
+      providerProbes: probes.filter((probe) => {
+        return probe.provider.implementation !== connectedProviders.otter.id;
+      }),
+      providerProbeAttempts: [failedOtterAttempt]
+    });
+    const expiredOtterAttempt = structuredClone(failedOtterAttempt);
+    expiredOtterAttempt.validUntil = '2026-07-15T11:59:30.000Z';
+    const connectedWithExpiredAttempt = runConnectedDoctor({
+      root: temp,
+      lock,
+      doctorId: 'doctor.meeting-intake.expired-attempt-selftest',
+      evidenceId: 'evidence.meeting-intake.doctor.fixture',
+      createdAt: FIXTURE_TIME,
+      providerProbes: probes.filter((probe) => {
+        return probe.provider.implementation !== connectedProviders.otter.id;
+      }),
+      providerProbeAttempts: [expiredOtterAttempt]
+    });
     const contained = await assembleMeetingIntakeContext({
       root: temp,
       lock,
@@ -716,6 +791,26 @@ export async function selftest(root) {
       || connected.report.states.healthy !== 'unknown'
       || connected.report.providerProbeIds.length !== 3) {
       failures.push('connected doctor did not derive readiness without overstating verification or health');
+    }
+    if (connectedWithFailedAttempt.report.states.ready !== 'failed'
+      || !connectedWithFailedAttempt.report.diagnostics.some((item) => {
+        return item.code === 'SOTER_PROVIDER_PROBE_UNAVAILABLE'
+          && item.subject === connectedProviders.otter.id;
+      })
+      || connectedWithFailedAttempt.report.diagnostics.some((item) => {
+        return item.code === 'SOTER_PROVIDER_PROBE_MISSING'
+          && item.subject === connectedProviders.otter.id;
+      })
+      || connectedWithFailedAttempt.report.checks.find((item) => {
+        return item.id === 'integrations.probes-complete';
+      })?.state !== 'failed') {
+      failures.push('connected doctor collapsed an exact failed provider attempt into a missing probe');
+    }
+    if (connectedWithExpiredAttempt.report.states.ready !== 'stale'
+      || !connectedWithExpiredAttempt.report.diagnostics.some((item) => {
+        return item.code === 'SOTER_PROVIDER_PROBE_ATTEMPT_STALE';
+      })) {
+      failures.push('connected doctor treated an expired provider failure as current');
     }
     const expiredProbes = structuredClone(probes);
     expiredProbes[0].probedAt = '2026-07-15T11:00:00.000Z';

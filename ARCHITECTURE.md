@@ -477,6 +477,7 @@ capability dispatch, authority-aware context snapshots, exact-scope approvals,
 transactional fixture writes, rollback proof, read-after-write verification,
 claim-scoped evidence, an offline doctor, contract-enforced aggregation of
 short-lived connected provider probes, explicit sequential provider-probe plans,
+typed expiring summaries for exact failed provider-probe attempts,
 and private durable checkpoints for host-dispatched calls and their run
 envelopes. Core now also has versioned
 sequential operation-plan contracts: v1 retains fixed inputs, while v2 binds
@@ -512,6 +513,13 @@ organization relation, but that development observation is not reusable
 connected evidence: another exact lock must run its own expiring probe. Otter's
 identity-only probe deliberately leaves transcript compatibility unknown, and
 all unobserved response shapes fail closed.
+When a host cannot execute an exact probe route, Core preserves the private
+failed checkpoint and exposes only a typed, expiring attempt summary to the
+connected doctor. This distinguishes authentication, authorization, route
+availability, and response-conformance failures from a probe that was never
+attempted without persisting arguments, raw responses, or error messages. A
+declared host tool mapping still does not establish that the active execution
+bridge exposes the tool.
 Connected readiness still fails because Notion create and update
 implementations are intentionally absent and no current private probes are
 checked in. Observed Otter

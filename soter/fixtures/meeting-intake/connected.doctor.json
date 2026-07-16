@@ -6,7 +6,7 @@
   "level": "connected",
   "configuration": {
     "name": "meeting-intake",
-    "lockFingerprint": "sha256:260e6ac8320316d42b6a9db85c8f7f5343a385d205fe52c7ce880453ea886b5e"
+    "lockFingerprint": "sha256:cb977639dedcdb4c8f6ccbbad4748e978680cb550528c4ca8cb89745396deafc"
   },
   "states": {
     "valid": "passed",
@@ -33,10 +33,10 @@
     },
     {
       "id": "connections.runtime-state-valid",
-      "claim": "Connected checks use the exact desired configuration and contract-valid provider probes.",
+      "claim": "Connected checks use the exact desired configuration and contract-valid provider observations.",
       "state": "passed",
       "evidenceIds": [],
-      "details": "The desired configuration matches the lock and every supplied probe is uniquely typed."
+      "details": "The desired configuration matches the lock and every supplied probe or failed-attempt summary is uniquely typed."
     },
     {
       "id": "integrations.implementations-ready",
@@ -44,6 +44,13 @@
       "state": "failed",
       "evidenceIds": [],
       "details": "2 of 4 required connected implementation checks passed; inspect diagnostics and probe details."
+    },
+    {
+      "id": "integrations.probes-complete",
+      "claim": "Every selected connected capability binding has current exact-lock provider-probe coverage through the active host route.",
+      "state": "unknown",
+      "evidenceIds": [],
+      "details": "0 of 4 required capability-binding probe execution checks passed; inspect diagnostics and probe details."
     },
     {
       "id": "connections.credentials-ready",
@@ -112,10 +119,10 @@
         "providerProbes",
         "provider.integration.notion.mcp"
       ],
-      "expected": "One current probe bound to sha256:260e6ac8320316d42b6a9db85c8f7f5343a385d205fe52c7ce880453ea886b5e.",
-      "observed": "Found 0 matching probes.",
+      "expected": "One current probe bound to sha256:cb977639dedcdb4c8f6ccbbad4748e978680cb550528c4ca8cb89745396deafc.",
+      "observed": "Found no completed probe or failed attempt.",
       "evidenceIds": [],
-      "remediation": "Run the provider adapter read-only probe and pass its structured result to the connected doctor."
+      "remediation": "Run the provider adapter read-only probe and pass its durable checkpoint to the connected doctor."
     },
     {
       "code": "SOTER_CONNECTED_PROVIDER_MISSING",
@@ -140,10 +147,10 @@
         "providerProbes",
         "provider.integration.otter.mcp"
       ],
-      "expected": "One current probe bound to sha256:260e6ac8320316d42b6a9db85c8f7f5343a385d205fe52c7ce880453ea886b5e.",
-      "observed": "Found 0 matching probes.",
+      "expected": "One current probe bound to sha256:cb977639dedcdb4c8f6ccbbad4748e978680cb550528c4ca8cb89745396deafc.",
+      "observed": "Found no completed probe or failed attempt.",
       "evidenceIds": [],
-      "remediation": "Run the provider adapter read-only probe and pass its structured result to the connected doctor."
+      "remediation": "Run the provider adapter read-only probe and pass its durable checkpoint to the connected doctor."
     },
     {
       "code": "SOTER_CONNECTED_SCOPE",
@@ -152,7 +159,7 @@
       "subject": "meeting-intake",
       "path": [],
       "expected": "No provider mutation, dispatch, destructive effect, or secret value enters the report.",
-      "observed": "Connected readiness was evaluated from 0 structured provider probes.",
+      "observed": "Connected readiness was evaluated from 0 completed probe(s) and 0 failed-attempt summary record(s).",
       "evidenceIds": [
         "evidence.meeting-intake.resolution.fixture"
       ],

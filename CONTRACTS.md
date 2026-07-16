@@ -420,6 +420,7 @@ The normative Core state shapes are the
 [host tool call](./soter/contracts/host-tool-call.schema.json),
 [provider probe call](./soter/contracts/provider-probe-call.schema.json),
 [provider probe plan checkpoint](./soter/contracts/provider-probe-plan-checkpoint.schema.json),
+[failed provider probe attempt](./soter/contracts/provider-probe-attempt.schema.json),
 [durable host call checkpoint](./soter/contracts/host-call-checkpoint.schema.json),
 [fixed-input sequential operation plan](./soter/contracts/operation-plan.schema.json),
 [fixed-input durable operation-plan checkpoint](./soter/contracts/operation-plan-checkpoint.schema.json),
@@ -1224,6 +1225,18 @@ Missing, expired, malformed, ambiguous, or wrong-lock probes remain failed,
 stale, or unknown as appropriate. Read-only reachability can establish start
 readiness, but it cannot establish write behavior, full automation
 verification, or recent end-to-end outcome health.
+
+A durable probe that fails is not collapsed into “missing.” Core can derive a
+`provider-probe-attempt/v1` summary from the exact failed checkpoint. The
+summary binds the lock, host, provider, declared probe scope, failed semantic
+step, native route, failure category, checkpoint fingerprint, and a short
+observation window. It excludes provider arguments, raw responses, credential
+values, and the provider error message. A current failed attempt makes probe
+completion fail and narrows only the readiness components justified by its
+typed category—for example authentication, authorization, or route
+unavailability. An expired attempt becomes stale; it is never durable proof
+that a provider remains unhealthy. A mismatched or ambiguous attempt cannot
+substitute for a completed probe.
 
 An MCP server appearing in a host adapter is only a declared delivery route.
 OAuth completion, current tool discovery, authority access, capability

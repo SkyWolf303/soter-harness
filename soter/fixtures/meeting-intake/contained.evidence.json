@@ -9,12 +9,12 @@
     "id": "run.meeting-intake.contained-fixture",
     "version": null
   },
-  "configurationLockFingerprint": "sha256:260e6ac8320316d42b6a9db85c8f7f5343a385d205fe52c7ce880453ea886b5e",
+  "configurationLockFingerprint": "sha256:cb977639dedcdb4c8f6ccbbad4748e978680cb550528c4ca8cb89745396deafc",
   "dependencies": [
     {
       "id": "kernel.soter",
       "version": "0.1.0",
-      "fingerprint": "sha256:39876fffa1cdc2cd6cc09d0fe0cda213bd68a7e9f2c9fdf68677ac50491d9fa4"
+      "fingerprint": "sha256:9525eab7150e4323129f0a64687f80647e5c6d336b96a88b77e47f677fb56262"
     },
     {
       "id": "core.runtime",
@@ -133,7 +133,7 @@
     {
       "role": "context-snapshot",
       "id": "context.meeting-intake.contained-fixture",
-      "fingerprint": "sha256:3d001490977d491c85e61ebdcd8218f93f989530d53eef5430ca8cf654dfdc00"
+      "fingerprint": "sha256:b61910c52666a8a3102d41113b57cc1caf83353c0637d679a8e837c2d7d3f69a"
     }
   ],
   "effects": [

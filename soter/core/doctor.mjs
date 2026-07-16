@@ -216,6 +216,89 @@ function probeFreshness(probe, at) {
   return observedAt > validUntil ? 'stale' : 'passed';
 }
 
+function probeAttemptFreshness(attempt, at) {
+  const attemptedAt = Date.parse(attempt.attemptedAt);
+  const failedAt = Date.parse(attempt.failedAt);
+  const validUntil = Date.parse(attempt.validUntil);
+  const observedAt = Date.parse(at);
+  if (!Number.isFinite(attemptedAt)
+    || !Number.isFinite(failedAt)
+    || !Number.isFinite(validUntil)
+    || !Number.isFinite(observedAt)
+    || failedAt < attemptedAt
+    || validUntil < failedAt
+    || failedAt > observedAt) {
+    return 'failed';
+  }
+  return observedAt > validUntil ? 'stale' : 'passed';
+}
+
+function failedProbeComponentStates(kind, freshness) {
+  if (freshness !== 'passed') {
+    return {
+      credential: freshness,
+      reachability: freshness,
+      authority: freshness,
+      capability: freshness
+    };
+  }
+  return {
+    credential: kind === 'authentication' ? 'failed' : 'unknown',
+    reachability: ['unavailable', 'rate-limit', 'retryable'].includes(kind)
+      ? 'failed'
+      : 'unknown',
+    authority: kind === 'authorization' ? 'failed' : 'unknown',
+    capability: ['validation', 'conflict', 'not-found', 'unknown'].includes(kind)
+      ? 'failed'
+      : 'unknown'
+  };
+}
+
+function failedProbeDiagnostic(attempt, freshness) {
+  const location = attempt.failure.step
+    ? attempt.failure.step.id + ' (' + attempt.failure.step.subject + ')'
+    : attempt.failure.callId;
+  const route = attempt.failure.transport.server + '/'
+    + (attempt.failure.transport.operation || 'unresolved-operation') + ' -> '
+    + (attempt.failure.transport.tool || 'unresolved-native-tool');
+  if (freshness !== 'passed') {
+    return diagnostic({
+      code: freshness === 'stale'
+        ? 'SOTER_PROVIDER_PROBE_ATTEMPT_STALE'
+        : 'SOTER_PROVIDER_PROBE_ATTEMPT_TIME',
+      severity: 'warning',
+      claim: 'A failed provider probe attempt informs readiness only during its exact observation window.',
+      subject: attempt.id,
+      path: ['providerProbeAttempts', attempt.id, 'validUntil'],
+      expected: 'A failed attempt that is chronologically valid and current at the doctor run.',
+      observed: attempt.attemptedAt + ' through ' + attempt.validUntil + '.',
+      remediation: 'Run a new exact-lock provider probe; do not treat an expired failure as current provider state.'
+    });
+  }
+  const remediations = {
+    authentication: 'Resolve the configured secret reference in the host, authenticate the provider route, and rerun the exact-lock probe.',
+    authorization: 'Grant the minimum required provider permissions for the named authority and rerun the exact-lock probe.',
+    unavailable: 'Ensure the MCP server and exact native tool are installed, exposed to this host execution, and reachable, then rerun the probe.',
+    'rate-limit': 'Wait for the provider limit window or reduce probe frequency, then rerun the exact-lock probe.',
+    retryable: 'Retry the exact-lock probe after the transient provider or host condition clears.',
+    validation: 'Check the host mapping, provider response contract, and target schema before rerunning the exact-lock probe.',
+    conflict: 'Refresh the configured provider target and mapping before rerunning the exact-lock probe.',
+    'not-found': 'Correct or restore the exact configured provider target before rerunning the exact-lock probe.',
+    unknown: 'Inspect the private checkpoint locally, repair the host or provider boundary, and rerun the exact-lock probe.'
+  };
+  return diagnostic({
+    code: 'SOTER_PROVIDER_PROBE_' + attempt.failure.kind.toUpperCase().replace('-', '_'),
+    severity: 'error',
+    claim: 'The selected connected provider completes its exact policy-safe probe through the active host route.',
+    subject: attempt.provider.implementation,
+    path: ['providerProbeAttempts', attempt.id, 'failure'],
+    expected: 'One completed current provider probe for the exact lock and implementation.',
+    observed: 'Attempt ' + attempt.id + ' failed with ' + attempt.failure.kind
+      + ' at ' + location + ' via ' + route + '.',
+    remediation: remediations[attempt.failure.kind]
+  });
+}
+
 function effectiveProbeState(state, freshness) {
   if (state === 'failed' || freshness === 'failed') return 'failed';
   if (freshness === 'stale') return 'stale';
@@ -235,7 +318,8 @@ export function runConnectedDoctor({
   doctorId,
   evidenceId,
   createdAt,
-  providerProbes = []
+  providerProbes = [],
+  providerProbeAttempts = []
 }) {
   const resolvedRoot = path.resolve(root);
   const offline = runOfflineDoctor({
@@ -262,8 +346,10 @@ export function runConnectedDoctor({
   const providers = listProviderDeclarations(resolvedRoot);
   const connectedProviders = providers.filter((provider) => provider.containment === 'connected');
   const validProbes = [];
+  const validProbeAttempts = [];
   const probeContractStates = [];
   const seenProbeIds = new Set();
+  const seenProbeAttemptIds = new Set();
 
   for (const probe of providerProbes) {
     const probeSchema = probeSchemas.get(probe?.$contract);
@@ -293,6 +379,36 @@ export function runConnectedDoctor({
     validProbes.push(probe);
   }
 
+  const probeAttemptSchema = readJson(path.join(
+    resolvedRoot,
+    'soter/contracts/provider-probe-attempt.schema.json'
+  ));
+  for (const attempt of providerProbeAttempts) {
+    const failures = validateJsonSchema(attempt, probeAttemptSchema);
+    const duplicate = seenProbeAttemptIds.has(attempt?.id);
+    if (failures.length || duplicate) {
+      probeContractStates.push('failed');
+      diagnostics.push(diagnostic({
+        code: duplicate
+          ? 'SOTER_PROVIDER_PROBE_ATTEMPT_DUPLICATE'
+          : 'SOTER_PROVIDER_PROBE_ATTEMPT_SCHEMA',
+        severity: 'error',
+        claim: 'Every failed provider probe attempt is uniquely identified and satisfies its secret-safe runtime contract.',
+        subject: attempt?.id || 'unknown provider probe attempt',
+        path: ['providerProbeAttempts'],
+        expected: 'A unique provider-probe-attempt/v1 document derived from a durable failed checkpoint.',
+        observed: duplicate
+          ? 'The attempt id occurs more than once.'
+          : failures.slice(0, 5).map((item) => item.path + ' ' + item.message).join('; '),
+        remediation: 'Load the exact failed provider-probe checkpoint through Core instead of constructing a readiness input manually.'
+      }));
+      continue;
+    }
+    seenProbeAttemptIds.add(attempt.id);
+    probeContractStates.push('passed');
+    validProbeAttempts.push(attempt);
+  }
+
   let desiredConfiguration = null;
   let configurationState = 'passed';
   try {
@@ -319,6 +435,7 @@ export function runConnectedDoctor({
 
   const connectionInputStates = [...probeContractStates, configurationState];
   const implementationStates = [];
+  const probeExecutionStates = [];
   const credentialStates = [];
   const reachabilityStates = [];
   const authorityStates = [];
@@ -344,6 +461,7 @@ export function runConnectedDoctor({
     });
     if (candidates.length !== 1) {
       implementationStates.push('failed');
+      probeExecutionStates.push('unknown');
       if (desiredBinding?.secretRef) {
         recordUniqueState(
           credentialStates,
@@ -389,7 +507,93 @@ export function runConnectedDoctor({
       return probe.provider.implementation === provider.id;
     });
     if (matches.length !== 1) {
-      const state = matches.length ? 'failed' : 'unknown';
+      if (matches.length) {
+        probeExecutionStates.push('failed');
+        if (desiredBinding?.secretRef) {
+          recordUniqueState(
+            credentialStates,
+            credentialKeys,
+            provider.id + '|' + desiredBinding.secretRef,
+            'failed'
+          );
+        }
+        recordUniqueState(reachabilityStates, reachabilityKeys, provider.id, 'failed');
+        for (const authority of binding.authorities) {
+          recordUniqueState(
+            authorityStates,
+            authorityKeys,
+            provider.id + '|' + authority,
+            'failed'
+          );
+        }
+        capabilityStates.push('failed');
+        diagnostics.push(diagnostic({
+          code: 'SOTER_PROVIDER_PROBE_AMBIGUOUS',
+          severity: 'error',
+          claim: 'Each selected connected provider has one current probe for the supplied lock.',
+          subject: provider.id,
+          path: ['providerProbes', provider.id],
+          expected: 'One current probe bound to ' + lockFingerprint + '.',
+          observed: 'Found ' + matches.length + ' matching probes.',
+          remediation: 'Pass only the one exact current provider probe intended for this readiness run.'
+        }));
+        continue;
+      }
+
+      const attempts = validProbeAttempts.filter((attempt) => {
+        return attempt.provider.implementation === provider.id;
+      });
+      const exactAttempts = attempts.filter((attempt) => {
+        return attempt.configuration.name === lock.configuration.name
+          && attempt.configuration.lockFingerprint === lockFingerprint
+          && attempt.host.id === lock.host.id
+          && attempt.host.adapter === lock.host.adapter
+          && attempt.host.version === lock.host.version
+          && attempt.provider.pack === provider.pack
+          && attempt.provider.version === provider.version
+          && attempt.provider.containment === provider.containment
+          && attempt.scope.capabilities.includes(binding.capability)
+          && binding.authorities.every((authority) => {
+            return attempt.scope.authorities.includes(authority);
+          })
+          && (!desiredBinding?.secretRef
+            || attempt.scope.credentialRefs.includes(desiredBinding.secretRef));
+      });
+      if (attempts.length === 1 && exactAttempts.length === 1) {
+        const attempt = exactAttempts[0];
+        const freshness = probeAttemptFreshness(attempt, createdAt);
+        const executionState = freshness === 'passed' ? 'failed' : freshness;
+        const components = failedProbeComponentStates(attempt.failure.kind, freshness);
+        probeExecutionStates.push(executionState);
+        if (desiredBinding?.secretRef) {
+          recordUniqueState(
+            credentialStates,
+            credentialKeys,
+            provider.id + '|' + desiredBinding.secretRef,
+            components.credential
+          );
+        }
+        recordUniqueState(
+          reachabilityStates,
+          reachabilityKeys,
+          provider.id,
+          components.reachability
+        );
+        for (const authority of binding.authorities) {
+          recordUniqueState(
+            authorityStates,
+            authorityKeys,
+            provider.id + '|' + authority,
+            components.authority
+          );
+        }
+        capabilityStates.push(components.capability);
+        diagnostics.push(failedProbeDiagnostic(attempt, freshness));
+        continue;
+      }
+
+      const state = attempts.length ? 'failed' : 'unknown';
+      probeExecutionStates.push(state);
       if (desiredBinding?.secretRef) {
         recordUniqueState(
           credentialStates,
@@ -409,14 +613,29 @@ export function runConnectedDoctor({
       }
       capabilityStates.push(state);
       diagnostics.push(diagnostic({
-        code: matches.length ? 'SOTER_PROVIDER_PROBE_AMBIGUOUS' : 'SOTER_PROVIDER_PROBE_MISSING',
-        severity: matches.length ? 'error' : 'warning',
-        claim: 'Each selected connected provider has one current probe for the supplied lock.',
+        code: attempts.length
+          ? (attempts.length > 1
+            ? 'SOTER_PROVIDER_PROBE_ATTEMPT_AMBIGUOUS'
+            : 'SOTER_PROVIDER_PROBE_ATTEMPT_LINK')
+          : 'SOTER_PROVIDER_PROBE_MISSING',
+        severity: attempts.length ? 'error' : 'warning',
+        claim: attempts.length
+          ? 'A failed provider probe attempt applies only to the exact lock, host, and provider implementation it names.'
+          : 'Each selected connected provider has one current probe for the supplied lock.',
         subject: provider.id,
-        path: ['providerProbes', provider.id],
-        expected: 'One current probe bound to ' + lockFingerprint + '.',
-        observed: 'Found ' + matches.length + ' matching probes.',
-        remediation: 'Run the provider adapter read-only probe and pass its structured result to the connected doctor.'
+        path: attempts.length
+          ? ['providerProbeAttempts', provider.id]
+          : ['providerProbes', provider.id],
+        expected: attempts.length
+          ? 'One failed attempt bound to ' + lockFingerprint + ' and the active host projection.'
+          : 'One current probe bound to ' + lockFingerprint + '.',
+        observed: attempts.length
+          ? 'Found ' + attempts.length + ' attempt(s), of which '
+            + exactAttempts.length + ' match the exact readiness scope.'
+          : 'Found no completed probe or failed attempt.',
+        remediation: attempts.length
+          ? 'Rerun one probe through the active exact lock and pass only its resulting checkpoint.'
+          : 'Run the provider adapter read-only probe and pass its durable checkpoint to the connected doctor.'
       }));
       continue;
     }
@@ -442,6 +661,7 @@ export function runConnectedDoctor({
       }));
     }
     const freshness = linkState === 'failed' ? 'failed' : probeFreshness(probe, createdAt);
+    probeExecutionStates.push(freshness);
     if (freshness !== 'passed') {
       diagnostics.push(diagnostic({
         code: freshness === 'stale' ? 'SOTER_PROVIDER_PROBE_STALE' : 'SOTER_PROVIDER_PROBE_TIME',
@@ -523,6 +743,7 @@ export function runConnectedDoctor({
   }
 
   const implementationState = aggregateStates(implementationStates);
+  const probeExecutionState = aggregateStates(probeExecutionStates);
   const connectionInputState = aggregateStates(connectionInputStates);
   const credentialState = aggregateStates(credentialStates, 'not-applicable');
   const reachabilityState = aggregateStates(reachabilityStates);
@@ -532,6 +753,7 @@ export function runConnectedDoctor({
     offline.report.states.valid,
     connectionInputState,
     implementationState,
+    probeExecutionState,
     reachabilityState,
     authorityState,
     capabilityState
@@ -544,12 +766,12 @@ export function runConnectedDoctor({
     }),
     {
       id: 'connections.runtime-state-valid',
-      claim: 'Connected checks use the exact desired configuration and contract-valid provider probes.',
+      claim: 'Connected checks use the exact desired configuration and contract-valid provider observations.',
       state: connectionInputState,
       evidenceIds: [],
       details: connectionInputState === 'passed'
-        ? 'The desired configuration matches the lock and every supplied probe is uniquely typed.'
-        : 'The desired configuration or one of the supplied probe artifacts is invalid.'
+        ? 'The desired configuration matches the lock and every supplied probe or failed-attempt summary is uniquely typed.'
+        : 'The desired configuration or one of the supplied provider-observation artifacts is invalid.'
     },
     {
       id: 'integrations.implementations-ready',
@@ -561,6 +783,18 @@ export function runConnectedDoctor({
         implementationState,
         implementationStates.filter((state) => state === 'passed').length,
         implementationStates.length
+      )
+    },
+    {
+      id: 'integrations.probes-complete',
+      claim: 'Every selected connected capability binding has current exact-lock provider-probe coverage through the active host route.',
+      state: probeExecutionState,
+      evidenceIds: [],
+      details: checkDetails(
+        'capability-binding probe execution',
+        probeExecutionState,
+        probeExecutionStates.filter((state) => state === 'passed').length,
+        probeExecutionStates.length
       )
     },
     {
@@ -627,7 +861,9 @@ export function runConnectedDoctor({
     claim: 'Connected doctor derives readiness from exact, short-lived, read-only provider probes.',
     subject: lock.configuration.name,
     expected: 'No provider mutation, dispatch, destructive effect, or secret value enters the report.',
-    observed: 'Connected readiness was evaluated from ' + validProbes.length + ' structured provider probes.',
+    observed: 'Connected readiness was evaluated from ' + validProbes.length
+      + ' completed probe(s) and ' + validProbeAttempts.length
+      + ' failed-attempt summary record(s).',
     evidenceIds: offline.report.evidenceIds,
     remediation: 'Use a separately authorized canary when write or dispatch behavior must be established.'
   }));

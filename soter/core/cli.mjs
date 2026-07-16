@@ -30,7 +30,7 @@ import {
   completeDurableProviderProbeExecution,
   failDurableHostExecution,
   getDurableHostExecution,
-  getDurableProviderProbe,
+  getDurableProviderProbeObservation,
   listDurableHostExecutions,
   prepareDurableCapabilityExecution,
   prepareDurableOperationPlanExecution,
@@ -178,6 +178,11 @@ async function main() {
       evidenceId,
       createdAt
     };
+    const checkpointObservations = level === 'connected'
+      ? options(args, '--probe-checkpoint').map((checkpointId) => {
+        return getDurableProviderProbeObservation({ root, checkpointId });
+      })
+      : [];
     const result = level === 'connected'
       ? runConnectedDoctor({
         ...doctorOptions,
@@ -185,10 +190,14 @@ async function main() {
           ...options(args, '--probe').map((probePath) => {
             return readJson(resolveRepoPath(root, probePath));
           }),
-          ...options(args, '--probe-checkpoint').map((checkpointId) => {
-            return getDurableProviderProbe({ root, checkpointId });
+          ...checkpointObservations.filter((observation) => {
+            return observation.$contract === 'soter://contracts/provider-probe/v1'
+              || observation.$contract === 'soter://contracts/provider-probe/v2';
           })
-        ]
+        ],
+        providerProbeAttempts: checkpointObservations.filter((observation) => {
+          return observation.$contract === 'soter://contracts/provider-probe-attempt/v1';
+        })
       })
       : runOfflineDoctor(doctorOptions);
     const output = option(args, '--output');

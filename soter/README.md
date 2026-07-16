@@ -61,6 +61,12 @@ same Core service to both Codex and Claude without becoming a provider proxy or
 accepting generic connected-write approvals. It atomically checkpoints each
 call and its private run state before returning a provider request, and can
 rehydrate pending work by checkpoint ID after a server restart. The connected
+doctor also consumes failed probe checkpoints through a typed, expiring summary
+that identifies the exact lock, provider, semantic step, native route, and
+failure category while excluding provider arguments, raw responses, credential
+values, and error messages. This makes an unavailable or unauthenticated route
+different from an unattempted probe without turning an old failure into current
+health evidence. The connected
 Otter provider now
 translates a canonical meeting URL into exact `fetch({id})` arguments and
 produces an identity-only `get_user_info({})` probe. That probe can pass

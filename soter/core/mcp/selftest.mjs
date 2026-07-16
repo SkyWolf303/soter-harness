@@ -103,7 +103,10 @@ async function call(client, name, args) {
 async function expectToolError(client, name, args, message) {
   const response = await client.callTool({ name, arguments: args });
   if (!response.isError || !JSON.stringify(response.content).includes(message)) {
-    throw new Error(name + ' did not fail with expected diagnostic: ' + message);
+    throw new Error(
+      name + ' did not fail with expected diagnostic: ' + message
+        + '; observed: ' + JSON.stringify(response.content)
+    );
   }
 }
 
@@ -151,6 +154,7 @@ async function selftest(root) {
   let client = await connectClient(root);
   let preparedCapability;
   let pendingNotionProbe;
+  let failedProbe;
   let requestedRunContents;
   const privateInputRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'soter-mcp-response-'));
   try {
@@ -269,7 +273,7 @@ async function selftest(root) {
       probe_id: 'probe.mcp-selftest.failure',
       at: fixtureTime
     });
-    const failedProbe = await call(client, 'soter_fail_host_call', {
+    failedProbe = await call(client, 'soter_fail_host_call', {
       checkpoint_id: failedProbeRequest.checkpoint.id,
       error_kind: 'authentication',
       message: 'The host could not authenticate the provider request.',
@@ -1006,6 +1010,34 @@ async function selftest(root) {
             || item.subject === 'provider.integration.notion.mcp');
       })) {
       throw new Error('Connected doctor did not consume the durable provider probe checkpoint.');
+    }
+
+    const failedDoctorInvocation = invokeCli(root, [
+      'doctor',
+      '--lock', lockPath,
+      '--level', 'connected',
+      '--probe-checkpoint', failedProbe.checkpoint.id,
+      '--probe-checkpoint', recoveredNotionProbe.checkpoint.id,
+      '--at', fixtureTime
+    ]);
+    const failedDoctor = JSON.parse(failedDoctorInvocation.stdout);
+    const failedAttemptDiagnostic = failedDoctor.diagnostics.find((item) => {
+      return item.code === 'SOTER_PROVIDER_PROBE_AUTHENTICATION'
+        && item.subject === 'provider.integration.otter.mcp';
+    });
+    if (failedDoctorInvocation.status !== 1
+      || failedDoctor.states.ready !== 'failed'
+      || !failedAttemptDiagnostic
+      || failedDoctor.diagnostics.some((item) => {
+        return item.code === 'SOTER_PROVIDER_PROBE_MISSING'
+          && item.subject === 'provider.integration.otter.mcp';
+      })
+      || JSON.stringify(failedDoctor).includes(
+        'The host could not authenticate the provider request.'
+      )) {
+      throw new Error(
+        'Connected doctor did not distinguish a secret-safe exact failed probe attempt from a missing probe.'
+      );
     }
 
     const corruptFile = checkpointFile(root, completed);

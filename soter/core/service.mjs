@@ -1254,6 +1254,94 @@ export function getDurableProviderProbe({ root, checkpointId, expectedHost }) {
   return structuredClone(state.checkpoint.result);
 }
 
+function failedProbeAttempt(root, state) {
+  const checkpoint = state.checkpoint;
+  const planned = checkpoint.$contract
+    === 'soter://contracts/provider-probe-plan-checkpoint/v1';
+  const runtimeStep = planned
+    ? checkpoint.steps.find((step) => step.state === 'failed')
+    : null;
+  const sourceStep = runtimeStep
+    ? checkpoint.plan.steps.find((step) => step.id === runtimeStep.id)
+    : null;
+  const call = planned ? runtimeStep?.call : checkpoint.call;
+  const error = planned ? runtimeStep?.error : call?.error;
+  const scope = planned ? checkpoint.plan.scope : call?.plan;
+  const provider = planned ? checkpoint.provider : call?.provider;
+  const probeId = planned ? checkpoint.plan.probeId : call?.probeId;
+  const validForSeconds = planned ? checkpoint.plan.validForSeconds : call?.validForSeconds;
+  const failedAt = call?.completedAt || checkpoint.updatedAt;
+  if (!call || !error || !scope || !provider || !probeId
+    || !Number.isInteger(validForSeconds) || !Number.isFinite(Date.parse(failedAt))) {
+    throw new Error(
+      'Failed provider probe checkpoint does not contain one exact terminal failure.'
+    );
+  }
+  const attempt = {
+    $contract: 'soter://contracts/provider-probe-attempt/v1',
+    contractVersion: '1.0.0',
+    id: 'probeattempt.' + checkpoint.id.slice('checkpoint.'.length),
+    probeId,
+    checkpointId: checkpoint.id,
+    attemptedAt: checkpoint.createdAt,
+    failedAt,
+    validUntil: new Date(Date.parse(failedAt) + validForSeconds * 1000).toISOString(),
+    state: 'failed',
+    configuration: {
+      name: state.lock.configuration.name,
+      lockFingerprint: checkpoint.configurationLock.fingerprint
+    },
+    host: structuredClone(checkpoint.host),
+    provider: structuredClone(provider),
+    scope: structuredClone(scope),
+    failure: {
+      kind: error.kind,
+      errorFingerprint: fingerprintJson(error),
+      step: sourceStep
+        ? {
+          id: sourceStep.id,
+          kind: sourceStep.kind,
+          subject: sourceStep.subject,
+          scopeFingerprint: sourceStep.scopeFingerprint
+        }
+        : null,
+      callId: call.id,
+      transport: structuredClone(call.transport)
+    },
+    sourceCheckpointFingerprint: checkpoint.checkpointFingerprint,
+    privacy: {
+      scope: 'private',
+      rawProviderResponsePersisted: false,
+      hostCredentialValuesPersisted: false,
+      providerArgumentsIncluded: false,
+      providerErrorMessageIncluded: false
+    }
+  };
+  contractFailures(
+    path.resolve(root),
+    attempt,
+    'soter/contracts/provider-probe-attempt.schema.json',
+    'Provider probe attempt'
+  );
+  return attempt;
+}
+
+export function getDurableProviderProbeObservation({ root, checkpointId, expectedHost }) {
+  const state = exactCheckpoint(root, checkpointId, expectedHost);
+  if (state.checkpoint.kind !== 'provider-probe') {
+    throw new Error('Checkpoint ' + checkpointId + ' is not a provider probe.');
+  }
+  if (state.checkpoint.state === 'completed' && state.checkpoint.result) {
+    return structuredClone(state.checkpoint.result);
+  }
+  if (state.checkpoint.state === 'failed' && !state.checkpoint.result) {
+    return failedProbeAttempt(root, state);
+  }
+  throw new Error(
+    'Checkpoint ' + checkpointId + ' is still pending and cannot inform connected readiness.'
+  );
+}
+
 export function listDurableHostExecutions({ root, state, expectedHost }) {
   const checkpoints = listHostCallCheckpointDocuments(root)
     .map((item) => assertCheckpoint(path.resolve(root), item.checkpoint))
