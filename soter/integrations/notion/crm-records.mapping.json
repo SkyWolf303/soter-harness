@@ -81,6 +81,7 @@
   ],
   "limitations": [
     "Policy rows identify definition documents but do not load or interpret their page bodies; domain context assembly requires a separate bounded fetch step.",
+    "The connected translator consumes one mapped record type per host call until Core can durably orchestrate and resume a multi-target read plan.",
     "The mapping normalizes provider rows only. It does not infer missing project relationships or convert provider status vocabularies into domain decisions.",
     "Schema compatibility is not established by this declaration; an exact-lock private probe must observe current target schemas."
   ]

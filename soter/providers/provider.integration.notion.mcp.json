@@ -31,6 +31,7 @@
   "fixtures": [],
   "limitations": [
     "This first connected implementation is read-only. It does not declare crm.records.create or crm.records.update until approval-bound multi-call deduplication, compare-before-write, and read-after-write verification exist.",
+    "Each connected record read accepts exactly one portable record type so it uses one Notion data source per host call. Cross-data-source SQL is plan-gated and is not a portable execution assumption.",
     "Identity probing establishes host authentication and endpoint reachability only; target authority and record-read compatibility remain unknown until bounded schema and row evidence are observed.",
     "Definition records expose mapped row properties only. Policy page bodies require a later bounded context-fetch capability.",
     "Native provider responses and connected identity values must remain private and are never persisted by Core."

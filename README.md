@@ -147,7 +147,9 @@ The main remaining gaps are structural and behavioral:
   exact `fetch({id})` request and an identity-only `get_user_info({})` probe
   request through separate resumable contracts. The connected Notion read
   declaration now translates bounded portable CRM record requests through a
-  pack-owned field mapping and user-configured target identities. Its
+  pack-owned field mapping and user-configured target identities. Each call is
+  limited to one target so cross-data-source SQL never becomes a hidden Notion
+  plan requirement. Its
   identity-only probe can establish authentication and reachability while
   leaving target authority and schema compatibility unknown. Connected Notion
   writes remain intentionally undeclared until multi-call deduplication,

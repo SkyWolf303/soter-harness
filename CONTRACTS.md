@@ -773,6 +773,14 @@ only after Core validates an approval bound to the exact generated operation
 batch and change-set fingerprint; host approval prompts alone are not reusable
 Soter authorization.
 
+The initial host-call checkpoint represents one native request. A provider
+feature that needs several requests—multi-target reads, deduplication followed
+by creation, compare-before-write, or read-after-write verification—must not
+hide that sequence inside a translator or rely on provider plan features to
+collapse it. Core must expose an explicit resumable operation plan whose steps,
+intermediate fingerprints, approval scope, and completion conditions are bound
+to the exact run.
+
 Provider readiness uses a separate `provider-probe-call/v1` state machine. Core
 derives its probe plan from the exact lock and desired configuration, including
 the selected provider, secret-reference identifiers, authorities, and

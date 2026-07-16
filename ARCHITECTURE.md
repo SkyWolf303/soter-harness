@@ -475,8 +475,10 @@ host-dispatched calls and their run envelopes. The current target includes the
 first connected Otter provider mapping, exact transcript-fetch request
 translation, and identity-only probe producer. It also includes a read-only
 connected Notion provider whose pack-owned settings, provider field mapping,
-bounded query translator, normalized record versions, and exact per-host native
-tool mappings are mechanically checked. Identity probes deliberately leave
+bounded one-target query translator, normalized record versions, and exact
+per-host native tool mappings are mechanically checked. The one-target boundary
+avoids depending on plan-gated cross-data-source SQL; multi-target context must
+be explicit orchestration. Identity probes deliberately leave
 domain compatibility unknown, and unobserved response shapes fail closed.
 Connected readiness still fails because Notion create and update
 implementations are intentionally absent and no current private probes are

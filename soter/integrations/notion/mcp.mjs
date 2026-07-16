@@ -115,11 +115,11 @@ export function prepareMcp({ capability, input, settings, mappings }) {
   if (capability !== 'crm.records.read') {
     throw providerError('validation', 'Notion MCP read adapter does not implement ' + capability + '.');
   }
-  if (!Array.isArray(input.recordTypes)
-    || input.recordTypes.length < 1
-    || input.recordTypes.length > 10
-    || new Set(input.recordTypes).size !== input.recordTypes.length) {
-    throw providerError('validation', 'Notion record reads require 1 through 10 unique record types.');
+  if (!Array.isArray(input.recordTypes) || input.recordTypes.length !== 1) {
+    throw providerError(
+      'validation',
+      'Connected Notion record reads currently require exactly one record type per host call; Core must orchestrate multiple targets without relying on plan-gated cross-data-source SQL.'
+    );
   }
   if (input.ids && (!Array.isArray(input.ids)
     || input.ids.length < 1

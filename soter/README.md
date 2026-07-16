@@ -64,7 +64,9 @@ authentication and reachability while leaving transcript compatibility
 unknown. Unobserved transcript response shapes fail closed. The connected
 Notion provider now implements bounded CRM record reads using a pack-owned
 settings schema, a provider-owned field mapping, and exact native tool mappings
-for each host adapter. It returns deterministic versions for normalized
+for each host adapter. A connected read is limited to one record type and data
+source per host call, avoiding a hidden dependency on plan-gated
+cross-data-source SQL. It returns deterministic versions for normalized
 records. Its identity probe proves only authentication and reachability;
 configured target access and schema/read compatibility remain unknown. Notion
 create and update implementations are intentionally absent until Soter models

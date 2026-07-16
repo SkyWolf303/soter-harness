@@ -242,7 +242,7 @@
         {
           "path": "soter/core/selftest.mjs",
           "role": "evaluation",
-          "fingerprint": "sha256:bb61573d17017d86408b072b9f6888b4a0d1bcf670579b81966bc37b8e95f430"
+          "fingerprint": "sha256:0f5249c1b3dc309379d3caadd431e081fbc8762f9b9755870a209353201c56ed"
         },
         {
           "path": "soter/core/service.mjs",
@@ -327,7 +327,7 @@
         {
           "path": "soter/integrations/notion/crm-records.mapping.json",
           "role": "definition",
-          "fingerprint": "sha256:bb710bdd25ed7c7b6e1191c777aa6558c136a9749d0afed2c198dc8de9c201be"
+          "fingerprint": "sha256:8af48b230c253e9b2b38d2b759d1b777bcf778ae4a19d562b25a6c75cec6f12b"
         },
         {
           "path": "soter/integrations/notion/fixture.mjs",
@@ -337,7 +337,7 @@
         {
           "path": "soter/integrations/notion/mcp.mjs",
           "role": "implementation",
-          "fingerprint": "sha256:8aac0ab55c9b0ca5ac2e648417dd8f4cce3ddd60b1fb9cb978bd457a6b8b2e78"
+          "fingerprint": "sha256:bedcee58c50df8276a9aa81e9df9b749158133105158018f786726f164d5f23a"
         },
         {
           "path": "soter/integrations/notion/settings.json",
@@ -352,7 +352,7 @@
         {
           "path": "soter/providers/provider.integration.notion.mcp.json",
           "role": "implementation",
-          "fingerprint": "sha256:3af7c1a1254926cfd22a83f50b906a454d20ac6859289b839a10d29c11f82cb4"
+          "fingerprint": "sha256:8fd599fd043509f263e7199b2f60bdc4906ca6d07c26071881070f8200dfda86"
         }
       ]
     },
@@ -615,5 +615,5 @@
       "fingerprint": "sha256:76ee7cf92f64ea6a927008daa4cf80dff943769d749b9bd9d27737a1420f57be"
     }
   ],
-  "graphFingerprint": "sha256:2bb3671498af24a403b4c2a9ee5ab6295c1973b61e240e9210cec49e187ce7d5"
+  "graphFingerprint": "sha256:d96d5303aeec8761294757861958b8139333257441bac096c0b2ae215c9842a8"
 }

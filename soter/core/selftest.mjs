@@ -649,6 +649,17 @@ export async function selftest(root) {
       input: hostReadInput,
       at: FIXTURE_TIME
     });
+    const rejectedMultiTargetRead = await prepareHostToolCall({
+      root: temp,
+      lock,
+      runId: 'run.meeting-intake.fixture',
+      callId: 'toolcall.selftest.notion-multi-target-read',
+      capability: 'crm.records.read',
+      authority: 'authority.crm.instance',
+      providerImplementation: connectedProviders.notion.id,
+      input: { recordTypes: ['meeting', 'task'], limit: 1 },
+      at: FIXTURE_TIME
+    });
     const completedHostRead = await completeHostToolCall({
       root: temp,
       lock,
@@ -695,6 +706,12 @@ export async function selftest(root) {
         !== 'https://app.notion.com/org-selftest'
       || JSON.stringify(completedHostRead.call).includes('response-only-marker')) {
       failures.push('Notion read bridge did not preserve mapped native dispatch, typed normalization, and response minimization');
+    }
+    if (rejectedMultiTargetRead.call.state !== 'failed'
+      || rejectedMultiTargetRead.call.transport.operation !== null
+      || rejectedMultiTargetRead.call.transport.tool !== null
+      || rejectedMultiTargetRead.call.error?.kind !== 'validation') {
+      failures.push('Notion read bridge silently relied on plan-gated cross-data-source SQL');
     }
     const blockedHostWrite = await prepareHostToolCall({
       root: temp,
