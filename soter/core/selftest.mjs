@@ -109,6 +109,16 @@ function notionProbeStepResponse(checkpoint, identityMarker, driftStepId = null)
       isError: false
     };
   }
+  if (source.kind === 'document') {
+    return notionPageResponse({
+      uri: source.scope.input.uri,
+      title: source.id === driftStepId
+        ? 'Drifted policy title'
+        : source.scope.input.expectedTitle,
+      body: '# Synthetic policy\n\nPrivate probe body ' + identityMarker + '.',
+      privateMarker: identityMarker
+    });
+  }
   return {
     structuredContent: {
       result: { results: [], has_more: false }
@@ -165,6 +175,24 @@ function notionPageResponse({ uri, title, body, privateMarker = null }) {
     isError: false,
     ...(privateMarker ? { privateMarker } : {})
   };
+}
+
+function applicablePolicySources(lock) {
+  return lock.sources.flatMap((source) => {
+    const consumer = source.consumers.find((item) => {
+      return item.pack === 'automation.meeting-intake'
+        && item.purpose === 'applicable-policy';
+    });
+    if (!consumer) return [];
+    return [{
+      id: source.id.slice('source.'.length),
+      sourceId: source.id,
+      subjects: consumer.subjects,
+      title: source.input.expectedTitle,
+      documentUri: source.input.uri,
+      reason: consumer.reason
+    }];
+  }).sort((left, right) => left.id.localeCompare(right.id, 'en'));
 }
 
 async function completeContextPolicyBodies({ root, execution, bindings, atSecond, markerPrefix }) {
@@ -280,7 +308,7 @@ function selftestProviderProbes(lock, providers) {
           id: 'documents.content.read',
           state: 'passed',
           method: 'read-only',
-          details: 'One exact title-bound document body normalized successfully.'
+          details: 'Every exact configured title-bound document source normalized successfully.'
         },
         {
           id: 'crm.records.create',
@@ -340,6 +368,16 @@ export async function selftest(root) {
   }
   if (JSON.stringify(first).includes('secret-ref') || JSON.stringify(first).includes('OAUTH')) {
     failures.push('configuration lock contains credential-reference material');
+  }
+  if (first.sources.length !== 3
+    || first.sources.some((source) => {
+      return source.inputFingerprint !== fingerprintJson(source.input)
+        || source.capability !== 'documents.content.read'
+        || source.authority !== 'authority.crm.definition'
+        || source.readiness.mode !== 'probe-read'
+        || source.consumers.length !== 1;
+    })) {
+    failures.push('resolved lock did not preserve exact portable source wiring and fingerprints');
   }
 
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'soter-core-'));
@@ -551,22 +589,30 @@ export async function selftest(root) {
       path.join(temp, notionPlan.checkpointPath),
       'utf8'
     );
-    if (notionPlanCalls !== 15
+    if (notionPlanCalls !== 18
       || notionPlan.checkpoint.state !== 'completed'
       || notionPlan.checkpoint.result?.$contract !== 'soter://contracts/provider-probe/v2'
-      || notionPlan.checkpoint.result?.checks.length !== 15
+      || notionPlan.checkpoint.result?.checks.length !== 18
       || notionPlan.checkpoint.result?.checks.some((check) => check.state !== 'passed')
+      || notionPlan.checkpoint.result?.checks.filter((check) => {
+        return check.kind === 'document' && check.method === 'read-only';
+      }).length !== 3
       || notionPlan.checkpoint.result?.capabilities.find((item) => {
         return item.id === 'crm.records.read';
+      })?.state !== 'passed'
+      || notionPlan.checkpoint.result?.capabilities.find((item) => {
+        return item.id === 'documents.content.read';
       })?.state !== 'passed'
       || notionPlan.checkpoint.result?.capabilities.filter((item) => {
         return item.id === 'crm.records.create' || item.id === 'crm.records.update';
       }).some((item) => item.state !== 'unknown')
       || notionPlan.currentCall !== null
       || JSON.stringify(notionPlan).includes(notionPlanMarker)
-      || notionPlanState.includes(notionPlanMarker)) {
+      || notionPlanState.includes(notionPlanMarker)
+      || notionPlanState.includes('automation.meeting-intake')
+      || notionPlanState.includes('"consumers"')) {
       failures.push(
-        'Notion probe plan did not sequence, minimize, and close exact schema/read checks: '
+        'Notion probe plan did not sequence, minimize, and close exact schema, record-read, and document-read checks: '
           + JSON.stringify({
             calls: notionPlanCalls,
             state: notionPlan.checkpoint.state,
@@ -576,6 +622,8 @@ export async function selftest(root) {
             currentCall: notionPlan.currentCall?.id || null,
             markerInResult: JSON.stringify(notionPlan).includes(notionPlanMarker),
             markerInState: notionPlanState.includes(notionPlanMarker),
+            consumerWiringInState: notionPlanState.includes('automation.meeting-intake')
+              || notionPlanState.includes('"consumers"'),
             failedStep: notionPlan.checkpoint.steps.find((step) => step.state === 'failed')?.id || null,
             error: notionPlan.checkpoint.steps.find((step) => step.state === 'failed')?.error || null
           })
@@ -613,6 +661,38 @@ export async function selftest(root) {
       || driftedStep?.error?.kind !== 'validation'
       || driftedNotionPlan.checkpoint.result !== null) {
       failures.push('Notion probe plan did not fail closed on mapped provider schema drift');
+    }
+
+    let mismatchedDocumentPlan = await prepareDurableProviderProbeExecution({
+      root: temp,
+      lockPath,
+      providerImplementation: connectedProviders.notion.id,
+      probeId: 'probe.integration.notion.document-mismatch-selftest',
+      at: FIXTURE_TIME,
+      validForSeconds: 300
+    });
+    const mismatchedDocumentStepId = 'step.source.policy.meetings.document';
+    while (mismatchedDocumentPlan.checkpoint.state === 'requested') {
+      const currentCall = mismatchedDocumentPlan.currentCall;
+      mismatchedDocumentPlan = await completeDurableProviderProbeExecution({
+        root: temp,
+        checkpointId: mismatchedDocumentPlan.checkpoint.id,
+        callId: currentCall.id,
+        response: notionProbeStepResponse(
+          mismatchedDocumentPlan.checkpoint,
+          notionPlanMarker,
+          mismatchedDocumentStepId
+        ),
+        at: FIXTURE_TIME
+      });
+    }
+    const mismatchedDocumentStep = mismatchedDocumentPlan.checkpoint.steps.find((step) => {
+      return step.id === mismatchedDocumentStepId;
+    });
+    if (mismatchedDocumentPlan.checkpoint.state !== 'failed'
+      || mismatchedDocumentStep?.error?.kind !== 'conflict'
+      || mismatchedDocumentPlan.checkpoint.result !== null) {
+      failures.push('Notion probe plan did not fail closed on exact document title mismatch');
     }
 
     const resolutionEvidence = createResolutionEvidence({
@@ -2074,7 +2154,7 @@ export async function selftest(root) {
       incompleteContextRejected = error.message.includes('completed operation plan');
     }
     const contextPolicyMarker = 'raw-connected-context-policy-marker';
-    const contextPolicyBindings = lock.settings['automation.meeting-intake'].policyBindings;
+    const contextPolicyBindings = applicablePolicySources(lock);
     const contextPolicyResponse = {
       content: [{
         type: 'text',
@@ -2318,6 +2398,7 @@ export async function selftest(root) {
       || connectedPolicyEntries.some((entry) => {
         return entry.role !== 'definition'
           || entry.capability !== 'documents.content.read'
+          || !entry.applicability.sourceId.startsWith('source.policy.')
           || entry.applicability.subjects.length !== 1
           || !entry.value.document.bodyFingerprint.startsWith('sha256:');
       })
@@ -3134,7 +3215,7 @@ export async function selftest(root) {
     return false;
   }
   process.stdout.write(
-    'CORE SELFTEST PASS: deterministic lock, typed fixture reads/writes, exact-scope approval, deduplication, expected-version conflicts, rollback, read-after-write verification, resumable fixed and bound sequential operation plans, approval-bound connected update transactions with reverse compensation and read-only ambiguity reconciliation, bounded connected context finalization with exact applicable policy bodies, resumable MCP host dispatch, exact-lock single and multi-step provider probes, schema drift rejection, connected readiness, expiry, honest states, and stale-lock detection.\n'
+    'CORE SELFTEST PASS: deterministic source-bound lock, typed fixture reads/writes, exact-scope approval, deduplication, expected-version conflicts, rollback, read-after-write verification, resumable fixed and bound sequential operation plans, approval-bound connected update transactions with reverse compensation and read-only ambiguity reconciliation, bounded connected context finalization with exact applicable policy bodies, resumable MCP host dispatch, exact-lock single and multi-step provider probes including minimized document reads, schema and identity drift rejection, connected readiness, expiry, honest states, and stale-lock detection.\n'
   );
   return true;
 }

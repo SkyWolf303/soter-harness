@@ -58,6 +58,16 @@ function notionProbeResponse(checkpoint, marker, driftStepId = null) {
       isError: false
     };
   }
+  if (source.kind === 'document') {
+    return notionPageResponse({
+      uri: source.scope.input.uri,
+      title: source.id === driftStepId
+        ? 'Drifted policy title'
+        : source.scope.input.expectedTitle,
+      body: '# Synthetic policy\n\nPrivate probe body ' + marker + '.',
+      marker
+    });
+  }
   return {
     structuredContent: { result: { results: [], has_more: false } }
   };
@@ -101,6 +111,24 @@ function notionPageResponse({ uri, title, body, marker = null }) {
     isError: false,
     ...(marker ? { privateMarker: marker } : {})
   };
+}
+
+function applicablePolicySources(lock) {
+  return lock.sources.flatMap((source) => {
+    const consumer = source.consumers.find((item) => {
+      return item.pack === 'automation.meeting-intake'
+        && item.purpose === 'applicable-policy';
+    });
+    if (!consumer) return [];
+    return [{
+      id: source.id.slice('source.'.length),
+      sourceId: source.id,
+      subjects: consumer.subjects,
+      title: source.input.expectedTitle,
+      documentUri: source.input.uri,
+      reason: consumer.reason
+    }];
+  }).sort((left, right) => left.id.localeCompare(right.id, 'en'));
 }
 
 function createFixtureRoot() {
@@ -592,7 +620,7 @@ async function selftest(root) {
       valid_for_seconds: 300
     });
     if (preparedNotionProbe.checkpoint?.state !== 'requested'
-      || preparedNotionProbe.checkpoint?.steps?.length !== 15
+      || preparedNotionProbe.checkpoint?.steps?.length !== 18
       || preparedNotionProbe.currentCall?.transport?.operation !== 'fetch'
       || preparedNotionProbe.currentCall?.arguments?.id !== 'self') {
       throw new Error('MCP provider probe plan did not expose one exact first Notion call.');
@@ -732,16 +760,24 @@ async function selftest(root) {
     if (recoveredNotionProbe.checkpoint.state !== 'completed'
       || recoveredNotionProbe.checkpoint.result?.$contract
         !== 'soter://contracts/provider-probe/v2'
-      || recoveredNotionProbe.checkpoint.result?.checks?.length !== 15
+      || recoveredNotionProbe.checkpoint.result?.checks?.length !== 18
+      || recoveredNotionProbe.checkpoint.result?.checks?.filter((check) => {
+        return check.kind === 'document' && check.method === 'read-only';
+      }).length !== 3
       || recoveredNotionProbe.checkpoint.result?.capabilities?.find((item) => {
         return item.id === 'crm.records.read';
+      })?.state !== 'passed'
+      || recoveredNotionProbe.checkpoint.result?.capabilities?.find((item) => {
+        return item.id === 'documents.content.read';
       })?.state !== 'passed'
       || recoveredNotionProbe.checkpoint.result?.capabilities?.filter((item) => {
         return item.id === 'crm.records.create' || item.id === 'crm.records.update';
       }).some((item) => item.state !== 'unknown')
       || JSON.stringify(recoveredNotionProbe).includes(notionMarker)
       || fs.readFileSync(checkpointFile(root, recoveredNotionProbe), 'utf8')
-        .includes(notionMarker)) {
+        .includes(notionMarker)
+      || fs.readFileSync(checkpointFile(root, recoveredNotionProbe), 'utf8')
+        .includes('automation.meeting-intake')) {
       throw new Error('Recovered Notion probe plan did not close with minimized exact checks.');
     }
 
@@ -1055,8 +1091,7 @@ async function selftest(root) {
     const connectedContextRunPath = 'soter/fixtures/meeting-intake/mcp-connected-context.run.json';
     const connectedContextRun = JSON.parse(fs.readFileSync(path.join(root, runPath), 'utf8'));
     const connectedContextLock = JSON.parse(fs.readFileSync(path.join(root, lockPath), 'utf8'));
-    const contextPolicyBindings = [...connectedContextLock.settings['automation.meeting-intake'].policyBindings]
-      .sort((left, right) => left.id.localeCompare(right.id, 'en'));
+    const contextPolicyBindings = applicablePolicySources(connectedContextLock);
     connectedContextRun.id = 'run.meeting-intake.mcp-connected-context';
     fs.writeFileSync(
       path.join(root, connectedContextRunPath),
@@ -1304,6 +1339,11 @@ async function selftest(root) {
       || finalizedContext.snapshot?.entries?.filter((entry) => {
         return entry.applicability?.state === 'applicable';
       }).length !== contextPolicyBindings.length
+      || finalizedContext.snapshot?.entries?.filter((entry) => {
+        return entry.applicability?.state === 'applicable';
+      }).some((entry) => !contextPolicyBindings.some((binding) => {
+        return binding.sourceId === entry.applicability.sourceId;
+      }))
       || finalizedContext.run?.context
         ?.find((entry) => entry.authority === 'authority.crm.definition')?.status !== 'loaded'
       || finalizedContext.run?.lifecycleState !== 'paused'

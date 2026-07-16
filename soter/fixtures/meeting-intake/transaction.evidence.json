@@ -9,7 +9,7 @@
     "id": "run.meeting-intake.transaction-fixture",
     "version": null
   },
-  "configurationLockFingerprint": "sha256:aaff2821af23dd5b5a2cdbb5256479d6c76384261ac765d2e22271b1a71c1d5a",
+  "configurationLockFingerprint": "sha256:49f1c65ab83d0bb3d6fa92e3969429db98c6c1a9fcd1fae5ad0b00da1351f048",
   "dependencies": [
     {
       "id": "kernel.soter",
@@ -29,7 +29,7 @@
     {
       "id": "automation.meeting-intake",
       "version": "0.1.0",
-      "fingerprint": "sha256:0cda87fbac6fceee0826304517af1f90bd1a89e4117b10e97c08088b70208f1d"
+      "fingerprint": "sha256:c4c41d79189b236a2339d9aa6a16061c35e912a1e530e9b3a43d25e9e10983f9"
     },
     {
       "id": "integration.notion",
@@ -96,7 +96,7 @@
   ],
   "evaluator": {
     "id": "core.contained-transaction",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "level": "fixture"
   },
   "environment": {
@@ -133,12 +133,12 @@
     {
       "role": "change-set",
       "id": "changeset.meeting-intake.transaction-fixture",
-      "fingerprint": "sha256:2c891e1b25bfcf334db484112ca75f86d9560d93602fb5f2263cf2615f3c69e4"
+      "fingerprint": "sha256:4cf70673379abc17b4c1a7909530447d5f50605f5130d6be36bf6fda046435c0"
     },
     {
       "role": "approval",
       "id": "approval.meeting-intake.transaction-fixture",
-      "fingerprint": "sha256:286c4148905f94d23e9127f2fecc63b8b0ddae9862775ba55bb62c2f2efbf6af"
+      "fingerprint": "sha256:bdf6cd55a09ebd06033dada459d57dc57a53961ca3521e323c534a109cbdce56"
     }
   ],
   "effects": [

@@ -56,6 +56,17 @@
     ],
     "provides": []
   },
+  "sourceRequirements": [
+    {
+      "purpose": "applicable-policy",
+      "capability": "documents.content.read",
+      "authorityRole": "definition",
+      "authoritySubject": "crm.records",
+      "minimum": 1,
+      "maximum": 10,
+      "reason": "Meeting intake must ground every explicitly applicable policy source before proposing governed outcomes."
+    }
+  ],
   "authorities": [
     { "role": "definition", "subject": "crm.records", "required": true },
     { "role": "instance", "subject": "crm.records", "required": true },

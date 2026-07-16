@@ -19,7 +19,8 @@ fields make that distinction mechanical.
 - integrations contains provider-specific translators, pack-owned settings
   definitions, shareable field mappings, and contained runtimes; automations
   never import these modules directly.
-- configurations contains explicit desired configurations.
+- configurations contains explicit desired configurations, including portable
+  capability sources, readiness modes, and selected pack consumers.
 - hosts contains explicit adapter declarations and projection ownership.
 - scenarios contains behavior-level fixtures and expected evidence.
 - migrations maps prototype artifacts to their target ownership and state.
@@ -83,27 +84,28 @@ time and resuming by checkpoint plus call ID. Plan v1 retains fixed inputs;
 plan v2 deterministically binds unique string-list references from earlier
 normalized outputs, fingerprints the resolution, and skips empty relations
 without a provider request. Meeting-intake Automation uses v2 for a bounded
-policy index read, every policy page explicitly selected in its pack-owned
-settings, the exact transcript, the CRM meeting matched by recording URI, and
-only the organizations, projects, and tasks referenced through that meeting.
+policy index read, every policy page explicitly wired as an `applicable-policy`
+portable source, the exact transcript, the CRM meeting matched by recording URI,
+and only the organizations, projects, and tasks referenced through that meeting.
 It requires exact policy URI/title agreement and every referenced related ID to
 be returned before finalizing, then asks Core to persist a private snapshot and
 pause the same run. Each policy entry records its configured subjects and
 applicability reason; this does not claim the prose was interpreted or enforced.
 Participant profiles remain unloaded. Core mechanically binds every snapshot
 entry to exactly one normalized plan output and passed effect before persisting
-it. The Notion provider returns deterministic
-  versions for normalized records. Its private readiness plan emits identity
-  plus exact schema and one-row bounded read checks for every configured target,
-  one visible host request at a time. The typed provider mapping binds current
-  property names and types—including the observed `🫂 Contacts` organization
-  relation—and schema drift fails closed. Only minimized booleans, counts, and
-  fingerprints enter the final probe; live row values and identity values do
-  not. Exact target references remain confined to the private checkpoint and
-  lock scope. This plan can establish exact-lock `crm.records.read`
-  readiness, but not write permission, write response conformance, automation
-  verification, or health. Otter's
-  identity-only probe still leaves transcript compatibility unknown. Notion
+it. The Notion provider returns deterministic versions for normalized records.
+Its private readiness plan emits identity, exact schema and one-row bounded read
+checks for every configured target, plus one exact read for every portable
+document source marked `probe-read`, one visible host request at a time. The
+typed provider mapping binds current property names and types—including the
+observed `🫂 Contacts` organization relation—and schema drift fails closed. Only
+minimized booleans, counts, and fingerprints enter the final probe; live row
+values, policy bodies, and identity values do not. Exact target and document
+references remain confined to the private checkpoint and lock scope. This plan
+can establish exact-lock `crm.records.read` and `documents.content.read`
+readiness, but not policy interpretation, write permission, write response
+conformance, automation verification, or health. Otter's
+identity-only probe still leaves transcript compatibility unknown. Notion
 create and update translators now accept only explicitly mapped fields, but the
 ordinary capability and operation-plan interfaces still block them. Core can
 compile an exact connected operation-batch preview with deduplication or
@@ -181,9 +183,10 @@ Inspect the Notion probe plan without calling Notion:
 It returns `currentCall`, beginning with `fetch({id: "self"})`. Execute exactly
 that resolved native tool through the authenticated host route, then call
 `probe-complete --checkpoint ID --call CALL_ID --response ABSOLUTE_PRIVATE_PATH`.
-Each successful completion returns the next exact schema or bounded-read call;
-the fifteenth closes a `provider-probe/v2` with one fingerprint-bound check per
-step. A stopped, drifted, wrong-lock, or incomplete plan contributes no probe.
+Each successful completion returns the next exact schema, bounded record-read,
+or configured document-read call; the eighteenth closes a `provider-probe/v2`
+with one fingerprint-bound check per step. A stopped, drifted, wrong-lock, or
+incomplete plan contributes no probe.
 
 After `npm install`, both host projections can start the same local
 `soter-core` stdio server, bound to the launching host identity. Its prepare

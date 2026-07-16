@@ -555,6 +555,23 @@ function checkPackGraph(root, documents, out, census) {
         'lower the maturity claim or attach verification at the required level'
       ));
     }
+    for (const requirement of entry.doc.sourceRequirements || []) {
+      const capability = entry.doc.capabilities.requires.find((item) => {
+        return item.id === requirement.capability && !item.optional;
+      });
+      if (requirement.minimum > requirement.maximum || !capability) {
+        out.push(violation(
+          entry.file,
+          'SOTER_PACK_SOURCE_REQUIREMENT',
+          requirement.minimum > requirement.maximum
+            ? 'source requirement minimum exceeds its maximum for ' + requirement.purpose
+            : 'source requirement ' + requirement.purpose
+              + ' has no matching required capability ' + requirement.capability,
+          'a pack source requirement must be satisfiable through its declared capability dependencies',
+          'correct the cardinality or add the matching non-optional capability requirement'
+        ));
+      }
+    }
     for (const artifact of entry.doc.artifacts || []) {
       if (!fs.existsSync(path.join(root, artifact.path))) {
         out.push(violation(
@@ -1990,6 +2007,138 @@ function checkConfiguration(root, entry, packs, capabilities, hosts, packSetting
     }
   }
 
+  const sourceIds = new Set();
+  for (const source of doc.sources || []) {
+    if (sourceIds.has(source.id)) {
+      out.push(violation(
+        entry.file,
+        'SOTER_SOURCE',
+        'configuration source ID is duplicated: ' + source.id,
+        'each portable source must resolve to one exact capability input and authority',
+        'remove or rename the duplicate source'
+      ));
+    }
+    sourceIds.add(source.id);
+    const binding = bindings.get(source.capability);
+    const capability = capabilities.get(source.capability);
+    if (!binding) {
+      out.push(violation(
+        entry.file,
+        'SOTER_SOURCE',
+        source.id + ' uses an unbound capability: ' + source.capability,
+        'a source cannot bypass the user-selected provider binding',
+        'bind the capability or remove the source'
+      ));
+    } else if (!binding.authorities.includes(source.authority)) {
+      out.push(violation(
+        entry.file,
+        'SOTER_SOURCE',
+        source.id + ' uses authority ' + source.authority
+          + ' outside the selected ' + source.capability + ' binding',
+        'source identity must remain inside the exact capability and authority selection',
+        'select a bound authority for the source'
+      ));
+    }
+    if (!capability) {
+      out.push(violation(
+        entry.file,
+        'SOTER_SOURCE',
+        source.id + ' references an absent capability contract: ' + source.capability,
+        'portable source inputs require a machine-readable capability schema',
+        'add the capability contract or correct the source'
+      ));
+    } else {
+      const inputFailures = schemaErrors(source.input, capability.doc.inputSchema);
+      for (const failure of inputFailures.slice(0, 20)) {
+        out.push(violation(
+          entry.file,
+          'SOTER_SOURCE_INPUT',
+          source.id + ' input ' + failure.path + ' ' + failure.message,
+          'configured source input must satisfy the exact portable capability contract',
+          'correct the source input or select a compatible capability version'
+        ));
+      }
+      if (source.readiness?.mode === 'probe-read') {
+        const unsafeEffects = (capability.doc.effects || []).filter((effect) => {
+          return effect !== 'read' && effect !== 'disclosure';
+        });
+        const gatedEffects = (capability.doc.effects || []).filter((effect) => {
+          return doc.effectPolicies[effect]?.mode !== 'allow';
+        });
+        if (unsafeEffects.length || gatedEffects.length) {
+          out.push(violation(
+            entry.file,
+            'SOTER_SOURCE_PROBE',
+            source.id + ' requests a readiness read for effects that are not safely allowed',
+            'readiness probes cannot perform writes, dispatch, destructive work, or confirmation-gated effects',
+            'use runtime-only readiness or choose a read-only capability with allowed effects'
+          ));
+        }
+      }
+    }
+    const consumerKeys = new Set();
+    for (const consumer of source.consumers || []) {
+      const key = consumer.pack + '|' + consumer.purpose;
+      if (consumerKeys.has(key)) {
+        out.push(violation(
+          entry.file,
+          'SOTER_SOURCE_CONSUMER',
+          source.id + ' repeats consumer ' + key,
+          'one source-to-pack purpose should have one explicit applicability reason and subject set',
+          'merge or remove the duplicate consumer declaration'
+        ));
+      }
+      consumerKeys.add(key);
+      if (!selected.has(consumer.pack)) {
+        out.push(violation(
+          entry.file,
+          'SOTER_SOURCE_CONSUMER',
+          source.id + ' names an unselected consumer pack: ' + consumer.pack,
+          'source wiring cannot activate hidden or unselected behavior',
+          'select the consumer pack or remove the source consumer'
+        ));
+      } else if (!packs.get(consumer.pack)?.doc.capabilities.requires.some((requirement) => {
+        return requirement.id === source.capability;
+      })) {
+        out.push(violation(
+          entry.file,
+          'SOTER_SOURCE_CONSUMER',
+          source.id + ' consumer ' + consumer.pack
+            + ' does not require capability ' + source.capability,
+          'source wiring must satisfy a capability dependency declared by its consuming pack',
+          'declare the pack requirement or remove the source consumer'
+        ));
+      }
+    }
+  }
+
+  for (const id of selected) {
+    const pack = packs.get(id)?.doc;
+    for (const requirement of pack?.sourceRequirements || []) {
+      const matches = (doc.sources || []).filter((source) => {
+        const authority = authorities.get(source.authority);
+        return source.capability === requirement.capability
+          && authority?.role === requirement.authorityRole
+          && authority.subject === requirement.authoritySubject
+          && (source.consumers || []).some((consumer) => {
+            return consumer.pack === id && consumer.purpose === requirement.purpose;
+          });
+      });
+      if (requirement.minimum > requirement.maximum
+        || matches.length < requirement.minimum
+        || matches.length > requirement.maximum) {
+        out.push(violation(
+          entry.file,
+          'SOTER_SOURCE_REQUIREMENT',
+          id + ' requires ' + requirement.minimum + ' through ' + requirement.maximum
+            + ' ' + requirement.purpose + ' source(s); found ' + matches.length,
+          'a selected pack must receive the explicit portable sources declared by its manifest',
+          'add or remove matching source consumers, or select a compatible pack version'
+        ));
+      }
+    }
+  }
+
   const requiredCapabilities = new Set();
   for (const id of selected) {
     const pack = packs.get(id);
@@ -2305,6 +2454,13 @@ function result(root, census, violations, graph) {
         secretRef: binding.secretRef || null,
         reason: binding.reason
       })),
+      sources: (config.doc.sources || []).map((source) => ({
+        ...source,
+        capabilityVersion: graph.capabilities.get(source.capability)?.doc.version || null,
+        inputFingerprint: source.input && typeof source.input === 'object'
+          ? fingerprintJson(source.input)
+          : null
+      })),
       authorities: config.doc.authorities,
       effectPolicies: config.doc.effectPolicies
     });
@@ -2475,14 +2631,36 @@ function selftest(root) {
     }
     fs.writeFileSync(configFile, originalConfigText);
 
-    const missingPolicyBindings = JSON.parse(originalConfigText);
-    delete missingPolicyBindings.settings['automation.meeting-intake'].policyBindings;
-    fs.writeFileSync(configFile, JSON.stringify(missingPolicyBindings, null, 2) + '\n');
-    const badAutomationSettings = verifySoter(temp);
-    if (!badAutomationSettings.violations.some((item) => {
-      return item.code === 'SOTER_PACK_SETTINGS_SCHEMA';
+    const badSourceInput = JSON.parse(originalConfigText);
+    delete badSourceInput.sources[0].input.expectedTitle;
+    fs.writeFileSync(configFile, JSON.stringify(badSourceInput, null, 2) + '\n');
+    const invalidSourceInput = verifySoter(temp);
+    if (!invalidSourceInput.violations.some((item) => {
+      return item.code === 'SOTER_SOURCE_INPUT';
     })) {
-      failures.push('planted missing Automation policy bindings were not detected');
+      failures.push('planted invalid portable source input was not detected');
+    }
+    fs.writeFileSync(configFile, originalConfigText);
+
+    const missingRequiredSources = JSON.parse(originalConfigText);
+    missingRequiredSources.sources = [];
+    fs.writeFileSync(configFile, JSON.stringify(missingRequiredSources, null, 2) + '\n');
+    const invalidSourceRequirement = verifySoter(temp);
+    if (!invalidSourceRequirement.violations.some((item) => {
+      return item.code === 'SOTER_SOURCE_REQUIREMENT';
+    })) {
+      failures.push('planted missing pack source requirement was not detected');
+    }
+    fs.writeFileSync(configFile, originalConfigText);
+
+    const badSourceConsumer = JSON.parse(originalConfigText);
+    badSourceConsumer.sources[0].consumers[0].pack = 'context.crm';
+    fs.writeFileSync(configFile, JSON.stringify(badSourceConsumer, null, 2) + '\n');
+    const invalidSourceConsumer = verifySoter(temp);
+    if (!invalidSourceConsumer.violations.some((item) => {
+      return item.code === 'SOTER_SOURCE_CONSUMER';
+    })) {
+      failures.push('planted source consumer without a capability requirement was not detected');
     }
     fs.writeFileSync(configFile, originalConfigText);
 
@@ -2565,7 +2743,7 @@ function selftest(root) {
     failures.forEach((failure) => console.error('SELFTEST FAIL: ' + failure));
     return false;
   }
-  console.log('SELFTEST PASS: schema, version, clean graph, pack settings, provider mapping, native host tool, binding, host, malformed JSON, unknown-contract, and malformed-contract checks fired as expected.');
+  console.log('SELFTEST PASS: schema, version, clean graph, pack settings, portable sources, provider mapping, native host tool, binding, host, malformed JSON, unknown-contract, and malformed-contract checks fired as expected.');
   return true;
 }
 

@@ -65,6 +65,74 @@
       "reason": "Notion is the configured instance authority for bounded CRM record updates."
     }
   ],
+  "sources": [
+    {
+      "id": "source.policy.docs",
+      "capability": "documents.content.read",
+      "authority": "authority.crm.definition",
+      "input": {
+        "uri": "https://app.notion.com/39ed79b5de3881dbb40dddf827bd6373",
+        "expectedTitle": "Docs"
+      },
+      "readiness": {
+        "mode": "probe-read",
+        "reason": "Connected readiness must prove the exact policy page can be read and normalized without retaining its body."
+      },
+      "consumers": [
+        {
+          "pack": "automation.meeting-intake",
+          "purpose": "applicable-policy",
+          "subjects": ["meeting-summary"],
+          "reason": "Meeting intake creates a governed meeting-summary document."
+        }
+      ],
+      "reason": "The external Docs policy page is an explicit portable source, not an Integration-owned setting."
+    },
+    {
+      "id": "source.policy.meetings",
+      "capability": "documents.content.read",
+      "authority": "authority.crm.definition",
+      "input": {
+        "uri": "https://app.notion.com/39ed79b5de388105b507f11ad35d2acd",
+        "expectedTitle": "Meetings"
+      },
+      "readiness": {
+        "mode": "probe-read",
+        "reason": "Connected readiness must prove the exact policy page can be read and normalized without retaining its body."
+      },
+      "consumers": [
+        {
+          "pack": "automation.meeting-intake",
+          "purpose": "applicable-policy",
+          "subjects": ["meeting"],
+          "reason": "Meeting intake reads and updates the source meeting record."
+        }
+      ],
+      "reason": "The external Meetings policy page is an explicit portable source, not an Integration-owned setting."
+    },
+    {
+      "id": "source.policy.tasks",
+      "capability": "documents.content.read",
+      "authority": "authority.crm.definition",
+      "input": {
+        "uri": "https://app.notion.com/39dd79b5de388178b804fd5cf8e9eaa3",
+        "expectedTitle": "Tasks"
+      },
+      "readiness": {
+        "mode": "probe-read",
+        "reason": "Connected readiness must prove the exact policy page can be read and normalized without retaining its body."
+      },
+      "consumers": [
+        {
+          "pack": "automation.meeting-intake",
+          "purpose": "applicable-policy",
+          "subjects": ["task"],
+          "reason": "Meeting intake deduplicates and updates grounded task records."
+        }
+      ],
+      "reason": "The external Tasks policy page is an explicit portable source, not an Integration-owned setting."
+    }
+  ],
   "authorities": [
     {
       "id": "authority.crm.definition",
@@ -156,30 +224,7 @@
     },
     "automation.meeting-intake": {
       "stalenessReviewAfterDays": 7,
-      "summaryTemplate": "authority.crm.definition",
-      "policyBindings": [
-        {
-          "id": "policy.docs",
-          "subjects": ["meeting-summary"],
-          "title": "Docs",
-          "documentUri": "https://app.notion.com/39ed79b5de3881dbb40dddf827bd6373",
-          "reason": "Meeting intake creates a governed meeting-summary document."
-        },
-        {
-          "id": "policy.meetings",
-          "subjects": ["meeting"],
-          "title": "Meetings",
-          "documentUri": "https://app.notion.com/39ed79b5de388105b507f11ad35d2acd",
-          "reason": "Meeting intake reads and updates the source meeting record."
-        },
-        {
-          "id": "policy.tasks",
-          "subjects": ["task"],
-          "title": "Tasks",
-          "documentUri": "https://app.notion.com/39dd79b5de388178b804fd5cf8e9eaa3",
-          "reason": "Meeting intake deduplicates and updates grounded task records."
-        }
-      ]
+      "summaryTemplate": "authority.crm.definition"
     }
   }
 }

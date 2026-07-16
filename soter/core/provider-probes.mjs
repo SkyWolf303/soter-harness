@@ -78,6 +78,21 @@ export function probePlan(root, lock, provider, bindings) {
   };
 }
 
+export function providerProbeSources(lock, bindings) {
+  const byCapability = new Map(bindings.map((binding) => [binding.capability, binding]));
+  return (lock.sources || []).filter((source) => {
+    const binding = byCapability.get(source.capability);
+    return source.readiness?.mode === 'probe-read'
+      && binding?.authorities.includes(source.authority);
+  }).sort((left, right) => left.id.localeCompare(right.id, 'en')).map((source) => ({
+    id: source.id,
+    capability: source.capability,
+    authority: source.authority,
+    input: structuredClone(source.input),
+    inputFingerprint: source.inputFingerprint
+  }));
+}
+
 function assertCallContract(root, call) {
   const schema = readJson(path.join(root, 'soter/contracts/provider-probe-call.schema.json'));
   const failures = validateJsonSchema(call, schema);

@@ -152,8 +152,13 @@ context contracts and their authority declarations are durable.
   useful configuration and explains why each pack is included; it does not
   create another architectural unit.
 - A **configuration** records the exact packs a user selected, their settings,
-  integration bindings, and trusted authorities. It must be portable,
-  inspectable, and shareable without silently activating optional systems.
+  integration bindings, trusted authorities, and portable sources. A source
+  binds one capability input and authority to explicit consuming packs and
+  purposes; it does not make the Integration aware of consumer-specific
+  settings. Packs declare required source purposes and cardinality in their
+  manifests. Configuration must be portable, inspectable, and shareable without
+  silently activating optional systems or resolving with a missing concrete
+  source.
 
 A provider integration may implement several capability contracts, and a user
 may install several integrations at once. Configuration binds an automation's
@@ -226,7 +231,8 @@ earned through evidence rather than agent confidence.
 The user owns an explicit desired configuration. Core resolves it to an exact
 lock while keeping runtime state and secrets separate. The lock fingerprints
 selected manifests, every declared pack artifact, capability contracts,
-authority declarations, and behavior-relevant host projections. Kernel and the
+authority declarations, portable source inputs and consumers, and
+behavior-relevant host projections. Kernel and the
 minimum core are required; context, automation, integration, and optional core
 packs are selectable subject to declared dependencies.
 
@@ -267,8 +273,11 @@ boundary:
 
 Readiness checks use a parallel but distinct resumable probe state machine.
 Core fixes the credential-reference, authority, and capability scope from the
-resolved configuration; the integration chooses from a narrower safe
-probe-tool allowlist and returns observations rather than a readiness verdict.
+resolved configuration. It also projects only sources explicitly marked
+`probe-read`, omitting their consumer wiring, so the integration receives exact
+portable inputs without learning an Automation's settings shape. The integration
+chooses from a narrower safe probe-tool allowlist and returns observations rather
+than a readiness verdict.
 A single safe request can use the legacy call contract. When readiness requires
 several resources or methods, a private probe-plan checkpoint exposes one exact
 host request at a time, fingerprints its semantic scope and arguments, and
@@ -499,11 +508,11 @@ each resolution, skips empty reference chains without a provider request,
 requires both checkpoint and current-call identity on resume, and recovers the
 next step after restart without retaining native provider responses.
 Meeting-intake Automation uses that same Core service to prepare a bounded
-connected grounding plan: policy index, every policy page explicitly selected
-by pack-owned Automation settings, exact transcript, exactly one CRM meeting
-matched by recording URI, and only the organizations, projects, and tasks
-referenced through that meeting. The index and page reads must agree on each
-configured policy's exact URI and title. Automation records the governed
+connected grounding plan: policy index, every policy page explicitly wired to
+the Automation as an `applicable-policy` portable source, exact transcript,
+exactly one CRM meeting matched by recording URI, and only the organizations,
+projects, and tasks referenced through that meeting. The index and page reads
+must agree on each configured policy's exact URI and title. Automation records the governed
 subjects and applicability reason for every bounded body, validates domain
 completeness, and rejects a related read that omits or adds an ID; Core binds
 every snapshot entry to an exact normalized plan output and passed effect,
@@ -521,13 +530,17 @@ per-host native tool mappings are mechanically checked. The one-target boundary
 avoids depending on plan-gated cross-data-source SQL; multi-target reads can be
 explicit ordered capability steps, and the initial connected context boundary
 now exercises that orchestration without broad reads across every CRM target.
-Notion readiness is a separate 15-step private plan: identity, then schema and
-one-row bounded read checks for all seven configured targets. Schema checks bind
-every portable field to its current provider property name and type; read
-checks discard row values and persist only minimized counts, booleans, and
-fingerprints. The checked mapping now names the observed `🫂 Contacts`
-organization relation, but that development observation is not reusable
-connected evidence: another exact lock must run its own expiring probe. Otter's
+Notion readiness is a separate 18-step private plan: identity, schema and one-row
+bounded read checks for all seven configured targets, then an exact identity- and
+title-bound read for each of the three configured `probe-read` policy sources.
+Schema checks bind every portable field to its current provider property name
+and type; record and document checks discard row values and policy bodies before
+persisting only minimized counts, booleans, and fingerprints. The completed
+probe can establish exact-lock `crm.records.read` and `documents.content.read`
+compatibility, but not policy interpretation. The checked mapping now names the
+observed `🫂 Contacts` organization relation, but that development observation
+is not reusable connected evidence: another exact lock must run its own expiring
+probe. Otter's
 identity-only probe deliberately leaves transcript compatibility unknown, and
 all unobserved response shapes fail closed.
 When a host cannot execute an exact probe route, Core preserves the private

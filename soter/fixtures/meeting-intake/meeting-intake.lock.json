@@ -4,11 +4,11 @@
   "configuration": {
     "name": "meeting-intake",
     "path": "soter/configurations/meeting-intake.config.json",
-    "fingerprint": "sha256:cd4d5cc193afa4cdeccc025814fdf83ae7842fe67f7aeea4e941ed73792af484"
+    "fingerprint": "sha256:b95ab9c50d4b89e975cf81cdf82fd13da61d277fa84df2f9d5655af583d4532a"
   },
   "resolver": {
     "id": "core.resolver",
-    "version": "0.1.0"
+    "version": "0.2.0"
   },
   "host": {
     "id": "codex",
@@ -55,7 +55,7 @@
         {
           "path": "soter/contracts/configuration.schema.json",
           "role": "definition",
-          "fingerprint": "sha256:83deb5f4679666922b80aea458d19ca5218a2055efb8dd3b8a79dfc2594d0465"
+          "fingerprint": "sha256:2b1a002e906c795f64376cf6f1eb06bf0df93500964e5c70dd62c2e6002f5a3e"
         },
         {
           "path": "soter/contracts/connected-operation-batch.schema.json",
@@ -70,7 +70,7 @@
         {
           "path": "soter/contracts/context-snapshot.schema.json",
           "role": "definition",
-          "fingerprint": "sha256:3a8fac1f2777241242e7719dc72a886bab0bd846de8e5c071c277919430f9f44"
+          "fingerprint": "sha256:19d0f7e29a2d471f4998c39d986aa4f2c96555ca57184073ab5c8b85e597df1b"
         },
         {
           "path": "soter/contracts/doctor-result.schema.json",
@@ -100,7 +100,7 @@
         {
           "path": "soter/contracts/lock.schema.json",
           "role": "definition",
-          "fingerprint": "sha256:fca586e48492452ce3f8e89c1a394323019ff7349cd0bc1b62cda5d48e14e84b"
+          "fingerprint": "sha256:6fe2576d2001a0624576ea6a9ee32ad8bf948065541d6e2b1ea4888b23baccf7"
         },
         {
           "path": "soter/contracts/migration.schema.json",
@@ -135,7 +135,7 @@
         {
           "path": "soter/contracts/pack.schema.json",
           "role": "definition",
-          "fingerprint": "sha256:3c616962ca8746f8919a8bb7d07789636807bc1b314a332711ea1e345b1ec9d4"
+          "fingerprint": "sha256:faa0f4b2b1fae5023eb9b5a6d111d99246ff149d9371a883a108c1e9d05d976c"
         },
         {
           "path": "soter/contracts/provider-fixture.schema.json",
@@ -165,12 +165,12 @@
         {
           "path": "soter/contracts/provider-probe-plan-checkpoint.schema.json",
           "role": "definition",
-          "fingerprint": "sha256:5adee636150649e8ccd38a8d85ead30cfd3f3afa04d93bee7ab037bfc6cdfc0a"
+          "fingerprint": "sha256:c800e8cbdb5ab09f583fc2e8249581a2aa2f6f4bca81083c077a309e51848c95"
         },
         {
           "path": "soter/contracts/provider-probe-v2.schema.json",
           "role": "definition",
-          "fingerprint": "sha256:17ec64ca29b2bc19bcb58e25e22100aa5c4c3fb904678bb8a6351b332c394d79"
+          "fingerprint": "sha256:1d97e9fdab49b9346ca307f4ee2ecc257d1b83e1afa7a653a3e868652365e486"
         },
         {
           "path": "soter/contracts/provider-probe.schema.json",
@@ -190,7 +190,7 @@
         {
           "path": "soter/kernel/verify.mjs",
           "role": "implementation",
-          "fingerprint": "sha256:b1e71dc0b657a32fe533be688ee90370262992cb082b48a098073636c9ed4e22"
+          "fingerprint": "sha256:2ea662a303c3a9abeaf0ca2557cdba0cb132d17abe964a33110f8897a0be252d"
         }
       ]
     },
@@ -272,7 +272,7 @@
         {
           "path": "soter/core/mcp/selftest.mjs",
           "role": "evaluation",
-          "fingerprint": "sha256:2a4de54af8c3b2229d74a19dc1713e50d5d260bc6ccfa3fd453efe1e95b1d85b"
+          "fingerprint": "sha256:c3fa1b2a2b29c85253d8590ec20e0b913c3c41e5fc7b134ef2b9edf59aa2057a"
         },
         {
           "path": "soter/core/mcp/server.mjs",
@@ -292,17 +292,17 @@
         {
           "path": "soter/core/provider-probe-plans.mjs",
           "role": "implementation",
-          "fingerprint": "sha256:16d396718dc56cb2741252019cee0bda21cbd1f71deb35bc378b9a01fc6bb505"
+          "fingerprint": "sha256:0652693a406297a43d3978799b8c546dee809a48b7872de287fa2205e0a668bc"
         },
         {
           "path": "soter/core/provider-probes.mjs",
           "role": "implementation",
-          "fingerprint": "sha256:049dff375dbe8b3823e6d089267b9aff6d90786937befd479ba040b40a010b17"
+          "fingerprint": "sha256:94e08011c0247ead4c61df78af8bc9b98fdfa5a3d0d70a3befd66da1d1a5367d"
         },
         {
           "path": "soter/core/resolve.mjs",
           "role": "implementation",
-          "fingerprint": "sha256:2474fcb05cfdee7c94d0e67fe73f4703f30011777fe0bb70896c99fe3f40541e"
+          "fingerprint": "sha256:16740dfb73ad8844a9c3ac46880ff46dd91d914c591d2c09b262da0386a3b78a"
         },
         {
           "path": "soter/core/run.mjs",
@@ -317,7 +317,7 @@
         {
           "path": "soter/core/selftest.mjs",
           "role": "evaluation",
-          "fingerprint": "sha256:e05f84961b359c44f04cf438d60082380e67bb9ebf8b595409fef6433b252975"
+          "fingerprint": "sha256:8621c6bb84b248c8893dea99d3bc8f4810ba0cbaf983cf9baf7086e83fb31188"
         },
         {
           "path": "soter/core/service.mjs",
@@ -350,17 +350,17 @@
       "evidenceMaturity": "declared",
       "source": "user",
       "reason": "The user selected the meeting-intake outcome for this named harness configuration.",
-      "manifestFingerprint": "sha256:0cda87fbac6fceee0826304517af1f90bd1a89e4117b10e97c08088b70208f1d",
+      "manifestFingerprint": "sha256:c4c41d79189b236a2339d9aa6a16061c35e912a1e530e9b3a43d25e9e10983f9",
       "artifacts": [
         {
           "path": "soter/automations/meeting-intake/context.mjs",
           "role": "implementation",
-          "fingerprint": "sha256:ca21c3bfe8daa8b2a2e3161b5921049b99713b3b1f099282a1b7ef174a21499a"
+          "fingerprint": "sha256:fb3e8f806e31a2f41001ab89185d52bd4bb39691bc35075a19aebb9e8dee19ae"
         },
         {
           "path": "soter/automations/meeting-intake/settings.json",
           "role": "definition",
-          "fingerprint": "sha256:602ad205c21f893c8cb7041b71c68c42cb8df5c1c9ac8670d6009169146f9b99"
+          "fingerprint": "sha256:9f1de8a207cda231f89a9be0e43c239c92fb28cb333c5c100a2317f32ed6193d"
         },
         {
           "path": "soter/scenarios/meeting-intake/grounded-and-gated.scenario.json",
@@ -427,7 +427,7 @@
         {
           "path": "soter/integrations/notion/mcp.mjs",
           "role": "implementation",
-          "fingerprint": "sha256:955bc1f6b2b1ff34f5430f2169358888f1debb82534e7a4b6c79f2c5b7d956f1"
+          "fingerprint": "sha256:c6e13c459a2ca4934bb792b44841aa61ee93e7c5af27e1c6f17f0dc3e740081e"
         },
         {
           "path": "soter/integrations/notion/settings.json",
@@ -442,7 +442,7 @@
         {
           "path": "soter/providers/provider.integration.notion.mcp.json",
           "role": "implementation",
-          "fingerprint": "sha256:aa87ad765159b6504a4d601e7cef290473e7893a6eb12acd9c8299a63f01efe6"
+          "fingerprint": "sha256:9417b0fbcf8709a9711bfb216281535fe88f32ef6c64c2b4acf2a20c78e1eca1"
         }
       ]
     },
@@ -631,6 +631,86 @@
       "reason": "Otter implements transcript reading for the configured meeting provider authority."
     }
   ],
+  "sources": [
+    {
+      "id": "source.policy.docs",
+      "capability": "documents.content.read",
+      "capabilityVersion": "1.0.0",
+      "authority": "authority.crm.definition",
+      "input": {
+        "uri": "https://app.notion.com/39ed79b5de3881dbb40dddf827bd6373",
+        "expectedTitle": "Docs"
+      },
+      "inputFingerprint": "sha256:121d7288f99f268501b2b2e809e20fccb4ffd3fc0ecb802c539a69dbb1eebc9f",
+      "readiness": {
+        "mode": "probe-read",
+        "reason": "Connected readiness must prove the exact policy page can be read and normalized without retaining its body."
+      },
+      "consumers": [
+        {
+          "pack": "automation.meeting-intake",
+          "purpose": "applicable-policy",
+          "subjects": [
+            "meeting-summary"
+          ],
+          "reason": "Meeting intake creates a governed meeting-summary document."
+        }
+      ],
+      "reason": "The external Docs policy page is an explicit portable source, not an Integration-owned setting."
+    },
+    {
+      "id": "source.policy.meetings",
+      "capability": "documents.content.read",
+      "capabilityVersion": "1.0.0",
+      "authority": "authority.crm.definition",
+      "input": {
+        "uri": "https://app.notion.com/39ed79b5de388105b507f11ad35d2acd",
+        "expectedTitle": "Meetings"
+      },
+      "inputFingerprint": "sha256:11a3d5a9652d70bf7d7fdbd7d1b4e126c22ad218dd3af92c54bd02a678633a6a",
+      "readiness": {
+        "mode": "probe-read",
+        "reason": "Connected readiness must prove the exact policy page can be read and normalized without retaining its body."
+      },
+      "consumers": [
+        {
+          "pack": "automation.meeting-intake",
+          "purpose": "applicable-policy",
+          "subjects": [
+            "meeting"
+          ],
+          "reason": "Meeting intake reads and updates the source meeting record."
+        }
+      ],
+      "reason": "The external Meetings policy page is an explicit portable source, not an Integration-owned setting."
+    },
+    {
+      "id": "source.policy.tasks",
+      "capability": "documents.content.read",
+      "capabilityVersion": "1.0.0",
+      "authority": "authority.crm.definition",
+      "input": {
+        "uri": "https://app.notion.com/39dd79b5de388178b804fd5cf8e9eaa3",
+        "expectedTitle": "Tasks"
+      },
+      "inputFingerprint": "sha256:21c11561a441942d9884b8d8633d50716d8ac78875746458b178e2546ca74f35",
+      "readiness": {
+        "mode": "probe-read",
+        "reason": "Connected readiness must prove the exact policy page can be read and normalized without retaining its body."
+      },
+      "consumers": [
+        {
+          "pack": "automation.meeting-intake",
+          "purpose": "applicable-policy",
+          "subjects": [
+            "task"
+          ],
+          "reason": "Meeting intake deduplicates and updates grounded task records."
+        }
+      ],
+      "reason": "The external Tasks policy page is an explicit portable source, not an Integration-owned setting."
+    }
+  ],
   "authorities": [
     {
       "id": "authority.crm.definition",
@@ -709,36 +789,7 @@
     },
     "automation.meeting-intake": {
       "stalenessReviewAfterDays": 7,
-      "summaryTemplate": "authority.crm.definition",
-      "policyBindings": [
-        {
-          "id": "policy.docs",
-          "subjects": [
-            "meeting-summary"
-          ],
-          "title": "Docs",
-          "documentUri": "https://app.notion.com/39ed79b5de3881dbb40dddf827bd6373",
-          "reason": "Meeting intake creates a governed meeting-summary document."
-        },
-        {
-          "id": "policy.meetings",
-          "subjects": [
-            "meeting"
-          ],
-          "title": "Meetings",
-          "documentUri": "https://app.notion.com/39ed79b5de388105b507f11ad35d2acd",
-          "reason": "Meeting intake reads and updates the source meeting record."
-        },
-        {
-          "id": "policy.tasks",
-          "subjects": [
-            "task"
-          ],
-          "title": "Tasks",
-          "documentUri": "https://app.notion.com/39dd79b5de388178b804fd5cf8e9eaa3",
-          "reason": "Meeting intake deduplicates and updates grounded task records."
-        }
-      ]
+      "summaryTemplate": "authority.crm.definition"
     }
   },
   "projections": [
@@ -753,5 +804,5 @@
       "fingerprint": "sha256:76ee7cf92f64ea6a927008daa4cf80dff943769d749b9bd9d27737a1420f57be"
     }
   ],
-  "graphFingerprint": "sha256:88890c8a1ba6c8898b456df87a9844111f7d77805d6d5f8e205817a4c726b113"
+  "graphFingerprint": "sha256:6283647053caed3d15d6484b200665b2eafa6b274ceb28506b9eb954a6b8826e"
 }

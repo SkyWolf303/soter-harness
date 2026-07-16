@@ -534,7 +534,7 @@ function schemaObservation(step, response) {
   };
 }
 
-export function prepareProbePlanMcp({ plan, settings, mappings }) {
+export function prepareProbePlanMcp({ plan, sources = [], settings, mappings }) {
   const mapping = typedMapping(mappings);
   const targets = notionSettings(settings);
   const steps = [
@@ -609,8 +609,50 @@ export function prepareProbePlanMcp({ plan, settings, mappings }) {
       arguments: request.arguments
     });
   }
+  const documentSources = sources.filter((source) => {
+    return source.capability === 'documents.content.read';
+  }).sort((left, right) => left.id.localeCompare(right.id, 'en'));
+  for (const source of documentSources) {
+    if (!plan.authorities.includes(source.authority)
+      || source.inputFingerprint !== fingerprintJson(source.input)
+      || !source.id.startsWith('source.')) {
+      throw providerError(
+        'validation',
+        'Notion document probe source is outside the exact locked capability and authority scope.'
+      );
+    }
+    const request = prepareMcp({
+      capability: 'documents.content.read',
+      input: source.input,
+      settings,
+      mappings
+    });
+    steps.push({
+      id: 'step.source.' + source.id.slice('source.'.length) + '.document',
+      kind: 'document',
+      subject: source.id,
+      scope: {
+        sourceId: source.id,
+        authority: source.authority,
+        capability: source.capability,
+        input: source.input,
+        inputFingerprint: source.inputFingerprint,
+        expectation: {
+          identityMatched: true,
+          format: 'markdown',
+          bodyPresent: true,
+          maximumBodyCharacters: 250000
+        }
+      },
+      tool: request.tool,
+      arguments: request.arguments
+    });
+  }
   if (!plan.capabilities.includes('crm.records.read')) {
     throw providerError('validation', 'Notion probe plan is outside crm.records.read scope.');
+  }
+  if (documentSources.length && !plan.capabilities.includes('documents.content.read')) {
+    throw providerError('validation', 'Notion document probe sources are outside capability scope.');
   }
   return { steps };
 }
@@ -659,6 +701,36 @@ export function completeProbePlanStepMcp({ step, response, plan, mappings, at })
       })
     };
   }
+  if (step.kind === 'document') {
+    const normalized = completeMcp({
+      capability: 'documents.content.read',
+      authority: step.scope.authority,
+      input: step.scope.input,
+      response,
+      at,
+      mappings
+    });
+    const observation = {
+      identityMatched: normalized.document.uri === step.scope.input.uri
+        && normalized.document.title === step.scope.input.expectedTitle,
+      format: normalized.document.format,
+      bodyPresent: Boolean(normalized.document.body),
+      maximumBodyCharacters: 250000
+    };
+    if (!observation.identityMatched
+      || observation.format !== 'markdown'
+      || !observation.bodyPresent
+      || normalized.document.body.length > observation.maximumBodyCharacters) {
+      throw providerError('validation', 'Notion document probe did not satisfy its minimized contract.');
+    }
+    return {
+      documentReadable: true,
+      identityMatched: true,
+      bodyPresent: true,
+      expectedFingerprint: fingerprintJson(step.scope.expectation),
+      observedFingerprint: fingerprintJson(observation)
+    };
+  }
   throw providerError('validation', 'Unsupported Notion provider probe step kind.');
 }
 
@@ -676,16 +748,19 @@ export function finalizeProbePlanMcp({ plan, steps, results }) {
       subject: step.subject,
       scopeFingerprint: step.scopeFingerprint,
       state: 'passed',
-      method: step.kind === 'read' ? 'read-only' : 'metadata',
+      method: step.kind === 'read' || step.kind === 'document' ? 'read-only' : 'metadata',
       expectedFingerprint: observed.result.expectedFingerprint,
       observedFingerprint: observed.result.observedFingerprint,
       details: step.kind === 'identity'
         ? 'The host-authenticated Notion identity response matched the minimized identity contract.'
         : step.kind === 'schema'
           ? 'The exact configured target exposed every mapped property with its declared provider type.'
-          : 'The exact configured target accepted its bounded mapped query and returned a normalizable result envelope.'
+          : step.kind === 'read'
+            ? 'The exact configured target accepted its bounded mapped query and returned a normalizable result envelope.'
+            : 'The exact configured document source matched its identity and returned bounded normalizable content; the body was discarded.'
     };
   });
+  const documentChecks = steps.filter((step) => step.kind === 'document').length;
   return {
     credentials: plan.credentialRefs.map((secretRefId) => ({
       secretRefId,
@@ -694,7 +769,7 @@ export function finalizeProbePlanMcp({ plan, steps, results }) {
     })),
     reachability: {
       state: 'passed',
-      details: 'The host reached every explicit identity, target-schema, and bounded target-read probe step.'
+      details: 'The host reached every explicit identity, target-schema, bounded target-read, and configured document-source probe step.'
     },
     authorities: plan.authorities.map((id) => ({
       id,
@@ -703,17 +778,21 @@ export function finalizeProbePlanMcp({ plan, steps, results }) {
     })),
     capabilities: plan.capabilities.map((id) => ({
       id,
-      state: id === 'crm.records.read' ? 'passed' : 'unknown',
-      method: id === 'crm.records.read' ? 'read-only' : 'metadata',
+      state: (id === 'crm.records.read'
+        || (id === 'documents.content.read' && documentChecks > 0)) ? 'passed' : 'unknown',
+      method: (id === 'crm.records.read'
+        || (id === 'documents.content.read' && documentChecks > 0)) ? 'read-only' : 'metadata',
       details: id === 'crm.records.read'
         ? 'Every configured mapped target accepted a one-row bounded query whose result envelope normalized successfully.'
-        : 'Mapped schema compatibility does not establish write permission, provider write response conformance, verification, or compensation.'
+        : id === 'documents.content.read' && documentChecks > 0
+          ? 'Every configured probe-read document source matched its exact identity and returned bounded normalizable content without retaining its body.'
+          : 'Read and schema compatibility do not establish write permission, provider write response conformance, verification, or compensation.'
     })),
     checks,
     limitations: [
-      'This exact-lock probe establishes current configured target access, mapped schema compatibility, and bounded read-query normalization only; it does not establish write behavior or end-to-end automation health.',
+      'This exact-lock probe establishes configured target access, mapped schema compatibility, bounded record-read normalization, and exact configured document-read normalization only; it does not establish policy interpretation, write behavior, or end-to-end automation health.',
       'A target that returns zero rows proves query and empty-envelope compatibility but does not exercise non-null value decoding for that target.',
-      'Raw provider responses, row values, target identifiers, workspace identity values, and user identity values are excluded from the persisted observations.'
+      'Raw provider responses, policy bodies, row values, target identifiers, workspace identity values, and user identity values are excluded from the persisted observations.'
     ]
   };
 }

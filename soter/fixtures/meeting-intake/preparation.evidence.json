@@ -9,7 +9,7 @@
     "id": "run.meeting-intake.fixture",
     "version": null
   },
-  "configurationLockFingerprint": "sha256:aaff2821af23dd5b5a2cdbb5256479d6c76384261ac765d2e22271b1a71c1d5a",
+  "configurationLockFingerprint": "sha256:49f1c65ab83d0bb3d6fa92e3969429db98c6c1a9fcd1fae5ad0b00da1351f048",
   "dependencies": [
     {
       "id": "kernel.soter",
@@ -29,7 +29,7 @@
     {
       "id": "automation.meeting-intake",
       "version": "0.1.0",
-      "fingerprint": "sha256:0cda87fbac6fceee0826304517af1f90bd1a89e4117b10e97c08088b70208f1d"
+      "fingerprint": "sha256:c4c41d79189b236a2339d9aa6a16061c35e912a1e530e9b3a43d25e9e10983f9"
     },
     {
       "id": "integration.notion",
@@ -96,7 +96,7 @@
   ],
   "evaluator": {
     "id": "core.run-preparer",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "level": "fixture"
   },
   "environment": {
@@ -124,7 +124,7 @@
     {
       "role": "run-envelope",
       "id": "run.meeting-intake.fixture",
-      "graphFingerprint": "sha256:88890c8a1ba6c8898b456df87a9844111f7d77805d6d5f8e205817a4c726b113"
+      "graphFingerprint": "sha256:6283647053caed3d15d6484b200665b2eafa6b274ceb28506b9eb954a6b8826e"
     },
     {
       "role": "scenario",

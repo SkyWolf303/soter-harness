@@ -11,6 +11,7 @@
     "base",
     "packs",
     "bindings",
+    "sources",
     "authorities",
     "effectPolicies",
     "secretRefs",
@@ -64,6 +65,73 @@
           },
           "secretRef": { "type": "string", "minLength": 3 },
           "reason": { "type": "string", "minLength": 12 }
+        }
+      }
+    },
+    "sources": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "capability",
+          "authority",
+          "input",
+          "readiness",
+          "consumers",
+          "reason"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^source\\.[a-z0-9]+(?:[.-][a-z0-9]+)*$"
+          },
+          "capability": { "type": "string", "minLength": 3 },
+          "authority": {
+            "type": "string",
+            "pattern": "^authority\\.[a-z0-9]+(?:[.-][a-z0-9]+)*$"
+          },
+          "input": { "type": "object" },
+          "readiness": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["mode", "reason"],
+            "properties": {
+              "mode": { "enum": ["probe-read", "runtime-only"] },
+              "reason": { "type": "string", "minLength": 20 }
+            }
+          },
+          "consumers": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["pack", "purpose", "subjects", "reason"],
+              "properties": {
+                "pack": { "type": "string", "minLength": 3 },
+                "purpose": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+                },
+                "subjects": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 10,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*$"
+                  }
+                },
+                "reason": { "type": "string", "minLength": 20 }
+              }
+            }
+          },
+          "reason": { "type": "string", "minLength": 20 }
         }
       }
     },

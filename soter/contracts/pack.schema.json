@@ -61,6 +61,11 @@
         }
       }
     },
+    "sourceRequirements": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/sourceRequirement" }
+    },
     "authorities": {
       "type": "array",
       "uniqueItems": true,
@@ -147,6 +152,36 @@
       "properties": {
         "id": { "type": "string", "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*$" },
         "version": { "$ref": "#/$defs/version" }
+      }
+    },
+    "sourceRequirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "purpose",
+        "capability",
+        "authorityRole",
+        "authoritySubject",
+        "minimum",
+        "maximum",
+        "reason"
+      ],
+      "properties": {
+        "purpose": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+        },
+        "capability": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*$"
+        },
+        "authorityRole": {
+          "enum": ["definition", "instance", "provider", "projection", "evidence"]
+        },
+        "authoritySubject": { "type": "string", "minLength": 3 },
+        "minimum": { "type": "integer", "minimum": 1, "maximum": 50 },
+        "maximum": { "type": "integer", "minimum": 1, "maximum": 50 },
+        "reason": { "type": "string", "minLength": 20 }
       }
     },
     "authorityRequirement": {

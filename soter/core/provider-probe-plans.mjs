@@ -5,6 +5,7 @@ import {
   assertObservationScope,
   assertProbeContract,
   probePlan,
+  providerProbeSources,
   selectedProvider,
   validUntil
 } from './provider-probes.mjs';
@@ -25,7 +26,7 @@ const REQUIRED_PLAN_EXPORTS = [
   'probeStepCompleteExport',
   'probeFinalizeExport'
 ];
-const STEP_KINDS = new Set(['identity', 'schema', 'read']);
+const STEP_KINDS = new Set(['identity', 'schema', 'read', 'document']);
 
 function contractFailures(root, value, schemaPath, label) {
   const schema = readJson(path.join(root, schemaPath));
@@ -149,6 +150,7 @@ async function derivePlan({
   );
   assertPlanRuntime(provider);
   const scope = probePlan(resolvedRoot, lock, provider, bindings);
+  const sources = providerProbeSources(lock, bindings);
   const implementation = await loadProviderModule(resolvedRoot, provider, translator);
   const prepare = implementation[provider.runtime.probePlanExport];
   if (typeof prepare !== 'function') {
@@ -159,6 +161,7 @@ async function derivePlan({
   }
   const prepared = await prepare({
     plan: scope,
+    sources,
     settings: lock.settings || {},
     mappings: loadProviderMappings(resolvedRoot, provider),
     at

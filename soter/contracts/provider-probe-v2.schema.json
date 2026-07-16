@@ -122,7 +122,7 @@
             "type": "string",
             "pattern": "^step\\.[a-z0-9]+(?:[.-][a-z0-9]+)*$"
           },
-          "kind": { "enum": ["identity", "schema", "read"] },
+          "kind": { "enum": ["identity", "schema", "read", "document"] },
           "subject": { "type": "string", "minLength": 3 },
           "scopeFingerprint": { "$ref": "#/$defs/fingerprint" },
           "state": { "$ref": "#/$defs/probeState" },

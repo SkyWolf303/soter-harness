@@ -375,8 +375,8 @@ Soter keeps four forms of state separate:
 
 | State | Purpose | Human-editable | Shareable |
 |---|---|---|---|
-| **Desired configuration** | Records the base, selected packs, settings, bindings, authorities, and policies the user wants. | Yes | Yes, with private values parameterized or removed. |
-| **Resolved lock** | Pins exact pack versions, manifests, owned artifact contents, contract graph, and behavior-relevant projections. | Generated | Yes, when exact reproduction is desired. |
+| **Desired configuration** | Records the base, selected packs, settings, bindings, authorities, portable sources and consumers, and policies the user wants. | Yes | Yes, with private values parameterized or removed. |
+| **Resolved lock** | Pins exact pack versions, manifests, owned artifact contents, contract graph, portable source inputs and fingerprints, and behavior-relevant projections. | Generated | Yes, when exact reproduction is desired. |
 | **Runtime state** | Records authentication status, reachability, health, evidence freshness, and active runs. | Through Soter operations | No assumption of portability. |
 | **Secrets** | Supplies credentials and sensitive values through an approved secret provider. | Outside ordinary configuration | Never. |
 
@@ -397,6 +397,13 @@ packs:
 bindings:
   crm.records: integration.notion
   meeting.transcript: integration.otter
+sources:
+  source.policy.tasks:
+    capability: documents.content.read
+    authority: crm.definition
+    input: { uri: notion://tasks-policy, expectedTitle: Tasks }
+    readiness: probe-read
+    consumer: automation.meeting-intake/applicable-policy
 authorities:
   crm.records: notion://configured-database
 policies:
@@ -410,6 +417,29 @@ with a complete example at
 [soter/configurations/meeting-intake.config.json](./soter/configurations/meeting-intake.config.json).
 The versioned schema, rather than rendered YAML or UI labels, determines the
 field names and validation contract.
+
+A configuration source is explicit wiring, not a new layer or a copy of the
+underlying data. It declares one stable `source.*` identity, portable capability,
+bound authority, exact capability input, readiness mode, and one or more selected
+pack consumers with a purpose, subject scope, and reason. The canonical content
+may live inside the harness or externally; the source declaration tells Core how
+to obtain it. `runtime-only` sources are used only by an actual run. A
+`probe-read` source additionally permits a safe, expiring readiness read when the
+capability has only allowed `read` and `disclosure` effects.
+
+A pack that cannot operate without configured sources declares
+`sourceRequirements` in its manifest: purpose, capability, authority role and
+subject, and minimum/maximum cardinality. This prevents a configuration from
+resolving successfully with a capability binding but no concrete source input.
+
+Kernel validates every source input against the exact capability schema, keeps
+its authority inside the selected binding, rejects consumers that are not
+selected or do not declare that capability requirement, and rejects unsafe
+readiness modes. The resolved lock fingerprints the input and consumer wiring.
+Core gives an Automation the consumer declarations it owns, but projects only
+provider-neutral source identity, capability, authority, input, and fingerprint
+to an Integration probe. An Integration must never depend on an Automation's
+settings shape.
 
 The normative Core state shapes are the
 [resolved lock](./soter/contracts/lock.schema.json),
@@ -706,6 +736,11 @@ desired configuration under `settings[pack-id]`. Mappings are shareable pack
 content; target identities are configuration. Neither belongs in an automation
 prompt or host projection.
 
+Exact provider resources consumed by other packs use configuration `sources`
+rather than Integration settings. This keeps a document URI and portable input
+independent of the provider translator while making every consumer and readiness
+read explicit.
+
 Portable record outputs include a provider version, revision, or deterministic
 content fingerprint whenever later compare-before-write or freshness logic may
 depend on the observed state. Absence of a provider-native revision does not
@@ -961,11 +996,12 @@ the exact lock, then generates an `operation-plan/v2` with a configured set of
 fixed sources followed by three reference-bound sources:
 
 1. A bounded CRM policy index read under the definition authority.
-2. One exact `documents.content.read` for every policy binding selected by the
-   Automation pack settings. Each binding declares a stable policy ID, governed
-   subjects, exact document URI and title, and an applicability reason. Policy
-   IDs and document URIs are unique; several policies may govern the same
-   subject so internal and external rules can be grounded together.
+2. One exact `documents.content.read` for every configuration source consumed by
+   the Automation for `applicable-policy`. Each source declares a stable ID,
+   capability input, definition authority, governed subjects, and applicability
+   reason. Policy source IDs and document URIs are unique; several policies may
+   govern the same subject so internal and external rules can be grounded
+   together.
 3. The exact transcript selected by meeting ID and canonical recording URI.
 4. A CRM meeting read filtered by that same recording URI with a limit of two,
    so zero matches and duplicate matches remain distinguishable.
@@ -1024,6 +1060,11 @@ Core derives the observation scope from the exact lock and desired
 configuration, including the selected provider, secret-reference identifiers,
 authorities, and capabilities. The integration may choose only tools in its
 narrower `probeTools` allowlist.
+
+Core separately selects exact configuration sources whose readiness mode is
+`probe-read` and whose capability and authority belong to that provider binding.
+It gives the Integration only the provider-neutral source fields; consumer pack,
+purpose, and applicability metadata remain outside the Integration boundary.
 
 A provider may implement the legacy single-call `provider-probe-call/v1`
 handshake or an explicit sequential

@@ -12,7 +12,7 @@ import {
 } from './lib/canonical-json.mjs';
 
 export const RESOLVER_ID = 'core.resolver';
-export const RESOLVER_VERSION = '0.1.0';
+export const RESOLVER_VERSION = '0.2.0';
 
 const layerOrder = new Map([
   ['kernel', 0],
@@ -147,6 +147,26 @@ export function resolveConfiguration({ root, configPath } = {}) {
     reason: binding.reason
   })).sort((left, right) => compareText(left.capability, right.capability));
 
+  const sources = configuration.sources.map((source) => {
+    const capability = readJson(capabilityContractPath(resolvedRoot, source.capability));
+    return {
+      id: source.id,
+      capability: source.capability,
+      capabilityVersion: capability.version,
+      authority: source.authority,
+      input: structuredClone(source.input),
+      inputFingerprint: fingerprintJson(source.input),
+      readiness: structuredClone(source.readiness),
+      consumers: source.consumers.map((consumer) => ({
+        ...structuredClone(consumer),
+        subjects: [...consumer.subjects].sort(compareText)
+      })).sort((left, right) => {
+        return compareText(left.pack, right.pack) || compareText(left.purpose, right.purpose);
+      }),
+      reason: source.reason
+    };
+  }).sort((left, right) => compareText(left.id, right.id));
+
   const authorities = resolution.authorities.map((authority) => ({
     ...authority,
     declarationFingerprint: fingerprintJson(authority)
@@ -185,6 +205,7 @@ export function resolveConfiguration({ root, configPath } = {}) {
     dependencies,
     capabilities,
     bindings,
+    sources,
     authorities,
     effectPolicies: configuration.effectPolicies,
     settings: configuration.settings,

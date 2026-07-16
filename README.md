@@ -79,6 +79,8 @@ Every installed configuration should make these answers visible:
 - Which packs are selected, and why?
 - Which versions and transitive dependencies were resolved?
 - Which sources are authoritative for definitions and live instances?
+- Which exact portable sources feed which selected packs, and whether each may
+  be probed before use?
 - Which automation capability is bound to which integration?
 - Which effects are permitted, gated, or prohibited?
 - Which host projection is active?
@@ -87,7 +89,12 @@ Every installed configuration should make these answers visible:
 The kernel and a minimum core are required. Additional core capabilities plus
 context, automation, and integration packs are user-selectable. Canonical
 sources may live inside the harness or in external systems; the contract records
-their authority role instead of assuming location determines truth.
+their authority role instead of assuming location determines truth. A portable
+source wires one exact capability input to an authority and one or more selected
+consumers. Integration code receives the capability input, not the consumer's
+Automation-specific configuration shape. A consuming pack declares any required
+source purpose and cardinality in its manifest, so a binding without the concrete
+inputs needed to operate cannot resolve as valid.
 
 ## One runtime, four intents
 
@@ -155,11 +162,12 @@ The main remaining gaps are structural and behavioral:
   limited to one target so cross-data-source SQL never becomes a hidden Notion
   plan requirement; several targets can now be expressed as explicit ordered
   capability steps. The connected context lifecycle now generates a bounded
-  plan for the policy index, every policy page explicitly bound to this
-  Automation, the exact transcript, the CRM meeting selected by the same
-  recording URI, and only the organization-to-project-to-task chain referenced
-  by that meeting. The index must identify every configured policy by exact URI
-  and title; each page fetch must return that same identity and a bounded body.
+  plan for the policy index, every policy page explicitly wired to this
+  Automation through a portable configuration source, the exact transcript, the
+  CRM meeting selected by the same recording URI, and only the
+  organization-to-project-to-task chain referenced by that meeting. The index
+  must identify every configured policy by exact URI and title; each page fetch
+  must return that same identity and a bounded body.
   The snapshot records why and to which subject each body is applicable, but
   does not treat prose as executable policy or claim that a host interpreted it
   correctly. Absent references skip with no provider call; referenced records
@@ -167,10 +175,11 @@ The main remaining gaps are structural and behavioral:
   binds every snapshot entry to an exact plan output and passed effect before
   persisting it and pausing the run. Participant profiles remain deliberately
   unloaded; provider People IDs are not assumed to be CRM contact page URIs.
-  Notion readiness now uses a separate
-  15-step private plan that checks identity plus exact schema and one bounded
-  mapped query for every configured target. Core persists only minimized step
-  observations and assembles a v2 probe after the complete plan passes.
+  Notion readiness now uses a separate 18-step private plan that checks identity,
+  exact schema and one bounded mapped query for every configured target, plus
+  one exact read for each policy source marked `probe-read`. Policy bodies are
+  discarded before the minimized observations are persisted. Core assembles a
+  v2 probe only after the complete plan passes.
   Connected Notion create and update translation is declared for mapped fields,
   but generic calls still block writes. A separate compiler now binds mapped
   operations, preconditions, verification, recovery, and an expiring v2
@@ -291,12 +300,11 @@ and Otter probes are not repository artifacts, so that command alone does not
 report ready. Even after read readiness, the meeting-intake write set is
 non-executable until its fields match the connected mapping and every effect
 has an approved recovery route. A connected integration must emit a short-lived
-provider probe for the exact lock; Core
-will reject
-missing, expired, malformed, ambiguous, or wrong-lock probes. Probe documents
-contain secret-reference identifiers and safe observations, never secret
-values. Connected readiness does not by itself establish automation
-verification or end-to-end health.
+provider probe for the exact lock; Core will reject missing, expired, malformed,
+ambiguous, or wrong-lock probes. Probe documents contain secret-reference
+identifiers and safe observations, never secret values, row values, or policy
+bodies. Connected readiness does not by itself establish automation verification
+or end-to-end health.
 
 Core also exposes the host-neutral probe handshake for adapters and debugging:
 
@@ -328,11 +336,14 @@ native body into durable state; it stores minimized typed observations and
 fingerprints. A successful plan completion may return the next `currentCall`.
 The current Otter producer intentionally
 reports `meeting.transcript.read=unknown` because `get_user_info` does not read a
-transcript. The Notion producer instead emits 15 explicit read-only steps:
-authenticated identity, then exact schema metadata and a one-row bounded mapped
-query for each of the seven configured targets. Its completed `provider-probe/v2`
-can pass `crm.records.read` only when every step succeeds. It never establishes
-write behavior or end-to-end automation health.
+transcript. The Notion producer instead emits 18 explicit read-only steps:
+authenticated identity, exact schema metadata and a one-row bounded mapped query
+for each of the seven configured targets, then one exact identity- and title-bound
+read for each of the three configured policy sources. Its completed
+`provider-probe/v2` can pass `crm.records.read` and `documents.content.read` only
+when their complete check sets succeed. It never retains policy bodies or
+establishes policy interpretation, write behavior, or end-to-end automation
+health.
 
 A connected doctor can consume the completed private checkpoint directly:
 
@@ -487,13 +498,13 @@ runtime is connected or ready.
 2. Declare meeting intake as the representative vertical slice with its
    outcomes, scenarios, capability needs, authorities, effects, and migration
    mapping.
-3. Finish the connected integration slice: extend exact-lock Notion readiness
-   evidence to policy-page reads; define participant identity resolution without equating provider People IDs
-   with CRM contact URIs; validate Otter transcript normalization with an
-   explicitly authorized private meeting fixture; and prove host-started Codex
-   and Claude dispatch and checkpoint recovery through the configured Core
-   service. Then add an exact change-set approval-bound write plan,
-   compare-before-write, read-after-write verification, compensation, and the
+3. Finish the connected integration slice: define participant identity
+   resolution without equating provider People IDs with CRM contact URIs;
+   validate Otter transcript normalization with an explicitly authorized private
+   meeting fixture; and prove host-started Codex and Claude dispatch and
+   checkpoint recovery through the configured Core service. Reconcile the
+   current Automation write fields with the connected mapping, define a governed
+   compensation route or explicit prohibition for creates, and add the
    separately authorized canary doctor level.
 4. Prove the full judgment and orchestration slice through both Claude and
    Codex host adapters rather than treating deterministic fixture mechanics as

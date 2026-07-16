@@ -90,12 +90,37 @@ function sameJson(left, right) {
   return fingerprintJson(left) === fingerprintJson(right);
 }
 
-function configuredPolicyBindings(lock) {
-  const configured = lock.settings?.[AUTOMATION_ID]?.policyBindings;
-  if (!Array.isArray(configured) || configured.length < 1 || configured.length > 10) {
-    throw new Error('Meeting intake requires one through ten explicit policy bindings.');
+function configuredPolicySources(lock) {
+  const definitionAuthority = selectedAuthority(lock, 'definition', 'crm.records');
+  const bindings = (lock.sources || []).flatMap((source) => {
+    const consumers = (source.consumers || []).filter((consumer) => {
+      return consumer.pack === AUTOMATION_ID && consumer.purpose === 'applicable-policy';
+    });
+    if (!consumers.length) return [];
+    if (consumers.length !== 1
+      || typeof source.id !== 'string'
+      || !source.id.startsWith('source.policy.')
+      || source.capability !== 'documents.content.read'
+      || source.authority !== definitionAuthority
+      || source.inputFingerprint !== fingerprintJson(source.input)
+      || !sameJson(Object.keys(source.input).sort(), ['expectedTitle', 'uri'])) {
+      throw new Error(
+        'Meeting-intake applicable-policy sources require one exact document source consumer under the selected definition authority.'
+      );
+    }
+    const consumer = consumers[0];
+    return [{
+      id: source.id.slice('source.'.length),
+      sourceId: source.id,
+      subjects: structuredClone(consumer.subjects),
+      title: source.input.expectedTitle,
+      documentUri: source.input.uri,
+      reason: consumer.reason
+    }];
+  });
+  if (bindings.length < 1 || bindings.length > 10) {
+    throw new Error('Meeting intake requires one through ten explicit applicable-policy sources.');
   }
-  const bindings = configured.map((binding) => structuredClone(binding));
   const ids = bindings.map((binding) => binding.id);
   const uris = bindings.map((binding) => binding.documentUri);
   if (new Set(ids).size !== ids.length
@@ -108,7 +133,7 @@ function configuredPolicyBindings(lock) {
         || typeof binding.reason !== 'string' || !binding.reason.trim();
     })) {
     throw new Error(
-      'Meeting-intake policy bindings require unique IDs and document URIs with valid identities and governed subjects.'
+      'Meeting-intake policy sources require unique IDs and document URIs with valid identities and governed subjects.'
     );
   }
   return bindings.sort((left, right) => left.id.localeCompare(right.id, 'en'));
@@ -132,7 +157,7 @@ export function createMeetingIntakeConnectedContextPlan({
   const definitionAuthority = selectedAuthority(lock, 'definition', 'crm.records');
   const instanceAuthority = selectedAuthority(lock, 'instance', 'crm.records');
   const transcriptAuthority = selectedAuthority(lock, 'provider', 'meeting.transcript');
-  const policyBindings = configuredPolicyBindings(lock);
+  const policySources = configuredPolicySources(lock);
   const crmProvider = connectedProvider(resolvedRoot, lock, 'crm.records.read');
   const documentProvider = connectedProvider(
     resolvedRoot,
@@ -163,7 +188,7 @@ export function createMeetingIntakeConnectedContextPlan({
         inputBindings: [],
         reason: 'Load the bounded configured policy index so exact applicable document identities can be cross-checked.'
       },
-      ...policyBindings.map((binding) => ({
+      ...policySources.map((binding) => ({
         id: policyStepId(binding),
         capability: 'documents.content.read',
         authority: definitionAuthority,
@@ -348,13 +373,13 @@ function completedStep(checkpoint, id) {
   return step;
 }
 
-function assertDefinitionOutput(step, policyBindings) {
+function assertDefinitionOutput(step, policySources) {
   if (!Array.isArray(step.output.records)
     || step.output.records.length < 1
     || step.output.records.some((record) => record.type !== 'policy')) {
     throw new Error('Connected context requires at least one typed policy index record.');
   }
-  for (const binding of policyBindings) {
+  for (const binding of policySources) {
     const matches = step.output.records.filter((record) => {
       return record.id === binding.documentUri && record.fields?.name === binding.title;
     });
@@ -580,21 +605,23 @@ export function finalizeMeetingIntakeConnectedContext({
     throw new Error('Connected context checkpoint no longer matches its exact lock and graph.');
   }
   assertSelectedAutomation(lock, execution.run);
-  const policyBindings = configuredPolicyBindings(lock);
+  const policySources = configuredPolicySources(lock);
   if (!sameJson(policies.map(({ id, planStep }) => ({
     id,
+    sourceId: 'source.' + id,
     uri: planStep.input.uri,
     title: planStep.input.expectedTitle
-  })), policyBindings.map((binding) => ({
+  })), policySources.map((binding) => ({
     id: binding.id,
+    sourceId: binding.sourceId,
     uri: binding.documentUri,
     title: binding.title
   })))) {
     throw new Error('Connected context plan does not match configured policy applicability.');
   }
-  assertDefinitionOutput(definition, policyBindings);
+  assertDefinitionOutput(definition, policySources);
   policies.forEach(({ id, runtimeStep }) => {
-    const binding = policyBindings.find((item) => item.id === id);
+    const binding = policySources.find((item) => item.id === id);
     assertPolicyOutput(runtimeStep, binding);
   });
   assertTranscriptOutput(transcript, planShape.transcript);
@@ -638,7 +665,7 @@ export function finalizeMeetingIntakeConnectedContext({
       at: createdAt
     }),
     ...policies.map(({ id, runtimeStep }) => {
-      const binding = policyBindings.find((item) => item.id === id);
+      const binding = policySources.find((item) => item.id === id);
       return snapshotEntry({
         root: resolvedRoot,
         id: 'context.crm.' + binding.id,
@@ -648,6 +675,7 @@ export function finalizeMeetingIntakeConnectedContext({
         at: createdAt,
         applicability: {
           state: 'applicable',
+          sourceId: binding.sourceId,
           subjects: binding.subjects,
           reason: binding.reason
         }

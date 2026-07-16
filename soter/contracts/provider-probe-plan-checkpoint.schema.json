@@ -195,7 +195,7 @@
           "type": "string",
           "pattern": "^step\\.[a-z0-9]+(?:[.-][a-z0-9]+)*$"
         },
-        "kind": { "enum": ["identity", "schema", "read"] },
+        "kind": { "enum": ["identity", "schema", "read", "document"] },
         "subject": { "type": "string", "minLength": 3 },
         "scope": { "type": "object" },
         "scopeFingerprint": { "$ref": "#/$defs/fingerprint" },
