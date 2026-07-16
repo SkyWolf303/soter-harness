@@ -6,7 +6,7 @@
   "provider": "provider.integration.notion.mcp",
   "version": "0.1.0",
   "settingsDefinition": "settings.integration.notion",
-  "capabilities": ["crm.records.read"],
+  "capabilities": ["crm.records.read", "crm.records.create", "crm.records.update"],
   "recordTypes": [
     {
       "id": "policy",

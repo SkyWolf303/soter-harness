@@ -416,7 +416,9 @@ The normative Core state shapes are the
 [run envelope](./soter/contracts/run-envelope.schema.json),
 [context snapshot](./soter/contracts/context-snapshot.schema.json),
 [scoped approval](./soter/contracts/approval.schema.json),
+[connected operation-batch approval](./soter/contracts/approval-v2.schema.json),
 [change set](./soter/contracts/change-set.schema.json),
+[connected operation batch](./soter/contracts/connected-operation-batch.schema.json),
 [host tool call](./soter/contracts/host-tool-call.schema.json),
 [provider probe call](./soter/contracts/provider-probe-call.schema.json),
 [provider probe plan checkpoint](./soter/contracts/provider-probe-plan-checkpoint.schema.json),
@@ -858,9 +860,28 @@ retry policy, compensation, an approval-bound operation batch, or rollback.
 The current prepare interface passes no approval set. Version 1 represents a
 confirmation-gated write as a blocked step with no provider arguments; version
 2 rejects a plan containing that unavailable effect before it checkpoints or
-performs earlier reads. Connected writes require later contracts that bind
-generated operations to an exact change-set fingerprint and approval, then
-verify or compensate every applied effect.
+performs earlier reads.
+
+Connected writes use a separate transaction boundary rather than widening the
+general operation-plan interface. `connected-operation-batch/v1` compiles an
+exact proposed change set against the selected connected provider and mapping.
+Every operation carries its portable input, provider identity, compare-before-
+write or deduplication precondition, read-after-write expectation, and recovery
+mode. Unmapped fields fail compilation before approval or provider arguments.
+An update can declare reverse-order restoration from its compared prior fields.
+A create whose provider exposes no automatic compensation route remains a
+blocked, non-executable batch even when its fields and deduplication filter are
+otherwise representable.
+
+`approval/v2` binds both the change-set scope fingerprint and the compiled
+operation-batch fingerprint, names only the approved effects, and expires. A
+changed input, binding, mapping, recovery plan, operation order, or batch
+fingerprint requires a new approval. A blocked batch cannot be approved. The
+current compiler and preview command execute no provider calls; the durable
+sequential transaction checkpoint that will consume an executable approval,
+retain compared prior fields, verify applied effects, and compensate in reverse
+order remains the next runtime contract. Generic capability and operation-plan
+interfaces still accept no connected-write approval.
 
 #### Bounded connected context finalization
 

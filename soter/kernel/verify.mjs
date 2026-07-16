@@ -34,7 +34,9 @@ const RUNTIME_ARTIFACT_CONTRACTS = new Set([
   'soter://contracts/host-call-checkpoint/v1',
   'soter://contracts/context-snapshot/v1',
   'soter://contracts/approval/v1',
-  'soter://contracts/change-set/v1'
+  'soter://contracts/approval/v2',
+  'soter://contracts/change-set/v1',
+  'soter://contracts/connected-operation-batch/v1'
 ]);
 const SECRET_RE = /\b(secret_[A-Za-z0-9]{32,}|ntn_[A-Za-z0-9]{32,}|sk-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{36})\b/;
 const ZERO_WIDTH_RE = /[​‌‍⁠﻿]/;

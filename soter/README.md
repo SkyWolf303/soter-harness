@@ -97,14 +97,23 @@ binds every snapshot entry to exactly one normalized plan output and passed
   fingerprints enter the final probe; live row values and identity values do
   not. Exact target references remain confined to the private checkpoint and
   lock scope. This plan can establish exact-lock `crm.records.read`
-  readiness, but not writes, automation verification, or health. Otter's
+  readiness, but not write permission, write response conformance, automation
+  verification, or health. Otter's
   identity-only probe still leaves transcript compatibility unknown. Notion
-create and update implementations are intentionally absent until Soter adds
-approval-bound operation batches, multi-call deduplication,
-compare-before-write, exact change-set approval, read-after-write verification,
-and compensation.
+create and update translators now accept only explicitly mapped fields, but the
+ordinary capability and operation-plan interfaces still block them. Core can
+compile an exact connected operation-batch preview with deduplication or
+expected-version preconditions, verification expectations, recovery modes, and
+an expiring approval bound to both the change set and batch. The current
+meeting-intake write set fails that compiler because it names fields absent from
+the connected mapping. A separately representable create remains blocked
+because the connector declares no automatic compensation route. No connected
+write is executable until the durable transaction checkpoint can consume an
+exact approval, retain prior values, verify effects, and compensate or surface
+manual recovery without overstating rollback.
 Host-started end-to-end dispatch is unproven, and
-the checked-in connected doctor therefore still reports `ready=failed`. This
+the checked-in connected doctor therefore reports `ready=unknown`; the separate
+operation-batch compiler reports the concrete write blockers. This
 increment does not fetch a user's meeting, prove provider transcript or Notion
 target conformance, prove host-level agent judgment, or replace the existing
 processing-a-meeting guide.
@@ -195,7 +204,9 @@ private state while raw host responses do not. The interface supplies no write
 approval: v1 represents a confirmation-gated step as blocked, while v2 rejects
 the unavailable effect before beginning earlier work. Arbitrary transforms,
 branching, fan-out, parallelism, plan-level retries, compensation,
-approval-bound write batches, and rollback remain future contracts.
+approval-bound write execution, and rollback remain outside the general plan
+contracts. An exact connected operation-batch preview and v2 approval contract
+now exist separately; their durable execution checkpoint remains future work.
 
 Meeting intake also exposes `soter_prepare_meeting_intake_context` and
 `soter_finalize_meeting_intake_context`; the CLI equivalents are

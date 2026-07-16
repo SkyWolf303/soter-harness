@@ -14,6 +14,10 @@ import {
 } from '../automations/meeting-intake/context.mjs';
 import { runConnectedDoctor, runOfflineDoctor } from './doctor.mjs';
 import {
+  approveConnectedOperationBatch,
+  compileConnectedOperationBatch
+} from './connected-transactions.mjs';
+import {
   createContextAssemblyEvidence,
   createContainedTransactionEvidence,
   createResolutionEvidence,
@@ -129,39 +133,6 @@ function copyExternalPackArtifacts(sourceRoot, targetRoot) {
   }
 }
 
-function installSelftestConnectedProvider(root, sourceId, targetId, capabilityIds) {
-  const sourcePath = path.join(root, 'soter/providers/' + sourceId + '.json');
-  const provider = structuredClone(readJson(sourcePath));
-  provider.id = targetId;
-  provider.containment = 'connected';
-  provider.capabilities = provider.capabilities.filter((capability) => {
-    return capabilityIds.includes(capability.id);
-  });
-  provider.runtime = {
-    engine: 'mcp',
-    module: provider.runtime.module,
-    prepareExport: 'prepareMcp',
-    completeExport: 'completeMcp',
-    probePrepareExport: 'prepareProbeMcp',
-    probeCompleteExport: 'completeProbeMcp',
-    server: 'notion',
-    tools: ['fetch', 'create_pages', 'update_page'],
-    probeTools: ['fetch']
-  };
-  provider.mappings = [];
-  provider.fixtures = [];
-  provider.limitations = [
-    'Selftest-only connected declaration used to validate probe aggregation without credentials or network access.'
-  ];
-  const relativePath = 'soter/providers/' + targetId + '.json';
-  writeJson(path.join(root, relativePath), provider);
-  const packPath = path.join(root, 'soter/packs', provider.pack, 'pack.json');
-  const pack = readJson(packPath);
-  pack.artifacts.push({ path: relativePath, role: 'implementation' });
-  writeJson(packPath, pack);
-  return provider;
-}
-
 function selftestProviderProbes(lock, providers) {
   const base = {
     $contract: 'soter://contracts/provider-probe/v1',
@@ -217,33 +188,7 @@ function selftestProviderProbes(lock, providers) {
           state: 'passed',
           method: 'read-only',
           details: 'A schema-compatible read-only response was observed.'
-        }
-      ]
-    },
-    {
-      ...structuredClone(base),
-      id: 'probe.integration.notion-writes.connected-selftest',
-      provider: {
-        pack: providers.notionWrites.pack,
-        implementation: providers.notionWrites.id,
-        version: providers.notionWrites.version,
-        containment: 'connected'
-      },
-      credentials: [
-        {
-          secretRefId: 'secret-ref.notion',
-          state: 'passed',
-          details: 'The injected resolver reported an authenticated Notion identity.'
-        }
-      ],
-      authorities: [
-        {
-          id: 'authority.crm.instance',
-          state: 'passed',
-          details: 'The configured CRM instance authority was visible.'
-        }
-      ],
-      capabilities: [
+        },
         {
           id: 'crm.records.create',
           state: 'passed',
@@ -312,17 +257,13 @@ export async function selftest(root) {
     fs.copyFileSync(path.join(root, 'CLAUDE.md'), path.join(temp, 'CLAUDE.md'));
     fs.cpSync(path.join(root, '.codex'), path.join(temp, '.codex'), { recursive: true });
     fs.cpSync(path.join(root, '.claude'), path.join(temp, '.claude'), { recursive: true });
+    const connectedNotion = readJson(path.join(
+      temp,
+      'soter/providers/provider.integration.notion.mcp.json'
+    ));
     const connectedProviders = {
-      notion: readJson(path.join(
-        temp,
-        'soter/providers/provider.integration.notion.mcp.json'
-      )),
-      notionWrites: installSelftestConnectedProvider(
-        temp,
-        'provider.integration.notion.fixture',
-        'provider.integration.notion.writes-connected-selftest',
-        ['crm.records.create', 'crm.records.update']
-      ),
+      notion: connectedNotion,
+      notionWrites: connectedNotion,
       otter: readJson(path.join(
         temp,
         'soter/providers/provider.integration.otter.mcp.json'
@@ -522,7 +463,12 @@ export async function selftest(root) {
       || notionPlan.checkpoint.result?.$contract !== 'soter://contracts/provider-probe/v2'
       || notionPlan.checkpoint.result?.checks.length !== 15
       || notionPlan.checkpoint.result?.checks.some((check) => check.state !== 'passed')
-      || notionPlan.checkpoint.result?.capabilities[0]?.state !== 'passed'
+      || notionPlan.checkpoint.result?.capabilities.find((item) => {
+        return item.id === 'crm.records.read';
+      })?.state !== 'passed'
+      || notionPlan.checkpoint.result?.capabilities.filter((item) => {
+        return item.id === 'crm.records.create' || item.id === 'crm.records.update';
+      }).some((item) => item.state !== 'unknown')
       || notionPlan.currentCall !== null
       || JSON.stringify(notionPlan).includes(notionPlanMarker)
       || notionPlanState.includes(notionPlanMarker)) {
@@ -533,7 +479,7 @@ export async function selftest(root) {
             state: notionPlan.checkpoint.state,
             contract: notionPlan.checkpoint.result?.$contract || null,
             checks: notionPlan.checkpoint.result?.checks?.length || null,
-            capability: notionPlan.checkpoint.result?.capabilities?.[0]?.state || null,
+            capabilities: notionPlan.checkpoint.result?.capabilities || null,
             currentCall: notionPlan.currentCall?.id || null,
             markerInResult: JSON.stringify(notionPlan).includes(notionPlanMarker),
             markerInState: notionPlanState.includes(notionPlanMarker),
@@ -745,6 +691,112 @@ export async function selftest(root) {
       id: 'evidence.meeting-intake.transaction.fixture',
       createdAt: FIXTURE_TIME
     });
+    const connectedProposal = proposeMeetingIntakeChangeSet({
+      lock,
+      snapshot: transaction.snapshot,
+      id: 'changeset.meeting-intake.connected-compile-selftest',
+      runId: 'run.meeting-intake.connected-compile-selftest',
+      createdAt: FIXTURE_TIME
+    });
+    try {
+      compileConnectedOperationBatch({
+        root: temp,
+        lock,
+        changeSet: connectedProposal,
+        id: 'batch.meeting-intake.connected-compile-selftest',
+        createdAt: FIXTURE_TIME
+      });
+      failures.push('connected compiler accepted meeting-intake fields absent from the provider mapping');
+    } catch (error) {
+      if (!error.message.includes('are not mapped')) {
+        failures.push('connected compiler hid the exact unrepresentable meeting-intake field gap');
+      }
+    }
+    const updateProposal = structuredClone(connectedProposal);
+    updateProposal.id = 'changeset.meeting-intake.connected-update-selftest';
+    updateProposal.operations = [{
+      ...structuredClone(connectedProposal.operations[1]),
+      id: 'operation.task.status-update',
+      input: {
+        recordType: 'task',
+        id: 'https://www.notion.so/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        expectedVersion: 'sha256:' + '3'.repeat(64),
+        patch: { status: 'Open' }
+      }
+    }];
+    updateProposal.operations[0].inputFingerprint = fingerprintJson(updateProposal.operations[0].input);
+    updateProposal.scopeFingerprint = changeSetScopeFingerprint(updateProposal);
+    const updateBatch = compileConnectedOperationBatch({
+      root: temp,
+      lock,
+      changeSet: updateProposal,
+      id: 'batch.meeting-intake.connected-update-selftest',
+      createdAt: FIXTURE_TIME
+    });
+    const connectedApproval = approveConnectedOperationBatch({
+      root: temp,
+      batch: updateBatch,
+      changeSet: updateProposal,
+      id: 'approval.meeting-intake.connected-update-selftest',
+      actor: 'fixture.user',
+      reason: 'Approve the exact mapped update batch for compiler verification only.',
+      createdAt: FIXTURE_TIME,
+      expiresAt: '2026-07-15T12:05:00.000Z'
+    });
+    const createProposal = structuredClone(connectedProposal);
+    createProposal.id = 'changeset.meeting-intake.connected-create-selftest';
+    createProposal.operations = [{
+      ...structuredClone(connectedProposal.operations[0]),
+      id: 'operation.summary.mapped-create',
+      input: {
+        recordType: 'meeting-summary',
+        deduplicationKey: 'https://otter.ai/u/fixture-summary',
+        deduplicationFilter: {
+          field: 'link',
+          value: 'https://otter.ai/u/fixture-summary'
+        },
+        fields: {
+          title: 'Mapped fixture summary',
+          documentType: 'Meeting Summary',
+          description: 'Grounded fixture summary.',
+          link: 'https://otter.ai/u/fixture-summary'
+        },
+        body: 'Grounded fixture summary.'
+      }
+    }];
+    createProposal.operations[0].inputFingerprint = fingerprintJson(createProposal.operations[0].input);
+    createProposal.scopeFingerprint = changeSetScopeFingerprint(createProposal);
+    const createBatch = compileConnectedOperationBatch({
+      root: temp,
+      lock,
+      changeSet: createProposal,
+      id: 'batch.meeting-intake.connected-create-selftest',
+      createdAt: FIXTURE_TIME
+    });
+    if (!updateBatch.executable || updateBatch.state !== 'proposed'
+      || connectedApproval.scope.operationBatchFingerprint !== updateBatch.batchFingerprint
+      || connectedApproval.scope.changeSetFingerprint !== updateProposal.scopeFingerprint
+      || createBatch.executable || createBatch.state !== 'blocked'
+      || !createBatch.blockers.some((item) => item.includes('no automatic compensation'))) {
+      failures.push('connected operation-batch compilation did not bind exact approval or block uncompensated creates');
+    }
+    try {
+      approveConnectedOperationBatch({
+        root: temp,
+        batch: createBatch,
+        changeSet: createProposal,
+        id: 'approval.meeting-intake.connected-create-selftest',
+        actor: 'fixture.user',
+        reason: 'This blocked create must not become authorized.',
+        createdAt: FIXTURE_TIME,
+        expiresAt: '2026-07-15T12:05:00.000Z'
+      });
+      failures.push('connected approval authorized a batch with no create compensation route');
+    } catch (error) {
+      if (!error.message.includes('cannot be approved')) {
+        failures.push('connected approval did not explain its compensation gate');
+      }
+    }
 
     writeJson(path.join(temp, 'soter/fixtures/meeting-intake/preflight.run.json'), envelope);
     writeJson(path.join(temp, 'soter/fixtures/meeting-intake/resolution.evidence.json'), resolutionEvidence);
@@ -789,7 +841,7 @@ export async function selftest(root) {
       || connected.report.states.ready !== 'passed'
       || connected.report.states.verified !== 'unknown'
       || connected.report.states.healthy !== 'unknown'
-      || connected.report.providerProbeIds.length !== 3) {
+      || connected.report.providerProbeIds.length !== 2) {
       failures.push('connected doctor did not derive readiness without overstating verification or health');
     }
     if (connectedWithFailedAttempt.report.states.ready !== 'failed'
@@ -1877,6 +1929,68 @@ export async function selftest(root) {
       || blockedHostWrite.call.transport.tool !== null
       || blockedHostWrite.call.arguments !== null) {
       failures.push('confirmation-required write emitted an MCP tool request before approval');
+    }
+    const mappedCreateInput = createProposal.operations[0].input;
+    const preparedMappedCreate = await prepareHostToolCall({
+      root: temp,
+      lock,
+      runId: createProposal.runId,
+      callId: 'toolcall.selftest.notion-mapped-create',
+      capability: 'crm.records.create',
+      authority: 'authority.crm.instance',
+      providerImplementation: connectedProviders.notion.id,
+      input: mappedCreateInput,
+      at: FIXTURE_TIME,
+      approvedEffects: ['write']
+    });
+    const completedMappedCreate = await completeHostToolCall({
+      root: temp,
+      lock,
+      call: preparedMappedCreate.call,
+      input: mappedCreateInput,
+      response: {
+        structuredContent: {
+          result: { pages: [{ id: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' }] }
+        }
+      },
+      at: FIXTURE_TIME
+    });
+    const mappedUpdateInput = updateProposal.operations[0].input;
+    const preparedMappedUpdate = await prepareHostToolCall({
+      root: temp,
+      lock,
+      runId: updateProposal.runId,
+      callId: 'toolcall.selftest.notion-mapped-update',
+      capability: 'crm.records.update',
+      authority: 'authority.crm.instance',
+      providerImplementation: connectedProviders.notion.id,
+      input: mappedUpdateInput,
+      at: FIXTURE_TIME,
+      approvedEffects: ['write']
+    });
+    const completedMappedUpdate = await completeHostToolCall({
+      root: temp,
+      lock,
+      call: preparedMappedUpdate.call,
+      input: mappedUpdateInput,
+      response: {
+        structuredContent: { result: { id: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' } }
+      },
+      at: FIXTURE_TIME
+    });
+    if (preparedMappedCreate.call.transport.operation !== 'create_pages'
+      || preparedMappedCreate.call.transport.tool
+        !== 'mcp__codex_apps__notion_notion_create_pages'
+      || preparedMappedCreate.call.arguments.pages.length !== 1
+      || completedMappedCreate.call.state !== 'completed'
+      || completedMappedCreate.output?.created !== true
+      || preparedMappedUpdate.call.transport.operation !== 'update_page'
+      || preparedMappedUpdate.call.transport.tool
+        !== 'mcp__codex_apps__notion_notion_update_page'
+      || preparedMappedUpdate.call.arguments.command !== 'update_properties'
+      || completedMappedUpdate.call.state !== 'completed'
+      || completedMappedUpdate.output?.changedFields?.[0] !== 'status') {
+      failures.push('mapped Notion writes did not translate and normalize through exact native host routes');
     }
     const failedHostRead = failHostToolCall({
       root: temp,

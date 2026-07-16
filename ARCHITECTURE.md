@@ -497,8 +497,9 @@ deliberately leaves the definition authority declared because policy index rows
 do not contain authoritative page bodies. Participant People IDs are not treated
 as CRM contact page URIs. The current target includes the
 first connected Otter provider mapping, exact transcript-fetch request
-translation, and identity-only probe producer. It also includes a read-only
-connected Notion provider whose pack-owned settings, typed provider field mapping,
+translation, and identity-only probe producer. It also includes a connected
+Notion provider whose bounded reads and gated mapped-write translators,
+pack-owned settings, typed provider field mapping,
 bounded one-target query translator, normalized record versions, and exact
 per-host native tool mappings are mechanically checked. The one-target boundary
 avoids depending on plan-gated cross-data-source SQL; multi-target reads can be
@@ -520,12 +521,21 @@ availability, and response-conformance failures from a probe that was never
 attempted without persisting arguments, raw responses, or error messages. A
 declared host tool mapping still does not establish that the active execution
 bridge exposes the tool.
-Connected readiness still fails because Notion create and update
-implementations are intentionally absent and no current private probes are
-checked in. Observed Otter
+Connected readiness still fails because no current private probes are checked
+in and Notion write permissions or response conformance are unproven. Notion
+create and update translation is now declared only for explicitly mapped
+fields. Core can compile a proposed change set into an exact connected
+operation batch with deduplication or expected-version preconditions,
+verification expectations, recovery modes, and a separate expiring approval
+fingerprint. It rejects the current contained meeting-intake change set because
+several write fields are absent from the connected mapping, and it blocks even
+a mapped create because the current connector route cannot compensate a newly
+created page. The compiler and preview CLI execute no provider calls; durable
+approved execution, prior-value capture, reverse compensation, and transaction
+recovery remain unimplemented. Observed Otter
 transcript conformance, host-started end-to-end dispatch, policy body loading and
 applicability, participant identity resolution, approval-bound multi-call
-writes, compensation, live health, host judgment, and host conformance remain
+writes, live health, host judgment, and host conformance remain
 future proof boundaries. The v2 plan contract is intentionally narrower than a
 general workflow language: arbitrary transforms, branching, parallelism,
 fan-out, retries, and compensation are not implemented.

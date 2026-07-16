@@ -13,9 +13,9 @@
   },
   "configurationLock": {
     "path": "soter/fixtures/meeting-intake/meeting-intake.lock.json",
-    "fingerprint": "sha256:cb977639dedcdb4c8f6ccbbad4748e978680cb550528c4ca8cb89745396deafc"
+    "fingerprint": "sha256:e9b736eac241190b18065fbb5d89fd857885fbc9ef1192c1a68b5f12c771855e"
   },
-  "graphFingerprint": "sha256:a1243670f7ba22dffaa051fb3e7dcfd59be69ffc66f2d1b948e9a8181961b2d3",
+  "graphFingerprint": "sha256:ad1562f69e39a7cb8f189996990246bb76e0f22c59ab2cd39c4c32f9aff0a1f4",
   "context": [
     {
       "subject": "crm.records",
@@ -44,7 +44,7 @@
       "uri": "notion://configured-user",
       "declarationFingerprint": "sha256:0567ff10843e26a53e85ffa7d609867226b00615288193983c4e6f9384050032",
       "status": "declared",
-      "provenance": "configuration-lock:sha256:cb977639dedcdb4c8f6ccbbad4748e978680cb550528c4ca8cb89745396deafc",
+      "provenance": "configuration-lock:sha256:e9b736eac241190b18065fbb5d89fd857885fbc9ef1192c1a68b5f12c771855e",
       "freshness": "unknown"
     },
     {
@@ -64,7 +64,7 @@
       "uri": "soter-state://runs",
       "declarationFingerprint": "sha256:6f39e99f1ebc86fe11ee09cc7170824ac4c11a6fc88371edb673bd2379dacdc8",
       "status": "declared",
-      "provenance": "configuration-lock:sha256:cb977639dedcdb4c8f6ccbbad4748e978680cb550528c4ca8cb89745396deafc",
+      "provenance": "configuration-lock:sha256:e9b736eac241190b18065fbb5d89fd857885fbc9ef1192c1a68b5f12c771855e",
       "freshness": "unknown"
     }
   ],
@@ -164,7 +164,7 @@
       "decision": "approved",
       "scope": {
         "changeSetId": "changeset.meeting-intake.transaction-fixture",
-        "fingerprint": "sha256:0afa6b5d371ff5351e53215d183d05dd402c5f642b3e1047ed0858d850616c46",
+        "fingerprint": "sha256:ad3d64b8e555afe7a93e74186fb2bfbd6807cbd202f7ff3bab1fe08e087c902a",
         "effects": [
           "write"
         ]
@@ -208,12 +208,12 @@
     {
       "id": "context.meeting-intake.transaction-fixture",
       "type": "context-snapshot",
-      "fingerprint": "sha256:21542599e7d411706d0a6217cb6f71f44bb860a1054dcd0c55debd44595d7704"
+      "fingerprint": "sha256:fcf30edaf4c984c0facc572d8a18b2a1fec129a1dc8e86843fbf6b73d32d69e8"
     },
     {
       "id": "changeset.meeting-intake.transaction-fixture",
       "type": "change-set",
-      "fingerprint": "sha256:31485c69e170f939b4f9b30ac3359184bf35896a49b7d77076d4c8cbe026f9f9"
+      "fingerprint": "sha256:057d4c28c34bfbb0fb8216bcca6a4acb4d73bbd82948de2b474a1a7c298b15bc"
     }
   ],
   "effects": [

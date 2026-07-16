@@ -84,6 +84,63 @@ function requestLimit(input) {
   return value;
 }
 
+function encodedProperty(field, value) {
+  if (value === null) return null;
+  if (field.providerType === 'checkbox') return value ? '__YES__' : '__NO__';
+  if (['relation', 'person', 'multi_select'].includes(field.providerType)) {
+    if (!Array.isArray(value) || value.some((item) => typeof item !== 'string')) {
+      throw providerError(
+        'validation',
+        'Notion mapped field ' + field.portable + ' requires an array of strings.'
+      );
+    }
+    return JSON.stringify(value);
+  }
+  if (!['string', 'number', 'boolean'].includes(typeof value)) {
+    throw providerError(
+      'validation',
+      'Notion mapped field ' + field.portable + ' requires a scalar value.'
+    );
+  }
+  return value;
+}
+
+function mappedProperties(definition, values, label) {
+  const fields = new Map(definition.fields.map((field) => [field.portable, field]));
+  const properties = {};
+  for (const [portable, value] of Object.entries(values)) {
+    const field = fields.get(portable);
+    if (!field) {
+      throw providerError(
+        'validation',
+        label + ' contains unmapped field ' + definition.id + '.' + portable + '.'
+      );
+    }
+    properties[field.provider] = encodedProperty(field, value);
+  }
+  return properties;
+}
+
+function targetForRecord(settings, definition) {
+  const target = requiredString(
+    notionSettings(settings)[definition.target],
+    'Notion target ' + definition.target
+  );
+  if (!/^collection:\/\/[a-f0-9-]{32,36}$/.test(target)) {
+    throw providerError('validation', 'Notion target ' + definition.target + ' is not a collection URI.');
+  }
+  return target;
+}
+
+function notionPageId(value) {
+  const id = requiredString(value, 'Notion record id');
+  const match = id.match(/([a-f0-9]{32}|[a-f0-9-]{36})(?:\?.*)?$/i);
+  if (!match) {
+    throw providerError('validation', 'Notion updates require a page URL or UUID record id.');
+  }
+  return match[1];
+}
+
 function selectForType({ definition, target, input, params }) {
   const fieldSql = definition.fields.flatMap((field) => {
     return [sqlString(field.portable), sqlIdentifier(field.provider)];
@@ -113,8 +170,43 @@ function selectForType({ definition, target, input, params }) {
 }
 
 export function prepareMcp({ capability, input, settings, mappings }) {
+  const mapping = mappingDocument(mappings, capability);
+  if (capability === 'crm.records.create') {
+    const definition = recordMapping(mapping, input.recordType);
+    const properties = mappedProperties(definition, input.fields, 'Notion create');
+    if (!definition.fields.some((field) => {
+      return field.providerType === 'title' && Object.hasOwn(input.fields, field.portable);
+    })) {
+      throw providerError('validation', 'Notion create requires the mapped title field.');
+    }
+    const page = { properties };
+    if (input.body !== undefined && input.body !== null) {
+      if (typeof input.body !== 'string') {
+        throw providerError('validation', 'Notion page content currently requires a string body.');
+      }
+      page.content = input.body;
+    }
+    return {
+      tool: 'create_pages',
+      arguments: {
+        parent: { data_source_id: targetForRecord(settings, definition).slice('collection://'.length) },
+        pages: [page]
+      }
+    };
+  }
+  if (capability === 'crm.records.update') {
+    const definition = recordMapping(mapping, input.recordType);
+    return {
+      tool: 'update_page',
+      arguments: {
+        page_id: notionPageId(input.id),
+        command: 'update_properties',
+        properties: mappedProperties(definition, input.patch, 'Notion update')
+      }
+    };
+  }
   if (capability !== 'crm.records.read') {
-    throw providerError('validation', 'Notion MCP read adapter does not implement ' + capability + '.');
+    throw providerError('validation', 'Notion MCP adapter does not implement ' + capability + '.');
   }
   if (!Array.isArray(input.recordTypes) || input.recordTypes.length !== 1) {
     throw providerError(
@@ -129,7 +221,6 @@ export function prepareMcp({ capability, input, settings, mappings }) {
     throw providerError('validation', 'Notion record ids must contain 1 through 100 non-empty strings.');
   }
   requiredObject(input.filters || {}, 'Notion record filters');
-  const mapping = mappingDocument(mappings, capability);
   const targets = notionSettings(settings);
   const params = [];
   const targetUris = [];
@@ -193,11 +284,46 @@ function assertRequestedRecords(records, input) {
 }
 
 export function completeMcp({ capability, authority, input, response, at, mappings }) {
-  if (capability !== 'crm.records.read') {
-    throw providerError('validation', 'Notion MCP read adapter does not implement ' + capability + '.');
-  }
   const mapping = mappingDocument(mappings, capability);
   const payload = requiredObject(nativePayload(response), 'Notion query result');
+  if (capability === 'crm.records.create') {
+    const created = Array.isArray(payload.pages) ? payload.pages[0] : payload;
+    const id = created?.url || created?.id;
+    requiredString(id, 'Notion created page id');
+    return {
+      record: {
+        type: input.recordType,
+        id,
+        fields: { ...input.fields, ...(input.body !== undefined ? { body: input.body } : {}) }
+      },
+      created: true,
+      provenance: {
+        provider: 'notion-mcp',
+        authority,
+        mapping: mapping.id,
+        mappingVersion: mapping.version
+      },
+      observedAt: at
+    };
+  }
+  if (capability === 'crm.records.update') {
+    const id = payload.url || payload.id || payload.page_id;
+    requiredString(id, 'Notion updated page id');
+    return {
+      record: { type: input.recordType, id: input.id, fields: { ...input.patch } },
+      changedFields: Object.keys(input.patch).sort(),
+      provenance: {
+        provider: 'notion-mcp',
+        authority,
+        mapping: mapping.id,
+        mappingVersion: mapping.version
+      },
+      observedAt: at
+    };
+  }
+  if (capability !== 'crm.records.read') {
+    throw providerError('validation', 'Notion MCP adapter does not implement ' + capability + '.');
+  }
   if (!Array.isArray(payload.results) || typeof payload.has_more !== 'boolean') {
     throw providerError('validation', 'Notion query result must contain results and has_more.');
   }
@@ -516,9 +642,11 @@ export function finalizeProbePlanMcp({ plan, steps, results }) {
     })),
     capabilities: plan.capabilities.map((id) => ({
       id,
-      state: 'passed',
-      method: 'read-only',
-      details: 'Every configured mapped target accepted a one-row bounded query whose result envelope normalized successfully.'
+      state: id === 'crm.records.read' ? 'passed' : 'unknown',
+      method: id === 'crm.records.read' ? 'read-only' : 'metadata',
+      details: id === 'crm.records.read'
+        ? 'Every configured mapped target accepted a one-row bounded query whose result envelope normalized successfully.'
+        : 'Mapped schema compatibility does not establish write permission, provider write response conformance, verification, or compensation.'
     })),
     checks,
     limitations: [

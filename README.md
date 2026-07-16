@@ -166,10 +166,11 @@ The main remaining gaps are structural and behavioral:
   15-step private plan that checks identity plus exact schema and one bounded
   mapped query for every configured target. Core persists only minimized step
   observations and assembles a v2 probe after the complete plan passes.
-  Connected Notion writes remain intentionally undeclared until plans support
-  approval-bound operation batches, multi-call deduplication,
-  compare-before-write, exact change-set approval, read-after-write
-  verification, and compensation.
+  Connected Notion create and update translation is declared for mapped fields,
+  but generic calls still block writes. A separate compiler now binds mapped
+  operations, preconditions, verification, recovery, and an expiring v2
+  approval. The current meeting-intake change set is rejected for unmapped
+  fields, and mapped creates remain blocked without automatic compensation.
   Checked-in connected
   response-shape evidence, host-started end-to-end dispatch, and host-level
   agent behavior remain unproven.
@@ -269,11 +270,13 @@ Inspect connected readiness separately:
       --lock soter/fixtures/meeting-intake/meeting-intake.lock.json \
       --level connected
 
-The connected Notion declaration covers reads only, while the
-meeting-intake automation also requires create and update capabilities. With
-those connected writes intentionally absent and no current private Notion or
-Otter probe, that command exits nonzero with `ready=failed`. A connected
-integration must emit a short-lived provider probe for the exact lock; Core
+The connected Notion declaration covers mapped reads, creates, and updates, but
+safe probes in this target establish only read compatibility. Private Notion
+and Otter probes are not repository artifacts, so that command alone does not
+report ready. Even after read readiness, the meeting-intake write set is
+non-executable until its fields match the connected mapping and every effect
+has an approved recovery route. A connected integration must emit a short-lived
+provider probe for the exact lock; Core
 will reject
 missing, expired, malformed, ambiguous, or wrong-lock probes. Probe documents
 contain secret-reference identifiers and safe observations, never secret

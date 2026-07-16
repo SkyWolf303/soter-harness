@@ -16,24 +16,27 @@
     "probeStepCompleteExport": "completeProbePlanStepMcp",
     "probeFinalizeExport": "finalizeProbePlanMcp",
     "server": "notion",
-    "tools": ["fetch", "query_data_sources"],
+    "tools": ["fetch", "query_data_sources", "create_pages", "update_page"],
     "probeTools": ["fetch", "query_data_sources"]
   },
   "capabilities": [
-    { "id": "crm.records.read", "version": "1.0.0" }
+    { "id": "crm.records.read", "version": "1.0.0" },
+    { "id": "crm.records.create", "version": "1.0.0" },
+    { "id": "crm.records.update", "version": "1.0.0" }
   ],
   "authorities": [
     { "role": "definition", "subject": "crm.records" },
     { "role": "instance", "subject": "crm.records" },
     { "role": "provider", "subject": "notion.workspace" }
   ],
-  "effects": ["read", "disclosure"],
+  "effects": ["read", "disclosure", "write"],
   "mappings": [
     "soter/integrations/notion/crm-records.mapping.json"
   ],
   "fixtures": [],
   "limitations": [
-    "This first connected implementation is read-only. It does not declare crm.records.create or crm.records.update until approval-bound multi-call deduplication, compare-before-write, and read-after-write verification exist.",
+    "Create and update translation is limited to explicitly mapped fields. Generic capability preparation still blocks writes; an approval-bound operation batch must establish deduplication or expected-version preconditions, verification, and recovery before Core may emit either tool.",
+    "The current connector route cannot compensate a newly created page. Any operation batch containing a create remains non-executable until a declared compensation implementation or an explicitly governed irreversible-effect contract exists.",
     "Each connected record read accepts exactly one portable record type so it uses one Notion data source per host call. Cross-data-source SQL is plan-gated and is not a portable execution assumption.",
     "Connected readiness uses an explicit private sequence: authenticated identity, exact schema metadata, and one bounded mapped query for each configured target. A zero-row result establishes query and empty-envelope compatibility but not non-null value decoding.",
     "Meeting-intake context can follow only mapped organization, project, and task page URIs observed in prior normalized records. Empty relations skip without a provider call, and related results outside the exact requested type, IDs, filters, or limit fail closed.",

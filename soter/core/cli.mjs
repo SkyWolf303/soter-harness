@@ -37,6 +37,7 @@ import {
   prepareDurableProviderProbeExecution
 } from './service.mjs';
 import { runContainedMeetingIntakeTransaction } from './transaction.mjs';
+import { compileConnectedOperationBatch } from './connected-transactions.mjs';
 
 const defaultRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -641,6 +642,38 @@ async function main() {
     return;
   }
 
+  if (command === 'connected-batch-preview') {
+    const lock = readJson(resolveRepoPath(root, requiredOption(args, '--lock')));
+    const changeSet = readJson(resolveRepoPath(root, requiredOption(args, '--change-set')));
+    const batch = compileConnectedOperationBatch({
+      root,
+      lock,
+      changeSet,
+      id: option(
+        args,
+        '--batch-id',
+        'batch.' + lock.configuration.name + '.' + idPart
+      ),
+      createdAt
+    });
+    if (json) {
+      print(batch);
+    } else {
+      process.stdout.write(
+        'Compiled connected operation batch ' + batch.id + '.\n'
+          + 'Executable: ' + (batch.executable ? 'yes' : 'no') + '\n'
+          + 'Operations: ' + batch.operations.length + '\n'
+          + 'Batch fingerprint: ' + batch.batchFingerprint + '\n'
+          + (batch.blockers.length
+            ? 'Blockers:\n  - ' + batch.blockers.join('\n  - ') + '\n'
+            : '')
+          + 'Provider calls executed: 0\n'
+      );
+    }
+    if (!batch.executable) process.exitCode = 1;
+    return;
+  }
+
   if (command === 'selftest') {
     const { selftest } = await import('./selftest.mjs');
     process.exitCode = await selftest(root) ? 0 : 1;
@@ -671,13 +704,14 @@ async function main() {
   }
 
   throw new Error(
-    'Usage: node soter/core/cli.mjs <resolve|prepare|context|context-connected-prepare|context-connected-finalize|transaction|doctor|probe-prepare|probe-complete|capability-prepare|capability-complete|plan-prepare|plan-complete|host-fail|host-get|host-list|fixtures|selftest> [options]\n'
+    'Usage: node soter/core/cli.mjs <resolve|prepare|context|context-connected-prepare|context-connected-finalize|transaction|connected-batch-preview|doctor|probe-prepare|probe-complete|capability-prepare|capability-complete|plan-prepare|plan-complete|host-fail|host-get|host-list|fixtures|selftest> [options]\n'
       + '  resolve [--config PATH] [--output PATH] [--json]\n'
       + '  prepare --lock PATH [--scenario PATH] [--output PATH] [--evidence-dir PATH] [--json]\n'
       + '  context --lock PATH --meeting-id ID --recording-uri URI [--scenario PATH] [--json]\n'
       + '  context-connected-prepare --lock PATH --run PATH --meeting-id ID --recording-uri URI [--snapshot-id ID] [--json]\n'
       + '  context-connected-finalize --checkpoint ID [--json]\n'
       + '  transaction --lock PATH [--scenario PATH] [--approve] [--json]\n'
+      + '  connected-batch-preview --lock PATH --change-set PATH [--batch-id ID] [--json]\n'
       + '  doctor --lock PATH [--level offline|connected] [--probe PATH ...] [--probe-checkpoint ID ...] [--config PATH] [--json]\n'
       + '  probe-prepare --lock PATH --provider ID [--output PATH] [--json]\n'
       + '  probe-complete --checkpoint ID [--call ID] --response ABSOLUTE_PRIVATE_PATH [--probe-output PATH] [--json]\n'

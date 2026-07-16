@@ -385,7 +385,12 @@ async function selftest(root) {
       || recoveredNotionProbe.checkpoint.result?.$contract
         !== 'soter://contracts/provider-probe/v2'
       || recoveredNotionProbe.checkpoint.result?.checks?.length !== 15
-      || recoveredNotionProbe.checkpoint.result?.capabilities?.[0]?.state !== 'passed'
+      || recoveredNotionProbe.checkpoint.result?.capabilities?.find((item) => {
+        return item.id === 'crm.records.read';
+      })?.state !== 'passed'
+      || recoveredNotionProbe.checkpoint.result?.capabilities?.filter((item) => {
+        return item.id === 'crm.records.create' || item.id === 'crm.records.update';
+      }).some((item) => item.state !== 'unknown')
       || JSON.stringify(recoveredNotionProbe).includes(notionMarker)
       || fs.readFileSync(checkpointFile(root, recoveredNotionProbe), 'utf8')
         .includes(notionMarker)) {
@@ -1001,7 +1006,7 @@ async function selftest(root) {
     const doctor = JSON.parse(doctorInvocation.stdout);
     if (doctorInvocation.status !== 1
       || doctor.states.valid !== 'passed'
-      || doctor.states.ready !== 'failed'
+      || doctor.states.ready !== 'unknown'
       || !doctor.providerProbeIds.includes('probe.cli-selftest.otter')
       || !doctor.providerProbeIds.includes('probe.mcp-selftest.notion-plan')
       || doctor.diagnostics.some((item) => {
