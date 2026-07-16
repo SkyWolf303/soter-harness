@@ -113,14 +113,16 @@ async function main() {
 
   if (command === 'resolve') {
     const configPath = option(args, '--config');
-    const lock = resolveConfiguration({ root, configPath });
+    const host = option(args, '--host');
+    const lock = resolveConfiguration({ root, configPath, host });
     const output = option(args, '--output');
     if (output) writeJson(resolveRepoPath(root, output), lock);
     if (json) {
       print(lock);
     } else {
       process.stdout.write(
-        'Resolved ' + lock.configuration.name + ' to ' + lock.packs.length + ' packs.\n'
+        'Resolved ' + lock.configuration.name + ' for ' + lock.host.id
+          + ' to ' + lock.packs.length + ' packs.\n'
           + 'Lock: ' + fingerprintLock(lock) + '\n'
           + (output ? 'Wrote: ' + output + '\n' : '')
       );
@@ -951,7 +953,7 @@ async function main() {
 
   throw new Error(
     'Usage: node soter/core/cli.mjs <resolve|prepare|context|context-connected-prepare|context-connected-finalize|meeting-intake-decision-inspect|meeting-intake-decision-commit|meeting-intake-proposal|transaction|connected-batch-preview|connected-batch-approve|connected-transaction-prepare|connected-transaction-complete|connected-transaction-reconcile|doctor|probe-prepare|probe-complete|capability-prepare|capability-complete|plan-prepare|plan-complete|host-fail|host-get|host-list|fixtures|selftest> [options]\n'
-      + '  resolve [--config PATH] [--output PATH] [--json]\n'
+      + '  resolve [--config PATH] [--host ID] [--output PATH] [--json]\n'
       + '  prepare --lock PATH [--scenario PATH] [--output PATH] [--evidence-dir PATH] [--json]\n'
       + '  context --lock PATH --meeting-id ID --recording-uri URI [--scenario PATH] [--json]\n'
       + '  context-connected-prepare --lock PATH --run PATH --meeting-id ID --recording-uri URI [--snapshot-id ID] [--json]\n'

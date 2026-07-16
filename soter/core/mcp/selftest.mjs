@@ -319,6 +319,56 @@ async function assertWrongHostRejected(root) {
   }
 }
 
+async function assertClaudeHostProjection(root) {
+  const claudeLockPath = 'soter/fixtures/meeting-intake/mcp-claude.lock.json';
+  const claudeRunPath = 'soter/fixtures/meeting-intake/mcp-claude.run.json';
+  const claudeLock = runCli(root, [
+    'resolve',
+    '--config', 'soter/configurations/meeting-intake.config.json',
+    '--host', 'claude',
+    '--output', claudeLockPath
+  ]);
+  const preparedRun = runCli(root, [
+    'prepare',
+    '--lock', claudeLockPath,
+    '--run-id', 'run.meeting-intake.mcp-claude-host',
+    '--output', claudeRunPath,
+    '--at', fixtureTime
+  ]);
+  const client = await connectClient(root, 'claude');
+  try {
+    const prepared = await call(client, 'soter_prepare_capability_call', {
+      lock_path: claudeLockPath,
+      run_path: claudeRunPath,
+      capability: 'crm.records.read',
+      authority: 'authority.crm.instance',
+      provider_implementation: 'provider.integration.notion.mcp',
+      input: {
+        recordTypes: ['meeting'],
+        ids: ['https://www.notion.so/ffffffffffffffffffffffffffffffff'],
+        limit: 1
+      },
+      call_id: 'toolcall.mcp-selftest.claude-notion-read',
+      at: fixtureTime
+    });
+    if (claudeLock.configuration.hostSelection?.source !== 'override'
+      || claudeLock.host.id !== 'claude'
+      || preparedRun.envelope?.host?.id !== 'claude'
+      || prepared.checkpoint?.host?.id !== 'claude'
+      || prepared.checkpoint?.call?.transport?.tool !== 'Notion:notion-query-data-sources') {
+      throw new Error('Claude did not realize the same configuration through its exact native tool mapping.');
+    }
+    await call(client, 'soter_fail_host_call', {
+      checkpoint_id: prepared.checkpoint.id,
+      error_kind: 'unavailable',
+      message: 'Synthetic Claude host projection call was intentionally not dispatched.',
+      at: fixtureTime
+    });
+  } finally {
+    await client.close().catch(() => {});
+  }
+}
+
 async function selftest(root) {
   let client = await connectClient(root);
   let preparedCapability;
@@ -1584,6 +1634,7 @@ async function selftest(root) {
     }
 
     await assertWrongHostRejected(root);
+    await assertClaudeHostProjection(root);
 
     const cliProbe = runCli(root, [
       'probe-prepare',

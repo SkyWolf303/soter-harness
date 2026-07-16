@@ -27,11 +27,20 @@
     "configuration": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "path", "fingerprint"],
+      "required": ["name", "path", "fingerprint", "hostSelection"],
       "properties": {
         "name": { "type": "string", "minLength": 1 },
         "path": { "type": "string", "minLength": 1 },
-        "fingerprint": { "$ref": "#/$defs/fingerprint" }
+        "fingerprint": { "$ref": "#/$defs/fingerprint" },
+        "hostSelection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "source"],
+          "properties": {
+            "id": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+            "source": { "enum": ["configuration", "override"] }
+          }
+        }
       }
     },
     "resolver": {

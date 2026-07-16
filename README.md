@@ -12,8 +12,9 @@ Soter is both:
 
 - a provider-neutral architecture for defining, connecting, checking, and
   evolving harness systems; and
-- a reference implementation that proves those contracts on real hosts and
-  integrations.
+- a reference implementation intended to prove those contracts incrementally,
+  first through contained and synthetic conformance and then through explicitly
+  scoped host and integration evidence.
 
 It is not a model, a replacement for an agent host, or unrestricted
 self-modifying software.
@@ -34,6 +35,11 @@ five sequential runtime stages.
 Codex, Claude, and future agent runtimes are **hosts**, not layers. A host
 adapter projects the same resolved Soter configuration into the host's native
 instructions, skills, tools, hooks, and lifecycle.
+
+A configuration names a default host, but the user may resolve it for any
+compatible declared host. That selection changes the lock and projected host
+artifacts; it does not duplicate or overlay Context, Automation, Integration,
+authority, or effect-policy configuration.
 
 ## How the pieces connect
 
@@ -227,9 +233,13 @@ The main remaining gaps are structural and behavioral:
   separates fixture reads and writes behind typed capabilities, but connected
   implementations and legacy migration remain.
 - The target has an explicit desired configuration and lock, but host
-  realization and install/upgrade transactions are not implemented.
+  install/upgrade transactions and live host conformance are not implemented.
+  Core does locally prove that one portable configuration resolves into
+  distinct reproducible Codex and Claude locks and native tool requests.
 - Evidence does not yet support complete transitive freshness and health claims.
-- Claude-specific realization is more mature than Codex or other host adapters.
+- The legacy Claude realization remains more mature than Codex or other host
+  realizations; the target adapter boundary has equal local projection coverage
+  for Codex and Claude, but neither has host-started connected evidence.
 
 The target host projections are now explicitly MCP-aware. Both hosts register
 the same local Soter Core server; Claude retains its existing Notion plugin and
@@ -286,9 +296,21 @@ Verify the target contract graph and inspect its honest health state:
 
 Exercise Core resolution and its checked-in preflight evidence:
 
+    node soter/core/cli.mjs resolve \
+      --config soter/configurations/meeting-intake.config.json \
+      --json
+    node soter/core/cli.mjs resolve \
+      --config soter/configurations/meeting-intake.config.json \
+      --host claude \
+      --json
     node soter/core/cli.mjs selftest
     node soter/core/cli.mjs fixtures --check
     node soter/core/cli.mjs doctor --lock soter/fixtures/meeting-intake/meeting-intake.lock.json
+
+The configuration-default and explicit-host commands resolve the same portable
+pack, binding, authority, and context selection. They produce different locks
+whose host selection and projection fingerprints make the intended runtime
+unambiguous and reproducible. An incompatible or unknown host fails resolution.
 
 Run the same contained context operation through the shared CLI:
 
@@ -415,8 +437,10 @@ The local server never calls Otter, Notion, or another provider itself. Its MCP
 self-test launches the stdio server and supplies synthetic provider results,
 terminates it with a request pending, reconnects, rehydrates the checkpoint,
 and completes the durable run. It also rejects wrong-host, stale, conflicting,
-and tampered state and verifies that the native provider body did not reach
-disk. This proves the local Core recovery boundary, not that Codex or Claude
+and tampered state, verifies that the native provider body did not reach disk,
+and checks that Codex and Claude map the same portable request to their distinct
+declared native tool names while normalizing to the same result. This proves the
+local Core recovery and host-projection boundary, not that Codex or Claude
 started the server, authenticated a provider, selected the right provider tool,
 or completed a real external run. The equivalent CLI commands are
 `capability-prepare`, `capability-complete`, `plan-prepare`, `plan-complete`,

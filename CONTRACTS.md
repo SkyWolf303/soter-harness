@@ -552,6 +552,16 @@ guide, implementation, scenario, contract, or projection change becomes
 visible drift. Secret references and values are excluded from the shareable
 lock.
 
+The desired configuration names a default host, but host choice is a resolution
+input rather than a reason to duplicate the configuration's packs, bindings,
+authorities, or policies. A user may explicitly select another declared host
+only when every selected pack declares compatibility with it. The lock records
+the selected host and whether it came from the configuration default or an
+override, fingerprints that adapter and only its projections, and remains
+reproducible from its own host selection. Changing hosts produces a different
+lock and graph fingerprint without changing the portable configuration
+fingerprint.
+
 A capability binding selects one integration pack and an explicit allowed set
 of authorities. Each invocation chooses exactly one member of that set. The
 run's containment level then selects one matching

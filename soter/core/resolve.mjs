@@ -12,7 +12,7 @@ import {
 } from './lib/canonical-json.mjs';
 
 export const RESOLVER_ID = 'core.resolver';
-export const RESOLVER_VERSION = '0.2.0';
+export const RESOLVER_VERSION = '0.3.0';
 
 const layerOrder = new Map([
   ['kernel', 0],
@@ -85,7 +85,7 @@ export function fingerprintLock(lock) {
   return fingerprintJson(lock);
 }
 
-export function resolveConfiguration({ root, configPath } = {}) {
+export function resolveConfiguration({ root, configPath, host } = {}) {
   const resolvedRoot = path.resolve(root || path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..'));
   const file = configurationFile(resolvedRoot, configPath);
   const configuration = readJson(file);
@@ -96,6 +96,21 @@ export function resolveConfiguration({ root, configPath } = {}) {
   const verification = verifySoter(resolvedRoot, { includeRuntimeArtifacts: false });
   requireCleanGraph(verification);
   const resolution = selectedResolution(verification, configuration.name);
+
+  const selectedHost = host || configuration.host.id;
+  if (typeof selectedHost !== 'string'
+    || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(selectedHost)) {
+    throw new Error('Selected Soter host has an invalid identifier.');
+  }
+  const selectedHostPath = hostManifestPath(resolvedRoot, selectedHost);
+  if (!fs.existsSync(selectedHostPath)) {
+    throw new Error('Unknown Soter host ' + selectedHost + '.');
+  }
+  const hostAdapter = readJson(selectedHostPath);
+  if (hostAdapter.$contract !== 'soter://contracts/host-adapter/v1'
+    || hostAdapter.host !== selectedHost) {
+    throw new Error('Host adapter does not match selected host ' + selectedHost + '.');
+  }
 
   const manifests = new Map(resolution.selections.map((selection) => {
     const manifestPath = packManifestPath(resolvedRoot, selection.id);
@@ -172,8 +187,16 @@ export function resolveConfiguration({ root, configPath } = {}) {
     declarationFingerprint: fingerprintJson(authority)
   })).sort((left, right) => compareText(left.id, right.id));
 
-  const hostPath = hostManifestPath(resolvedRoot, configuration.host.id);
-  const hostAdapter = readJson(hostPath);
+  const incompatiblePacks = [...manifests.values()]
+    .filter((manifest) => !manifest.doc.compatibility.hosts.includes(selectedHost))
+    .map((manifest) => manifest.doc.id)
+    .sort(compareText);
+  if (incompatiblePacks.length) {
+    throw new Error(
+      'Selected host ' + selectedHost + ' is incompatible with pack(s): '
+        + incompatiblePacks.join(', ') + '.'
+    );
+  }
   const projections = hostAdapter.projections.map((projection) => {
     const target = resolveRepoPath(resolvedRoot, projection.path);
     return {
@@ -189,7 +212,11 @@ export function resolveConfiguration({ root, configPath } = {}) {
     configuration: {
       name: configuration.name,
       path: repoRelativePath(resolvedRoot, file),
-      fingerprint: fingerprintJson(configuration)
+      fingerprint: fingerprintJson(configuration),
+      hostSelection: {
+        id: selectedHost,
+        source: selectedHost === configuration.host.id ? 'configuration' : 'override'
+      }
     },
     resolver: {
       id: RESOLVER_ID,
@@ -216,7 +243,10 @@ export function resolveConfiguration({ root, configPath } = {}) {
 }
 
 export function lockMatchesResolution({ lock, ...options }) {
-  const expected = resolveConfiguration(options);
+  const expected = resolveConfiguration({
+    ...options,
+    host: options.host || lock.configuration.hostSelection?.id || lock.host.id
+  });
   return {
     matches: fingerprintLock(lock) === fingerprintLock(expected),
     expected,

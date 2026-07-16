@@ -61,7 +61,10 @@ It also validates and aggregates short-lived provider probes into an honest
 connected-readiness result and proves the state machine for policy-bound MCP
 dispatch with synthetic host results. A local stdio MCP projection exposes that
 same Core service to both Codex and Claude without becoming a provider proxy or
-accepting generic connected-write approvals. It atomically checkpoints each
+accepting generic connected-write approvals. One portable configuration can be
+resolved for either compatible host; the resulting lock records whether the
+host came from the configuration default or an explicit override and
+fingerprints only that host's projections. It atomically checkpoints each
 call and its private run state before returning a provider request, and can
 rehydrate pending work by checkpoint ID after a server restart. The connected
 doctor also consumes failed probe checkpoints through a typed, expiring summary
@@ -217,9 +220,12 @@ execute exactly the matching native tool through its separate authenticated MCP 
 and return the native result to the matching complete tool. The server does
 not call providers, persist raw responses, or originate or widen connected
 write approval. Its stdio subprocess self-test establishes only the
-shared Core recovery projection, not live host or provider conformance. The
-self-test restarts the server with a call pending, rehydrates it, repairs planted
-partial state, and rejects stale or tampered checkpoints.
+shared Core recovery and declared host-projection boundary, not live host or
+provider conformance. The self-test resolves and prepares the same portable
+request for Codex and Claude, verifies their distinct native tool mappings and
+equivalent normalized result, restarts the server with a call pending,
+rehydrates it, repairs planted partial state, and rejects stale or tampered
+checkpoints.
 
 The same service exposes `soter_prepare_operation_plan` and
 `soter_complete_operation_plan`; the CLI equivalents are `plan-prepare` and
@@ -328,6 +334,14 @@ OAuth credentials in the repository.
 Generate a proposed lock without provider access:
 
     node soter/core/cli.mjs resolve --config soter/configurations/meeting-intake.config.json --json
+
+Resolve that same portable configuration for another compatible host without
+forking its packs, bindings, authorities, or policies:
+
+    node soter/core/cli.mjs resolve --config soter/configurations/meeting-intake.config.json --host claude --json
+
+Changing the selected host changes the lock and host projection fingerprints.
+Unknown or pack-incompatible hosts fail resolution.
 
 Exercise typed context assembly without external access:
 

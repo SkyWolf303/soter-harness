@@ -1663,6 +1663,20 @@ function checkRuntimeArtifacts(
   for (const entry of locks) {
     const fingerprint = fingerprintJson(entry.doc);
     lockByFingerprint.set(fingerprint, entry);
+    const selectedHost = hosts.get(entry.doc.host.adapter);
+    if (entry.doc.configuration.hostSelection.id !== entry.doc.host.id
+      || !selectedHost
+      || selectedHost.doc.host !== entry.doc.host.id
+      || selectedHost.doc.version !== entry.doc.host.version
+      || fingerprintJson(selectedHost.doc) !== entry.doc.host.manifestFingerprint) {
+      out.push(violation(
+        entry.file,
+        'SOTER_LOCK_HOST_SELECTION',
+        'lock host selection, adapter identity, version, or manifest fingerprint disagree',
+        'a portable configuration must still bind one exact reproducible host realization',
+        'resolve the configuration again for the intended compatible host'
+      ));
+    }
     const unsigned = { ...entry.doc };
     delete unsigned.graphFingerprint;
     const expectedGraphFingerprint = fingerprintJson(unsigned);
@@ -3138,6 +3152,27 @@ function selftest(root) {
       failures.push('copied clean fixture failed: ' + clean.violations.map((item) => item.code).join(', '));
     }
 
+    const lockFile = path.join(
+      temp,
+      'soter',
+      'fixtures',
+      'meeting-intake',
+      'meeting-intake.lock.json'
+    );
+    const originalLockText = fs.readFileSync(lockFile, 'utf8');
+    const badHostLock = JSON.parse(originalLockText);
+    badHostLock.configuration.hostSelection.id = 'claude';
+    delete badHostLock.graphFingerprint;
+    badHostLock.graphFingerprint = fingerprintJson(badHostLock);
+    fs.writeFileSync(lockFile, JSON.stringify(badHostLock, null, 2) + '\n');
+    const mismatchedHostLock = verifySoter(temp);
+    if (!mismatchedHostLock.violations.some((item) => {
+      return item.code === 'SOTER_LOCK_HOST_SELECTION';
+    })) {
+      failures.push('planted lock host-selection mismatch was not detected');
+    }
+    fs.writeFileSync(lockFile, originalLockText);
+
     const configFile = path.join(temp, 'soter', 'configurations', 'meeting-intake.config.json');
     const originalConfigText = fs.readFileSync(configFile, 'utf8');
     const config = JSON.parse(originalConfigText);
@@ -3279,7 +3314,7 @@ function selftest(root) {
     failures.forEach((failure) => console.error('SELFTEST FAIL: ' + failure));
     return false;
   }
-  console.log('SELFTEST PASS: schema, version, clean graph, pack settings, portable sources, Context record model, provider mapping, native host tool, binding, host, malformed JSON, unknown-contract, and malformed-contract checks fired as expected.');
+  console.log('SELFTEST PASS: schema, version, clean graph, pack settings, portable sources, Context record model, provider mapping, native host tool, binding, host, lock host selection, malformed JSON, unknown-contract, and malformed-contract checks fired as expected.');
   return true;
 }
 

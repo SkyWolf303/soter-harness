@@ -8,7 +8,7 @@
   "decision": "approved",
   "scope": {
     "changeSetId": "changeset.meeting-intake.transaction-fixture",
-    "fingerprint": "sha256:990e919cc59e3723a35e20860f87de28a4016fbcf1c1d32087588bde7fdf514d",
+    "fingerprint": "sha256:5c6701d1d22779d7430b4e52d7bab4f39a2681ed09d476013f6ceb6d6e698816",
     "effects": [
       "write"
     ]

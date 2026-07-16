@@ -249,6 +249,12 @@ the same resolved Soter configuration into each host's native guidance, skills,
 plugins, hooks, approvals, tools, and scheduling features. Host files are
 delivery projections, not independent authorities.
 
+One desired configuration may name a default host and be resolved explicitly
+for another compatible host. The host choice is captured in the lock; it does
+not fork or overlay Context, Automation, Integration, authority, or effect-policy
+configuration. Pack incompatibility fails resolution before a host projection
+is emitted.
+
 Automations depend on stable capability contracts. Integration packs implement
 those capabilities for providers such as Notion, Gmail, Slack, or Otter and own
 authentication, transport, translation, typed errors, retry behavior, and

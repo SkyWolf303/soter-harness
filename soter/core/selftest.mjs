@@ -31,7 +31,11 @@ import {
   createResolutionEvidence,
   createRunPreparationEvidence
 } from './evidence.mjs';
-import { fingerprintLock, resolveConfiguration } from './resolve.mjs';
+import {
+  fingerprintLock,
+  lockMatchesResolution,
+  resolveConfiguration
+} from './resolve.mjs';
 import { prepareRunEnvelope } from './run.mjs';
 import { assertOperationPlanDocument } from './operation-plans.mjs';
 import {
@@ -389,8 +393,36 @@ export async function selftest(root) {
   const failures = [];
   const first = resolveConfiguration({ root });
   const second = resolveConfiguration({ root });
+  const claude = resolveConfiguration({ root, host: 'claude' });
+  const claudeMatch = lockMatchesResolution({ lock: claude, root });
   if (fingerprintLock(first) !== fingerprintLock(second)) {
     failures.push('unchanged inputs did not produce a deterministic lock');
+  }
+  const portableLockFields = [
+    'packs', 'dependencies', 'capabilities', 'bindings', 'sources', 'authorities',
+    'effectPolicies', 'settings'
+  ];
+  if (first.configuration.hostSelection.source !== 'configuration'
+    || claude.configuration.hostSelection.id !== 'claude'
+    || claude.configuration.hostSelection.source !== 'override'
+    || first.host.id !== 'codex'
+    || claude.host.id !== 'claude'
+    || first.configuration.fingerprint !== claude.configuration.fingerprint
+    || portableLockFields.some((field) => {
+      return fingerprintJson(first[field]) !== fingerprintJson(claude[field]);
+    })
+    || fingerprintJson(first.projections) === fingerprintJson(claude.projections)
+    || !claudeMatch.matches) {
+    failures.push('explicit host selection changed portable configuration or could not reproduce its own lock');
+  }
+  let unknownHostRejected = false;
+  try {
+    resolveConfiguration({ root, host: 'not-a-host' });
+  } catch (error) {
+    unknownHostRejected = error.message.includes('Unknown Soter host');
+  }
+  if (!unknownHostRejected) {
+    failures.push('resolver accepted an unknown host override');
   }
   if (JSON.stringify(first).includes('secret-ref') || JSON.stringify(first).includes('OAUTH')) {
     failures.push('configuration lock contains credential-reference material');
@@ -427,6 +459,7 @@ export async function selftest(root) {
       ))
     };
     const lock = resolveConfiguration({ root: temp });
+    const claudeLock = resolveConfiguration({ root: temp, host: 'claude' });
     const lockPath = 'soter/fixtures/meeting-intake/meeting-intake.lock.json';
     writeJson(path.join(temp, lockPath), lock);
 
@@ -3344,6 +3377,17 @@ export async function selftest(root) {
       input: hostReadInput,
       at: FIXTURE_TIME
     });
+    const preparedClaudeHostRead = await prepareHostToolCall({
+      root: temp,
+      lock: claudeLock,
+      runId: 'run.meeting-intake.fixture',
+      callId: 'toolcall.selftest.claude-notion-read',
+      capability: 'crm.records.read',
+      authority: 'authority.crm.instance',
+      providerImplementation: connectedProviders.notion.id,
+      input: hostReadInput,
+      at: FIXTURE_TIME
+    });
     const rejectedMultiTargetRead = await prepareHostToolCall({
       root: temp,
       lock,
@@ -3355,37 +3399,46 @@ export async function selftest(root) {
       input: { recordTypes: ['meeting', 'task'], limit: 1 },
       at: FIXTURE_TIME
     });
+    const hostReadResponse = {
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({
+            results: [
+              {
+                __soterType: 'meeting',
+                __soterId: 'https://app.notion.com/meeting-selftest',
+                __soterFields: JSON.stringify({
+                  title: 'Selftest meeting',
+                  meetingType: 'Project Sync',
+                  recordingUri: 'https://otter.ai/u/host-read-selftest',
+                  organizationUris: JSON.stringify(['https://app.notion.com/org-selftest']),
+                  participantIds: JSON.stringify(['user.selftest'])
+                })
+              }
+            ],
+            has_more: false,
+            data_source_ids: ['selftest']
+          })
+        }
+      ],
+      isError: false,
+      providerSecretMaterial: 'response-only-marker'
+    };
     const completedHostRead = await completeHostToolCall({
       root: temp,
       lock,
       call: preparedHostRead.call,
       input: hostReadInput,
-      response: {
-        content: [
-          {
-            type: 'text',
-            text: JSON.stringify({
-              results: [
-                {
-                  __soterType: 'meeting',
-                  __soterId: 'https://app.notion.com/meeting-selftest',
-                  __soterFields: JSON.stringify({
-                    title: 'Selftest meeting',
-                    meetingType: 'Project Sync',
-                    recordingUri: 'https://otter.ai/u/host-read-selftest',
-                    organizationUris: JSON.stringify(['https://app.notion.com/org-selftest']),
-                    participantIds: JSON.stringify(['user.selftest'])
-                  })
-                }
-              ],
-              has_more: false,
-              data_source_ids: ['selftest']
-            })
-          }
-        ],
-        isError: false,
-        providerSecretMaterial: 'response-only-marker'
-      },
+      response: hostReadResponse,
+      at: FIXTURE_TIME
+    });
+    const completedClaudeHostRead = await completeHostToolCall({
+      root: temp,
+      lock: claudeLock,
+      call: preparedClaudeHostRead.call,
+      input: hostReadInput,
+      response: hostReadResponse,
       at: FIXTURE_TIME
     });
     if (preparedHostRead.call.state !== 'requested'
@@ -3401,6 +3454,16 @@ export async function selftest(root) {
         !== 'https://app.notion.com/org-selftest'
       || JSON.stringify(completedHostRead.call).includes('response-only-marker')) {
       failures.push('Notion read bridge did not preserve mapped native dispatch, typed normalization, and response minimization');
+    }
+    if (preparedClaudeHostRead.call.state !== 'requested'
+      || preparedClaudeHostRead.call.transport.tool !== 'Notion:notion-query-data-sources'
+      || preparedClaudeHostRead.call.host.id !== 'claude'
+      || preparedHostRead.call.inputFingerprint !== preparedClaudeHostRead.call.inputFingerprint
+      || fingerprintJson(completedHostRead.output)
+        !== fingerprintJson(completedClaudeHostRead.output)
+      || completedClaudeHostRead.call.outputFingerprint
+        !== completedHostRead.call.outputFingerprint) {
+      failures.push('Codex and Claude host adapters did not preserve one portable call and normalized result');
     }
     if (rejectedMultiTargetRead.call.state !== 'failed'
       || rejectedMultiTargetRead.call.transport.operation !== null
@@ -3768,6 +3831,25 @@ export async function selftest(root) {
       || !stale.report.diagnostics.some((item) => item.code === 'SOTER_LOCK_STALE')) {
       failures.push('doctor did not detect a changed locked projection');
     }
+
+    const automationPackPath = path.join(
+      temp,
+      'soter/packs/automation.meeting-intake/pack.json'
+    );
+    const incompatibleAutomationPack = readJson(automationPackPath);
+    incompatibleAutomationPack.compatibility.hosts = ['codex'];
+    writeJson(automationPackPath, incompatibleAutomationPack);
+    let incompatibleHostRejected = false;
+    try {
+      resolveConfiguration({ root: temp, host: 'claude' });
+    } catch (error) {
+      incompatibleHostRejected = error.message.includes(
+        'Selected host claude is incompatible with pack(s): automation.meeting-intake.'
+      );
+    }
+    if (!incompatibleHostRejected) {
+      failures.push('resolver accepted a host override incompatible with a selected pack');
+    }
   } finally {
     fs.rmSync(temp, { recursive: true, force: true });
   }
@@ -3777,7 +3859,7 @@ export async function selftest(root) {
     return false;
   }
   process.stdout.write(
-    'CORE SELFTEST PASS: deterministic source-bound lock, typed fixture reads/writes, grounded Automation decisions with explicit ambiguity and abstention, exact-scope approval, deduplication, expected-version conflicts, rollback, read-after-write verification, resumable fixed and bound sequential operation plans, approval-bound connected update transactions and terminal creates with exact record/content verification, reverse compensation, and read-only ambiguity reconciliation, bounded connected context finalization with exact applicable policy bodies, resumable MCP host dispatch, exact-lock single and multi-step provider probes including minimized document reads, schema and identity drift rejection, connected readiness, expiry, honest states, and stale-lock detection.\n'
+    'CORE SELFTEST PASS: deterministic source-bound and host-selectable locks, portable Codex and Claude request/result projection, typed fixture reads/writes, grounded Automation decisions with explicit ambiguity and abstention, exact-scope approval, deduplication, expected-version conflicts, rollback, read-after-write verification, resumable fixed and bound sequential operation plans, approval-bound connected update transactions and terminal creates with exact record/content verification, reverse compensation, and read-only ambiguity reconciliation, bounded connected context finalization with exact applicable policy bodies, resumable MCP host dispatch, exact-lock single and multi-step provider probes including minimized document reads, schema and identity drift rejection, connected readiness, expiry, honest states, and stale-lock detection.\n'
   );
   return true;
 }
