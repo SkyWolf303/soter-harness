@@ -105,7 +105,7 @@
           "pack": "automation.meeting-intake",
           "purpose": "applicable-policy",
           "subjects": ["meeting"],
-          "reason": "Meeting intake reads and updates the source meeting record."
+          "reason": "Meeting intake reads the source meeting record and preserves its canonical recording attribution."
         }
       ],
       "reason": "The external Meetings policy page is an explicit portable source, not an Integration-owned setting."

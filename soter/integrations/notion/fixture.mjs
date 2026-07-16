@@ -78,7 +78,8 @@ export async function invoke({ capability, input, authority, fixtures, state, at
       id: recordId(input.recordType, input.deduplicationKey),
       version: '1',
       deduplicationKey: input.deduplicationKey,
-      fields: { ...input.fields, ...(input.body !== undefined ? { body: input.body } : {}) }
+      fields: { ...input.fields },
+      ...(input.body !== undefined ? { body: input.body } : {})
     };
     fixture.data.records.push(record);
     return {

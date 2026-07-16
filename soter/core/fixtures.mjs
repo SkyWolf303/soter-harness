@@ -12,7 +12,7 @@ import {
 import { canonicalJson, readJson, writeJson } from './lib/canonical-json.mjs';
 import { resolveConfiguration } from './resolve.mjs';
 import { prepareRunEnvelope } from './run.mjs';
-import { runContainedMeetingIntakeTransaction } from './transaction.mjs';
+import { runContainedMeetingIntakeTransaction } from '../automations/meeting-intake/transaction.mjs';
 
 export const MEETING_INTAKE_FIXTURE_TIME = '2026-07-15T12:00:00.000Z';
 

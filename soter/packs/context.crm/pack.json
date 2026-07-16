@@ -24,7 +24,12 @@
     { "role": "instance", "subject": "crm.records", "required": true }
   ],
   "effects": [],
-  "artifacts": [],
+  "artifacts": [
+    {
+      "path": "soter/contexts/crm/records.model.json",
+      "role": "definition"
+    }
+  ],
   "compatibility": {
     "baseContract": "^1.0.0",
     "hosts": ["codex", "claude"]

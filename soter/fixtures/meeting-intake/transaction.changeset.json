@@ -4,78 +4,59 @@
   "id": "changeset.meeting-intake.transaction-fixture",
   "runId": "run.meeting-intake.transaction-fixture",
   "createdAt": "2026-07-15T12:00:00.000Z",
-  "configurationLockFingerprint": "sha256:49f1c65ab83d0bb3d6fa92e3969429db98c6c1a9fcd1fae5ad0b00da1351f048",
+  "configurationLockFingerprint": "sha256:df73e4b7c573b5e73c0a4475a52b49ab69f810055521aebe9dbf5316e8c433d8",
   "state": "committed",
-  "scopeFingerprint": "sha256:9de9a013ab894ce40dcd488c46b02a767056b54e5e6b5d4e5ab2833c5d1eb4bf",
+  "scopeFingerprint": "sha256:5d470d5c97bbea42fee91f15d147bc6ebbd5858f7e051338ebdb266bbb93ab7e",
   "operations": [
     {
       "id": "operation.summary.create",
       "capability": "crm.records.create",
       "authority": "authority.crm.instance",
-      "reason": "Create one transcript-grounded meeting summary with a stable deduplication key.",
+      "reason": "Create one transcript-grounded meeting summary attributed to the canonical recording.",
       "input": {
         "recordType": "meeting-summary",
-        "deduplicationKey": "meeting.fixture-001:summary",
+        "deduplicationKey": "otter://fixture/meeting.fixture-001",
+        "deduplicationFilter": {
+          "field": "link",
+          "value": "otter://fixture/meeting.fixture-001"
+        },
         "fields": {
           "title": "Acme launch review summary",
-          "meetingId": "meeting.fixture-001",
-          "projectId": "project.launch",
-          "transcriptGrounded": true,
-          "unsupportedCommitmentDisposition": "rejected"
+          "documentType": "Meeting Summary",
+          "description": "The launch direction is approved. Please send the updated deck Friday. I will revise the deck and link it to the launch project.",
+          "link": "otter://fixture/meeting.fixture-001"
         },
-        "body": "Launch direction approved. Update and send the launch deck Friday."
+        "body": "Maya Chen: The launch direction is approved. Please send the updated deck Friday.\n\nRetro: I will revise the deck and link it to the launch project."
       },
-      "inputFingerprint": "sha256:ef56cc336c01f442333e563e75816254e17f0f29bc72899603b07d4b088a85f1",
+      "inputFingerprint": "sha256:b559a7c5cd430d811b988b1f4c7ade9dfdb43185da9cded57841a6f66766a087",
       "state": "passed",
       "effectId": "effect.meeting-intake.transaction-fixture.summary.create",
-      "outputFingerprint": "sha256:f27751417c126102092045d609bd72cc5d2c7f3beeecf25829bccc819bd91956",
+      "outputFingerprint": "sha256:516c48fd733016bb8931f41fc1c8ed0f0f751ef7fd7342008c1373e72ccc9010",
       "error": null
     },
     {
       "id": "operation.task.update",
       "capability": "crm.records.update",
       "authority": "authority.crm.instance",
-      "reason": "Fold the grounded commitment into the existing overlapping task instead of duplicating it.",
+      "reason": "Classify the existing overlapping task as meeting-derived instead of creating a duplicate.",
       "input": {
         "recordType": "task",
-        "id": "task.existing-deck",
+        "id": "soter-fixture://crm/task/existing-deck",
         "expectedVersion": "1",
         "patch": {
-          "sourceMeetingId": "meeting.fixture-001",
-          "grounding": "transcript",
-          "deduplicated": true
+          "context": "Meeting"
         }
       },
-      "inputFingerprint": "sha256:f94072288382ea75e1b25a98acbc9bce6e22247013c9fa28892b2fcff7cd3a3f",
+      "inputFingerprint": "sha256:b63d7115d37ee8dca7af5e1883b4a54ef8adfc3b41fc31accda1ee8b59f8a0c1",
       "state": "passed",
       "effectId": "effect.meeting-intake.transaction-fixture.task.update",
-      "outputFingerprint": "sha256:efaf8eaf38af9c6993ca10788217ea001d14ab7952f57b0dad2b48d5b29dab70",
-      "error": null
-    },
-    {
-      "id": "operation.meeting.update",
-      "capability": "crm.records.update",
-      "authority": "authority.crm.instance",
-      "reason": "Mark the source meeting as landed using the summary deduplication key.",
-      "input": {
-        "recordType": "meeting",
-        "id": "meeting.fixture-001",
-        "expectedVersion": "1",
-        "patch": {
-          "summaryStatus": "landed",
-          "summaryDeduplicationKey": "meeting.fixture-001:summary"
-        }
-      },
-      "inputFingerprint": "sha256:0d76e3c1508fc01dd8ac7799e58578b4aaaea96a34b1f21e283fdba1abe32145",
-      "state": "passed",
-      "effectId": "effect.meeting-intake.transaction-fixture.meeting.update",
-      "outputFingerprint": "sha256:7decf2f281493dc2b309a4d81ceedeebd30313f61ac827dd7290b85803ccf673",
+      "outputFingerprint": "sha256:1830079dbd8108a6507edb60f610ddeb2fa9e7b5c386ca2cb0be92c5740cb84c",
       "error": null
     }
   ],
   "approvalId": "approval.meeting-intake.transaction-fixture",
   "transaction": {
-    "checkpointFingerprint": "sha256:c046849f00cd37a97bb02b7322ee7c9a6ef8164cf075980bfbde116f0aff8436",
+    "checkpointFingerprint": "sha256:9c522894c8029f2f3e9e26c8f700898490569ffc79f5d3ce1bc365e0bcb16eb9",
     "state": "committed",
     "rollbackState": "not-required",
     "restoredFingerprint": null
@@ -84,10 +65,10 @@
     "state": "passed",
     "effectId": "effect.meeting-intake.transaction-fixture.verify",
     "criteria": [
-      "Exactly one meeting summary exists for the deduplication key.",
-      "The existing task is grounded in the source meeting without duplication.",
-      "The meeting records the landed summary state."
+      "Exactly one meeting summary exists for the canonical recording link.",
+      "The summary body and link remain attributable to the source transcript and recording.",
+      "The existing overlapping task is classified as meeting-derived without duplication."
     ],
-    "observedFingerprint": "sha256:33edf0ad970a7ab8961c5b06bd79b5eab08edb84da6e456340e982b1dc9535c5"
+    "observedFingerprint": "sha256:7434a1497fa42a5613e1e06bf8911f1159710cdfbc4449e0c7ed5a19e3d1ca31"
   }
 }

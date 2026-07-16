@@ -36,7 +36,7 @@
   ],
   "fixtures": [],
   "limitations": [
-    "Create and update translation is limited to explicitly mapped fields. Generic capability preparation still blocks writes; an approval-bound operation batch must establish deduplication or expected-version preconditions, verification, and recovery before Core may emit either tool.",
+    "Create and update translation is limited to explicitly mapped fields and record-level capability scopes. Generic capability preparation still blocks writes; an approval-bound operation batch must establish deduplication or expected-version preconditions, verification, and recovery before Core may emit either tool.",
     "The current connector route cannot compensate a newly created page. Any operation batch containing a create remains non-executable until a declared compensation implementation or an explicitly governed irreversible-effect contract exists.",
     "Each connected record read accepts exactly one portable record type so it uses one Notion data source per host call. Cross-data-source SQL is plan-gated and is not a portable execution assumption.",
     "Connected readiness uses an explicit private sequence: authenticated identity, exact schema metadata and one bounded mapped query for each configured target, plus one exact read for every portable document source marked probe-read. A zero-row result establishes query and empty-envelope compatibility but not non-null value decoding; document bodies are discarded before minimized observations persist.",

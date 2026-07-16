@@ -11,15 +11,12 @@
       "id": "policy.meeting-intake",
       "version": "1",
       "fields": {
-        "summaryRequired": true,
-        "taskGroundingRequired": true,
-        "deduplicateBeforeCreate": true,
-        "externalCommitmentsStayInSummary": true
+        "name": "Meeting Intake"
       }
     },
     {
       "type": "organization",
-      "id": "org.acme",
+      "id": "soter-fixture://crm/organization/acme",
       "version": "1",
       "fields": {
         "name": "Acme Design",
@@ -28,42 +25,43 @@
     },
     {
       "type": "person",
-      "id": "person.maya",
+      "id": "soter-fixture://crm/person/maya",
       "version": "1",
       "fields": {
         "name": "Maya Chen",
-        "organizationId": "org.acme"
+        "organizationUris": ["soter-fixture://crm/organization/acme"]
       }
     },
     {
       "type": "project",
-      "id": "project.launch",
+      "id": "soter-fixture://crm/project/launch",
       "version": "1",
       "fields": {
         "name": "Acme launch",
-        "organizationId": "org.acme",
-        "status": "active"
+        "status": "active",
+        "organizationUris": ["soter-fixture://crm/organization/acme"],
+        "taskUris": ["soter-fixture://crm/task/existing-deck"]
       }
     },
     {
       "type": "task",
-      "id": "task.existing-deck",
+      "id": "soter-fixture://crm/task/existing-deck",
       "version": "1",
       "fields": {
         "title": "Send launch deck",
-        "projectId": "project.launch",
-        "status": "open"
+        "status": "open",
+        "projectUris": ["soter-fixture://crm/project/launch"]
       }
     },
     {
       "type": "meeting",
-      "id": "meeting.fixture-001",
+      "id": "soter-fixture://crm/meeting/fixture-001",
       "version": "1",
       "fields": {
         "title": "Acme launch review",
-        "projectId": "project.launch",
-        "organizationId": "org.acme",
-        "recordingUri": "otter://fixture/meeting.fixture-001"
+        "recordingUri": "otter://fixture/meeting.fixture-001",
+        "organizationUris": ["soter-fixture://crm/organization/acme"],
+        "participantIds": ["provider-person.maya"]
       }
     }
     ],

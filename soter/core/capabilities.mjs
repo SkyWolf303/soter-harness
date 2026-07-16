@@ -3,6 +3,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { validateJsonSchema } from '../kernel/verify.mjs';
+import { assertContextRecordInput, assertContextRecordOutput } from './context-records.mjs';
 import { fingerprintJson, readJson, resolveRepoPath } from './lib/canonical-json.mjs';
 
 const ERROR_KINDS = new Set([
@@ -153,6 +154,21 @@ export async function invokeCapability({
       output: null
     };
   }
+  try {
+    assertContextRecordInput(root, capability, input, {
+      packIds: lock.packs.filter((pack) => pack.layer === 'context').map((pack) => pack.id)
+    });
+  } catch (error) {
+    return {
+      invocation: {
+        ...base,
+        state: 'failed',
+        outputFingerprint: null,
+        error: normalizedError(error, 'validation')
+      },
+      output: null
+    };
+  }
 
   try {
     const modulePath = resolveRepoPath(root, provider.runtime.module);
@@ -183,6 +199,9 @@ export async function invokeCapability({
         output
       };
     }
+    assertContextRecordOutput(root, capability, output, {
+      packIds: lock.packs.filter((pack) => pack.layer === 'context').map((pack) => pack.id)
+    });
     return {
       invocation: {
         ...base,

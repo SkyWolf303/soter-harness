@@ -60,11 +60,13 @@ import {
 import { verifySoter } from '../kernel/verify.mjs';
 import {
   approveChangeSet,
-  changeSetScopeFingerprint,
-  executeContainedChangeSet,
+  changeSetScopeFingerprint
+} from './transaction.mjs';
+import {
+  executeContainedMeetingIntakeChangeSet,
   proposeMeetingIntakeChangeSet,
   runContainedMeetingIntakeTransaction
-} from './transaction.mjs';
+} from '../automations/meeting-intake/transaction.mjs';
 
 const FIXTURE_TIME = '2026-07-15T12:00:00.000Z';
 
@@ -871,19 +873,20 @@ export async function selftest(root) {
       runId: 'run.meeting-intake.connected-compile-selftest',
       createdAt: FIXTURE_TIME
     });
-    try {
-      compileConnectedOperationBatch({
-        root: temp,
-        lock,
-        changeSet: connectedProposal,
-        id: 'batch.meeting-intake.connected-compile-selftest',
-        createdAt: FIXTURE_TIME
-      });
-      failures.push('connected compiler accepted meeting-intake fields absent from the provider mapping');
-    } catch (error) {
-      if (!error.message.includes('are not mapped')) {
-        failures.push('connected compiler hid the exact unrepresentable meeting-intake field gap');
-      }
+    const connectedMeetingIntakeBatch = compileConnectedOperationBatch({
+      root: temp,
+      lock,
+      changeSet: connectedProposal,
+      id: 'batch.meeting-intake.connected-compile-selftest',
+      createdAt: FIXTURE_TIME
+    });
+    if (connectedMeetingIntakeBatch.state !== 'blocked'
+      || connectedMeetingIntakeBatch.executable
+      || !connectedMeetingIntakeBatch.blockers.some((item) => {
+        return item.includes('operation.summary.create')
+          && item.includes('no automatic compensation');
+      })) {
+      failures.push('connected compiler did not represent the portable meeting-intake batch and isolate its create compensation blocker');
     }
     const updateProposal = structuredClone(connectedProposal);
     const updateRecordId = 'https://www.notion.so/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
@@ -1907,7 +1910,7 @@ export async function selftest(root) {
             __soterFields: JSON.stringify({
               title: 'Plan selftest meeting',
               meetingType: 'Project Sync',
-              recordingUri: null,
+              recordingUri: 'https://otter.ai/u/plan-selftest-meeting',
               organizationUris: '[]',
               participantIds: '[]'
             })
@@ -2779,7 +2782,7 @@ export async function selftest(root) {
       actor: 'fixture.user',
       reason: 'Approve the planted-conflict batch to prove contained rollback behavior.'
     });
-    const rolledBack = await executeContainedChangeSet({
+    const rolledBack = await executeContainedMeetingIntakeChangeSet({
       root: temp,
       lock,
       changeSet: conflicting,
@@ -2844,7 +2847,7 @@ export async function selftest(root) {
                   __soterFields: JSON.stringify({
                     title: 'Selftest meeting',
                     meetingType: 'Project Sync',
-                    recordingUri: null,
+                    recordingUri: 'https://otter.ai/u/host-read-selftest',
                     organizationUris: JSON.stringify(['https://app.notion.com/org-selftest']),
                     participantIds: JSON.stringify(['user.selftest'])
                   })
@@ -3161,8 +3164,18 @@ export async function selftest(root) {
     const replayState = createFixtureRuntimeState(temp);
     const createInput = {
       recordType: 'meeting-summary',
-      deduplicationKey: 'selftest:deduplication',
-      fields: { title: 'Selftest summary' }
+      deduplicationKey: 'https://otter.ai/u/selftest-deduplication',
+      deduplicationFilter: {
+        field: 'link',
+        value: 'https://otter.ai/u/selftest-deduplication'
+      },
+      fields: {
+        title: 'Selftest summary',
+        documentType: 'Meeting Summary',
+        description: 'A grounded summary used to prove fixture replay safety.',
+        link: 'https://otter.ai/u/selftest-deduplication'
+      },
+      body: 'A grounded summary used to prove fixture replay safety.'
     };
     const firstCreate = await invokeCapability({
       root: temp,
@@ -3192,6 +3205,30 @@ export async function selftest(root) {
       || replayCreate.output?.created !== false
       || firstCreate.output?.record.id !== replayCreate.output?.record.id) {
       failures.push('fixture create did not deduplicate an identical replay');
+    }
+    const beforeInvalidContextWrite = fingerprintJson(replayState);
+    const invalidContextCreateInput = structuredClone(createInput);
+    invalidContextCreateInput.deduplicationKey = 'https://otter.ai/u/invalid-context-field';
+    invalidContextCreateInput.deduplicationFilter.value = invalidContextCreateInput.deduplicationKey;
+    invalidContextCreateInput.fields.link = invalidContextCreateInput.deduplicationKey;
+    invalidContextCreateInput.fields.transcriptGrounded = true;
+    const invalidContextCreate = await invokeCapability({
+      root: temp,
+      lock,
+      capability: 'crm.records.create',
+      authority: 'authority.crm.instance',
+      containment: 'fixture',
+      input: invalidContextCreateInput,
+      effectId: 'effect.selftest.create-invalid-context-field',
+      at: FIXTURE_TIME,
+      approvedEffects: ['write'],
+      runtimeState: replayState
+    });
+    if (invalidContextCreate.invocation.state !== 'failed'
+      || invalidContextCreate.invocation.error?.kind !== 'validation'
+      || !invalidContextCreate.invocation.error?.message.includes('Context record model')
+      || fingerprintJson(replayState) !== beforeInvalidContextWrite) {
+      failures.push('Core did not reject a provider-neutral write field absent from Context before fixture dispatch');
     }
 
     fs.appendFileSync(path.join(temp, 'AGENTS.md'), '\nselftest projection change\n');

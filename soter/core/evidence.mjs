@@ -279,14 +279,14 @@ export function createContainedTransactionEvidence({
       'No write dispatches before approval.',
       'Create is deduplicated and updates enforce expected versions.',
       'All writes share one checkpoint and expose rollback state.',
-      'A read-after-write confirms the summary, grounded task, and landed meeting state.'
+      'A read-after-write confirms the source-linked summary and folded meeting-derived task.'
     ],
     result: changeSet.state === 'committed' && changeSet.verification.state === 'passed'
       ? 'passed' : 'failed',
     outcomes: [
       { id: 'meeting-summary.created-once', state: changeSet.verification.state },
       { id: 'grounded-task.folded', state: changeSet.verification.state },
-      { id: 'meeting-record.landed', state: changeSet.verification.state },
+      { id: 'source-meeting.attributed', state: changeSet.verification.state },
       { id: 'external-provider-effect', state: 'not-applicable' }
     ],
     artifacts: [

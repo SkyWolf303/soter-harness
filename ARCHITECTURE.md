@@ -500,7 +500,11 @@ claim-scoped evidence, an offline doctor, contract-enforced aggregation of
 short-lived connected provider probes, explicit sequential provider-probe plans,
 typed expiring summaries for exact failed provider-probe attempts,
 and private durable checkpoints for host-dispatched calls and their run
-envelopes. Core now also has versioned
+envelopes. `context.crm` now owns a machine-readable portable record model rather
+than leaving domain shapes implicit in the Notion mapping or fixture data.
+Kernel checks model ownership, Context-valid Automation inputs, and the subset
+and value shapes implemented by each typed Integration mapping; Core applies the
+same input and normalized-output validation at runtime. Core now also has versioned
 sequential operation-plan contracts: v1 retains fixed inputs, while v2 binds
 typed string-list references from earlier normalized outputs into later inputs.
 The private checkpoint emits one exact policy-bound call at a time, fingerprints
@@ -553,13 +557,23 @@ bridge exposes the tool.
 Connected readiness still fails because no current private probes are checked
 in and Notion write permissions or response conformance are unproven. Notion
 create and update translation is now declared only for explicitly mapped
-fields. Core can compile a proposed change set into an exact connected
+fields and record-level capabilities through the exact Context model. The
+current Notion mapping reads all seven CRM types, updates only tasks, and creates
+only meeting summaries. The contained meeting-intake proposal
+now uses those portable fields: its summary is deduplicated and attributed by
+the canonical recording link, while the existing overlapping task receives a
+bounded Context classification. Proposal construction and acceptance checks now
+live with meeting-intake Automation; Core retains only generic approval,
+transaction, rollback, and verifier invocation mechanics. The contained
+proposal deterministically quotes its bounded fixture transcript and requires
+exactly one textually overlapping task candidate. It is not yet the general
+host-judgment contract needed for ambiguous or multiple candidate tasks. Core
+can compile that proposal into an exact connected
 operation batch with deduplication or expected-version preconditions,
 verification expectations, recovery modes, and a separate expiring approval
-fingerprint. It rejects the current contained meeting-intake change set because
-several write fields are absent from the connected mapping, and it blocks even
-a mapped create because the current connector route cannot compensate a newly
-created page. The compiler and preview CLI execute no provider calls; durable
+fingerprint. The resulting batch is representable but remains blocked because
+the current connector route cannot compensate a newly created page. The
+compiler and preview CLI execute no provider calls; durable
 mapped updates now use a private `connected-transaction-checkpoint/v1`. Core
 validates the exact approval before the first write, captures compared prior
 mapped fields, verifies each applied patch, compensates verified updates in

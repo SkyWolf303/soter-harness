@@ -34,8 +34,7 @@
     "outcomes": [
       "meeting-summary.created",
       "grounded-tasks.created-or-folded",
-      "meeting-record.linked",
-      "project-updates.applied",
+      "source-meeting.attributed",
       "landed-records.verified"
     ],
     "invariants": [

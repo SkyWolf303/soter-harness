@@ -400,6 +400,7 @@ function checkPackGraph(root, documents, out, census) {
   const doctors = new Map();
   const providers = new Map();
   const packSettings = new Map();
+  const contextModels = new Map();
   const providerMappings = new Map();
   const snapshots = new Map();
   const providerFixtures = new Map();
@@ -490,8 +491,12 @@ function checkPackGraph(root, documents, out, census) {
     } else if (entry.contractId === 'soter://contracts/pack-settings/v1') {
       census.packSettings += 1;
       addUniqueRuntimeArtifact(packSettings, entry, 'pack-settings');
+    } else if (entry.contractId === 'soter://contracts/context-record-model/v1') {
+      census.contextModels += 1;
+      addUniqueRuntimeArtifact(contextModels, entry, 'context-model');
     } else if (entry.contractId === 'soter://contracts/provider-mapping/v1'
-      || entry.contractId === 'soter://contracts/provider-mapping/v2') {
+      || entry.contractId === 'soter://contracts/provider-mapping/v2'
+      || entry.contractId === 'soter://contracts/provider-mapping/v3') {
       census.providerMappings += 1;
       addUniqueRuntimeArtifact(providerMappings, entry, 'provider-mapping');
     } else if (entry.contractId === 'soter://contracts/context-snapshot/v1') {
@@ -847,6 +852,7 @@ function checkPackGraph(root, documents, out, census) {
   }
 
   checkPackSettings(root, packSettings, packs, out);
+  checkContextRecordModels(root, contextModels, packs, out);
   for (const config of configs) {
     checkConfiguration(root, config, packs, capabilities, hosts, packSettings, out);
   }
@@ -862,6 +868,7 @@ function checkPackGraph(root, documents, out, census) {
     providers,
     providerFixtures,
     providerMappings,
+    contextModels,
     packSettings,
     packs,
     capabilities,
@@ -874,6 +881,7 @@ function checkPackGraph(root, documents, out, census) {
     evidence,
     doctors,
     snapshots,
+    contextModels,
     providers,
     providerProbes,
     providerProbeCalls,
@@ -897,6 +905,7 @@ function checkPackGraph(root, documents, out, census) {
     doctors,
     providers,
     packSettings,
+    contextModels,
     providerMappings,
     snapshots,
     providerFixtures,
@@ -937,11 +946,254 @@ function checkPackSettings(root, packSettings, packs, out) {
   }
 }
 
+function contextModelDocuments(contextModels) {
+  if (contextModels instanceof Map) {
+    return [...contextModels.values()].map((entry) => entry.doc || entry);
+  }
+  return (contextModels || []).map((entry) => entry.doc || entry);
+}
+
+function contextRecordMatch(contextModels, recordType, modelId = null) {
+  const matches = contextModelDocuments(contextModels).flatMap((model) => {
+    if (modelId && model.id !== modelId) return [];
+    return model.recordTypes
+      .filter((record) => record.id === recordType)
+      .map((record) => ({ model, record }));
+  });
+  return matches;
+}
+
+function contextValueMatches(field, value) {
+  if (value === null) return field.nullable;
+  let matches = false;
+  if (field.type === 'string') matches = typeof value === 'string' && value.trim().length > 0;
+  if (field.type === 'boolean') matches = typeof value === 'boolean';
+  if (field.type === 'number') matches = typeof value === 'number' && Number.isFinite(value);
+  if (field.type === 'string-list') {
+    matches = Array.isArray(value)
+      && value.every((item) => typeof item === 'string' && item.trim().length > 0)
+      && new Set(value).size === value.length;
+  }
+  if (!matches) return false;
+  const strings = Array.isArray(value) ? value : [value];
+  const uriRequired = field.format === 'resource-uri'
+    || field.reference?.identity === 'resource-uri';
+  if (uriRequired && strings.some((item) => {
+    return !/^[a-z][a-z0-9+.-]*:\/\/[^\s]+$/i.test(item);
+  })) return false;
+  if (field.format === 'email' && strings.some((item) => {
+    return !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(item);
+  })) return false;
+  return true;
+}
+
+function contextRecordFieldErrors(record, fields, mode, at) {
+  const errors = [];
+  if (!fields || typeof fields !== 'object' || Array.isArray(fields)) {
+    return [{ path: at, message: 'must be an object of portable context fields' }];
+  }
+  const definitions = new Map(record.fields.map((field) => [field.id, field]));
+  for (const [id, value] of Object.entries(fields)) {
+    const field = definitions.get(id);
+    if (!field) {
+      errors.push({ path: at + '.' + id, message: 'is not declared by the Context record model' });
+      continue;
+    }
+    if (mode === 'update' && !field.mutable) {
+      errors.push({ path: at + '.' + id, message: 'is immutable in the Context record model' });
+    }
+    if (!contextValueMatches(field, value)) {
+      const format = field.format || field.reference?.identity || null;
+      errors.push({
+        path: at + '.' + id,
+        message: 'must match portable type ' + field.type
+          + (format ? ' with ' + format + ' identity' : '')
+          + (field.nullable ? ' or null' : '')
+      });
+    }
+  }
+  if (mode === 'create') {
+    for (const field of record.fields.filter((item) => item.requiredOnCreate)) {
+      if (!Object.hasOwn(fields, field.id) || fields[field.id] === null) {
+        errors.push({ path: at + '.' + field.id, message: 'is required on create by Context' });
+      }
+    }
+  }
+  return errors;
+}
+
+export function contextRecordInputErrors(contextModels, capability, input, options = {}) {
+  if (!capability.startsWith('crm.records.')) return [];
+  const errors = [];
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    return [{ path: '$', message: 'must be a portable CRM input object' }];
+  }
+  if (capability === 'crm.records.read') {
+    for (const [index, recordType] of (input.recordTypes || []).entries()) {
+      const matches = contextRecordMatch(contextModels, recordType, options.modelId || null);
+      if (matches.length !== 1) {
+        errors.push({
+          path: '$.recordTypes[' + index + ']',
+          message: 'must resolve to exactly one selected Context record definition; found ' + matches.length
+        });
+      }
+    }
+    return errors;
+  }
+  const matches = contextRecordMatch(contextModels, input.recordType, options.modelId || null);
+  if (matches.length !== 1) {
+    return [{
+      path: '$.recordType',
+      message: 'must resolve to exactly one selected Context record definition; found ' + matches.length
+    }];
+  }
+  const record = matches[0].record;
+  const mode = capability === 'crm.records.create' ? 'create' : 'update';
+  const fieldKey = mode === 'create' ? 'fields' : 'patch';
+  errors.push(...contextRecordFieldErrors(record, input[fieldKey], mode, '$.' + fieldKey));
+  if (mode === 'create') {
+    const hasBody = input.body !== undefined && input.body !== null;
+    if (record.content.kind === 'none' && hasBody) {
+      errors.push({ path: '$.body', message: 'is not supported by the Context record definition' });
+    }
+    if (record.content.requiredOnCreate && !hasBody) {
+      errors.push({ path: '$.body', message: 'is required on create by Context' });
+    }
+    if (hasBody && (record.content.kind !== 'markdown'
+      || typeof input.body !== 'string' || !input.body.trim())) {
+      errors.push({ path: '$.body', message: 'must be non-empty ' + record.content.kind + ' content' });
+    }
+    if (input.deduplicationFilter !== undefined) {
+      const filter = input.deduplicationFilter;
+      if (!filter || typeof filter !== 'object' || Array.isArray(filter)
+        || typeof filter.field !== 'string'
+        || !record.deduplicationFields.includes(filter.field)) {
+        errors.push({
+          path: '$.deduplicationFilter.field',
+          message: 'must name a Context-declared deduplication field for ' + record.id
+        });
+      }
+    }
+  }
+  return errors;
+}
+
+export function contextRecordOutputErrors(contextModels, capability, output, options = {}) {
+  if (!capability.startsWith('crm.records.') || !output || typeof output !== 'object') return [];
+  const records = capability === 'crm.records.read'
+    ? output.records
+    : (output.record ? [output.record] : []);
+  const errors = [];
+  for (const [index, value] of (records || []).entries()) {
+    const at = capability === 'crm.records.read' ? '$.records[' + index + ']' : '$.record';
+    const matches = contextRecordMatch(contextModels, value?.type, options.modelId || null);
+    if (matches.length !== 1) {
+      errors.push({
+        path: at + '.type',
+        message: 'must resolve to exactly one selected Context record definition; found ' + matches.length
+      });
+      continue;
+    }
+    const record = matches[0].record;
+    errors.push(...contextRecordFieldErrors(record, value.fields, 'output', at + '.fields'));
+    if (value.body !== undefined && value.body !== null
+      && (record.content.kind !== 'markdown'
+        || typeof value.body !== 'string' || !value.body.trim())) {
+      errors.push({ path: at + '.body', message: 'does not match Context content kind ' + record.content.kind });
+    }
+  }
+  return errors;
+}
+
+function checkContextRecordModels(root, contextModels, packs, out) {
+  for (const entry of contextModels.values()) {
+    const pack = packs.get(entry.doc.pack);
+    const relative = path.relative(root, entry.file).split(path.sep).join('/');
+    if (!pack || pack.doc.layer !== 'context'
+      || pack.doc.version !== entry.doc.version
+      || !pack.doc.artifacts.some((artifact) => artifact.path === relative)) {
+      out.push(violation(
+        entry.file,
+        'SOTER_CONTEXT_MODEL_OWNER',
+        'context record model is not owned by its exact Context pack version: ' + entry.doc.pack,
+        'portable domain meaning must have one explicit Context owner',
+        'align the model pack, version, artifact path, and Context manifest'
+      ));
+    }
+    const recordIds = new Set();
+    for (const record of entry.doc.recordTypes) {
+      if (recordIds.has(record.id)) {
+        out.push(violation(
+          entry.file,
+          'SOTER_CONTEXT_MODEL_RECORD',
+          'context model declares duplicate record type ' + record.id,
+          'portable record identity must resolve to one domain definition',
+          'merge or rename the duplicate record definition'
+        ));
+      }
+      recordIds.add(record.id);
+      const fields = new Map();
+      for (const field of record.fields) {
+        if (fields.has(field.id)) {
+          out.push(violation(
+            entry.file,
+            'SOTER_CONTEXT_MODEL_FIELD',
+            record.id + ' declares duplicate field ' + field.id,
+            'one portable field name must have one meaning and value type',
+            'merge or rename the duplicate field definition'
+          ));
+        }
+        fields.set(field.id, field);
+        if (field.requiredOnCreate && field.nullable) {
+          out.push(violation(
+            entry.file,
+            'SOTER_CONTEXT_MODEL_FIELD',
+            record.id + '.' + field.id + ' is both required and nullable on create',
+            'required create semantics must not permit an absent value by another spelling',
+            'make the field non-nullable or stop requiring it on create'
+          ));
+        }
+        if (field.reference && !['string', 'string-list'].includes(field.type)) {
+          out.push(violation(
+            entry.file,
+            'SOTER_CONTEXT_MODEL_REFERENCE',
+            record.id + '.' + field.id + ' has a non-string reference representation',
+            'portable relationship identities must have a stable serializable representation',
+            'use string or string-list for the reference field'
+          ));
+        }
+      }
+      if (record.content.kind === 'none' && record.content.requiredOnCreate) {
+        out.push(violation(
+          entry.file,
+          'SOTER_CONTEXT_MODEL_CONTENT',
+          record.id + ' requires content while declaring content kind none',
+          'create requirements must be satisfiable by the declared portable shape',
+          'declare a content kind or stop requiring content'
+        ));
+      }
+      for (const fieldId of record.deduplicationFields) {
+        const field = fields.get(fieldId);
+        if (!field || field.type !== 'string') {
+          out.push(violation(
+            entry.file,
+            'SOTER_CONTEXT_MODEL_DEDUPLICATION',
+            record.id + ' deduplication field is absent or not a string: ' + fieldId,
+            'portable create preconditions require a stable comparable string value',
+            'declare the string field or remove it from deduplicationFields'
+          ));
+        }
+      }
+    }
+  }
+}
+
 function checkCapabilityProviders(
   root,
   providers,
   providerFixtures,
   providerMappings,
+  contextModels,
   packSettings,
   packs,
   capabilities,
@@ -1147,6 +1399,10 @@ function checkCapabilityProviders(
   for (const entry of providerMappings.values()) {
     const provider = providers.get(entry.doc.provider);
     const settings = packSettings.get(entry.doc.settingsDefinition);
+    const contextModel = entry.doc.contextModel
+      ? contextModels.get(entry.doc.contextModel)
+      : null;
+    const integrationPack = packs.get(entry.doc.pack);
     const relative = path.relative(root, entry.file).split(path.sep).join('/');
     if (!provider
       || provider.doc.pack !== entry.doc.pack
@@ -1169,6 +1425,22 @@ function checkCapabilityProviders(
         'declare the pack-owned settings definition or correct the reference'
       ));
     }
+    if (entry.doc.$contract === 'soter://contracts/provider-mapping/v3') {
+      const dependsOnContext = integrationPack?.doc.dependencies.some((dependency) => {
+        return dependency.pack === contextModel?.doc.pack && !dependency.optional;
+      });
+      if (!contextModel || !dependsOnContext) {
+        out.push(violation(
+          entry.file,
+          'SOTER_PROVIDER_MAPPING_CONTEXT',
+          !contextModel
+            ? 'provider mapping context model does not resolve: ' + entry.doc.contextModel
+            : 'integration pack does not require Context owner ' + contextModel.doc.pack,
+          'provider translation must bind to one installed source of portable domain meaning',
+          'reference an owned Context model and add its required pack dependency'
+        ));
+      }
+    }
     const providerCapabilities = new Set(provider?.doc.capabilities.map((item) => item.id) || []);
     for (const capability of entry.doc.capabilities) {
       if (!providerCapabilities.has(capability)) {
@@ -1182,7 +1454,9 @@ function checkCapabilityProviders(
       }
     }
     const recordTypes = new Set();
+    const recordCapabilities = new Set();
     for (const record of entry.doc.recordTypes) {
+      const contextRecord = contextModel?.doc.recordTypes.find((item) => item.id === record.id);
       if (recordTypes.has(record.id)) {
         out.push(violation(
           entry.file,
@@ -1193,6 +1467,27 @@ function checkCapabilityProviders(
         ));
       }
       recordTypes.add(record.id);
+      for (const capability of record.capabilities || []) {
+        recordCapabilities.add(capability);
+        if (!entry.doc.capabilities.includes(capability)) {
+          out.push(violation(
+            entry.file,
+            'SOTER_PROVIDER_MAPPING_CAPABILITY',
+            record.id + ' expands mapping capability scope: ' + capability,
+            'a record mapping cannot exceed the capability boundary of its mapping document',
+            'add the implemented top-level capability or remove it from the record type'
+          ));
+        }
+      }
+      if (contextModel && !contextRecord) {
+        out.push(violation(
+          entry.file,
+          'SOTER_PROVIDER_MAPPING_CONTEXT',
+          'mapping invents record type outside ' + contextModel.doc.id + ': ' + record.id,
+          'Integration translates Context meaning; it cannot define new portable domain records',
+          'add the record to its Context owner or remove it from the provider mapping'
+        ));
+      }
       const portableFields = record.fields.map((field) => field.portable);
       const providerFields = record.fields.map((field) => field.provider);
       if (new Set(portableFields).size !== portableFields.length) {
@@ -1213,6 +1508,85 @@ function checkCapabilityProviders(
           'remove the duplicate provider field mapping or define an explicit composite translation'
         ));
       }
+      if (contextRecord) {
+        const contextFields = new Map(contextRecord.fields.map((field) => [field.id, field]));
+        const mappedContextFields = new Set(record.fields.map((field) => field.portable));
+        for (const field of record.fields) {
+          const contextField = contextFields.get(field.portable);
+          if (!contextField) {
+            out.push(violation(
+              entry.file,
+              'SOTER_PROVIDER_MAPPING_CONTEXT',
+              'mapping invents field outside Context: ' + record.id + '.' + field.portable,
+              'provider properties may translate only canonical portable fields',
+              'add the field to its Context owner or remove it from the mapping'
+            ));
+          } else if ((contextField.type === 'string-list') !== (field.decode === 'json')) {
+            out.push(violation(
+              entry.file,
+              'SOTER_PROVIDER_MAPPING_TYPE',
+              'mapping decode disagrees with Context type for ' + record.id + '.' + field.portable,
+              'normalization must preserve the canonical portable value shape',
+              contextField.type === 'string-list'
+                ? 'decode the provider value as a JSON string list'
+                : 'decode the provider value as a scalar'
+            ));
+          } else if (record.capabilities?.includes('crm.records.update')
+            && !contextField.mutable) {
+            out.push(violation(
+              entry.file,
+              'SOTER_PROVIDER_MAPPING_MUTABILITY',
+              record.id + ' exposes immutable Context field for generic updates: ' + field.portable,
+              'record-level update scope currently permits every mapped field to reach the translator',
+              'remove update scope or add field-level write scoping before mapping the immutable field'
+            ));
+          }
+        }
+        if (record.capabilities?.includes('crm.records.create')) {
+          for (const required of contextRecord.fields.filter((field) => field.requiredOnCreate)) {
+            if (!mappedContextFields.has(required.id)) {
+              out.push(violation(
+                entry.file,
+                'SOTER_PROVIDER_MAPPING_CREATE',
+                record.id + ' cannot represent required create field ' + required.id,
+                'a claimed record create route must accept every Context-required create value',
+                'map the required field or remove create capability from this record type'
+              ));
+            }
+          }
+          if (contextRecord.content.requiredOnCreate && !record.content) {
+            out.push(violation(
+              entry.file,
+              'SOTER_PROVIDER_MAPPING_CREATE',
+              record.id + ' cannot represent required Context body content',
+              'a claimed record create route must preserve all required Context content',
+              'declare the content mapping or remove create capability from this record type'
+            ));
+          }
+        }
+        if (record.content && record.content.providerType !== contextRecord.content.kind) {
+          out.push(violation(
+            entry.file,
+            'SOTER_PROVIDER_MAPPING_CONTENT',
+            'mapped content kind disagrees with Context for ' + record.id,
+            'provider body transport must preserve the canonical content representation',
+            'align the provider content mapping with ' + contextRecord.content.kind
+          ));
+        }
+      }
+    }
+    const unusedTopLevelCapabilities = entry.doc.capabilities.filter((capability) => {
+      return capability.startsWith('crm.records.') && !recordCapabilities.has(capability);
+    });
+    if (unusedTopLevelCapabilities.length) {
+      out.push(violation(
+        entry.file,
+        'SOTER_PROVIDER_MAPPING_CAPABILITY',
+        'mapping capability has no record-level implementation: '
+          + unusedTopLevelCapabilities.join(', '),
+        'top-level capability scope must be the exact union of its record translations',
+        'add an honest record-level implementation or remove the top-level capability'
+      ));
     }
   }
   for (const fixture of providerFixtures.values()) {
@@ -1227,6 +1601,31 @@ function checkCapabilityProviders(
         'declare the fixture path on its provider implementation'
       ));
     }
+    if (Array.isArray(fixture.doc.data?.records)) {
+      const providerPack = packs.get(provider?.doc.pack);
+      const requiredContextPacks = new Set(
+        (providerPack?.doc.dependencies || [])
+          .filter((dependency) => !dependency.optional && dependency.pack.startsWith('context.'))
+          .map((dependency) => dependency.pack)
+      );
+      const models = new Map([...contextModels].filter(([, model]) => {
+        return requiredContextPacks.has(model.doc.pack);
+      }));
+      const failures = contextRecordOutputErrors(
+        models,
+        'crm.records.read',
+        { records: fixture.doc.data.records }
+      );
+      for (const failure of failures.slice(0, 20)) {
+        out.push(violation(
+          fixture.file,
+          'SOTER_PROVIDER_FIXTURE_CONTEXT',
+          failure.path + ' ' + failure.message,
+          'normalized fixture records must prove the same portable Context boundary as connected providers',
+          'align the fixture record with the required Context model'
+        ));
+      }
+    }
   }
 }
 
@@ -1236,6 +1635,7 @@ function checkRuntimeArtifacts(
   evidence,
   doctors,
   snapshots,
+  contextModels,
   providers,
   providerProbes,
   providerProbeCalls,
@@ -1698,7 +2098,19 @@ function checkRuntimeArtifacts(
   }
 
   for (const entry of changeSets.values()) {
-    requireLock(entry, entry.doc.configurationLockFingerprint, 'change set');
+    const changeSetLock = requireLock(
+      entry,
+      entry.doc.configurationLockFingerprint,
+      'change set'
+    );
+    const selectedContextPackIds = new Set(
+      (changeSetLock?.doc.packs || [])
+        .filter((pack) => pack.layer === 'context')
+        .map((pack) => pack.id)
+    );
+    const selectedContextModels = new Map([...contextModels].filter(([, model]) => {
+      return selectedContextPackIds.has(model.doc.pack);
+    }));
     const run = runs.get(entry.doc.runId);
     if (!run) {
       out.push(violation(
@@ -1711,6 +2123,29 @@ function checkRuntimeArtifacts(
     } else {
       const effectIds = new Set(run.doc.effects.map((effect) => effect.id));
       for (const operation of entry.doc.operations) {
+        if (operation.inputFingerprint !== fingerprintJson(operation.input)) {
+          out.push(violation(
+            entry.file,
+            'SOTER_TRANSACTION_INPUT',
+            'change-set operation input fingerprint is stale: ' + operation.id,
+            'an approval scope cannot bind an operation whose portable input changed',
+            'regenerate the change set and obtain a new approval'
+          ));
+        }
+        const contextFailures = contextRecordInputErrors(
+          selectedContextModels,
+          operation.capability,
+          operation.input
+        );
+        for (const failure of contextFailures.slice(0, 10)) {
+          out.push(violation(
+            entry.file,
+            'SOTER_TRANSACTION_CONTEXT_MODEL',
+            operation.id + ' ' + failure.path + ' ' + failure.message,
+            'Automation writes must use portable record meaning owned and typed by Context',
+            'align the operation with the selected Context record model'
+          ));
+        }
         if (operation.effectId && !effectIds.has(operation.effectId)) {
           out.push(violation(
             entry.file,
@@ -2344,6 +2779,7 @@ export function verifySoter(root = defaultRoot, options = {}) {
     doctorResults: 0,
     providers: 0,
     packSettings: 0,
+    contextModels: 0,
     providerMappings: 0,
     contextSnapshots: 0,
     providerFixtures: 0,
@@ -2504,6 +2940,7 @@ function report(resultValue, json) {
       + c.evidence + ' evidence records, ' + c.doctorResults + ' doctor results, '
       + c.providers + ' providers, ' + c.contextSnapshots + ' context snapshots, '
       + c.packSettings + ' pack settings definitions, '
+      + c.contextModels + ' context record models, '
       + c.providerMappings + ' provider mappings, '
       + c.providerFixtures + ' provider fixtures, ' + c.providerProbes + ' provider probes, '
       + c.providerProbeCalls + ' provider probe calls, '
@@ -2695,6 +3132,24 @@ function selftest(root) {
     }
     fs.writeFileSync(mappingFile, originalMappingText);
 
+    const inventedContextFieldMapping = JSON.parse(originalMappingText);
+    inventedContextFieldMapping.recordTypes
+      .find((record) => record.id === 'meeting-summary')
+      .fields.push({
+        portable: 'inventedProviderMeaning',
+        provider: 'Invented',
+        providerType: 'text',
+        decode: 'scalar'
+      });
+    fs.writeFileSync(mappingFile, JSON.stringify(inventedContextFieldMapping, null, 2) + '\n');
+    const badContextMapping = verifySoter(temp);
+    if (!badContextMapping.violations.some((item) => {
+      return item.code === 'SOTER_PROVIDER_MAPPING_CONTEXT';
+    })) {
+      failures.push('planted Integration field outside the Context model was not detected');
+    }
+    fs.writeFileSync(mappingFile, originalMappingText);
+
     const restoredConfig = JSON.parse(originalConfigText);
     const badBindingConfig = structuredClone(restoredConfig);
     const configBinding = badBindingConfig.bindings[0];
@@ -2743,7 +3198,7 @@ function selftest(root) {
     failures.forEach((failure) => console.error('SELFTEST FAIL: ' + failure));
     return false;
   }
-  console.log('SELFTEST PASS: schema, version, clean graph, pack settings, portable sources, provider mapping, native host tool, binding, host, malformed JSON, unknown-contract, and malformed-contract checks fired as expected.');
+  console.log('SELFTEST PASS: schema, version, clean graph, pack settings, portable sources, Context record model, provider mapping, native host tool, binding, host, malformed JSON, unknown-contract, and malformed-contract checks fired as expected.');
   return true;
 }
 

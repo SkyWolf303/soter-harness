@@ -175,6 +175,13 @@ The main remaining gaps are structural and behavioral:
   binds every snapshot entry to an exact plan output and passed effect before
   persisting it and pausing the run. Participant profiles remain deliberately
   unloaded; provider People IDs are not assumed to be CRM contact page URIs.
+  `context.crm` now owns the portable record types, fields, relations, content,
+  mutability, and deduplication semantics in one machine-readable model. Kernel
+  rejects Automation writes or Integration mappings that invent domain fields,
+  and Core enforces the same model on fixture and connected inputs and normalized
+  outputs. Provider mappings scope capabilities per record type, so the current
+  Notion mapping reads all CRM types but updates only tasks and creates only
+  meeting summaries.
   Notion readiness now uses a separate 18-step private plan that checks identity,
   exact schema and one bounded mapped query for every configured target, plus
   one exact read for each policy source marked `probe-read`. Policy bodies are
@@ -183,8 +190,14 @@ The main remaining gaps are structural and behavioral:
   Connected Notion create and update translation is declared for mapped fields,
   but generic calls still block writes. A separate compiler now binds mapped
   operations, preconditions, verification, recovery, and an expiring v2
-  approval. The current meeting-intake change set is rejected for unmapped
-  fields, and mapped creates remain blocked without automatic compensation.
+  approval. The current meeting-intake change set now uses Context-owned mapped
+  fields and compiles into a representable batch; the batch remains blocked
+  because its create has no automatic compensation route.
+  Meeting-intake Automation—not Core—now owns construction and acceptance of
+  that outcome. Its contained proposer deterministically quotes the bounded
+  fixture transcript and accepts exactly one textually overlapping task; a
+  durable host-judgment contract for ambiguous or multiple candidates remains
+  intentionally unimplemented.
   Executable mapped updates now run through a private durable checkpoint with
   compare-before-write, exact approval validation, read-after-write
   verification, reverse compensation of verified prior updates, restart-safe

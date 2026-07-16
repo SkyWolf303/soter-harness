@@ -39,7 +39,7 @@ import {
   prepareDurableOperationPlanExecution,
   prepareDurableProviderProbeExecution
 } from './service.mjs';
-import { runContainedMeetingIntakeTransaction } from './transaction.mjs';
+import { runContainedMeetingIntakeTransaction } from '../automations/meeting-intake/transaction.mjs';
 import {
   approveConnectedOperationBatch,
   compileConnectedOperationBatch

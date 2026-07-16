@@ -6,6 +6,7 @@ import { loadProviderMappings } from './host-runtime.mjs';
 import { fingerprintJson, readJson } from './lib/canonical-json.mjs';
 import { fingerprintLock } from './resolve.mjs';
 import { changeSetScopeFingerprint } from './transaction.mjs';
+import { assertContextRecordInput } from './context-records.mjs';
 
 function validate(root, value, schemaPath, label) {
   const failures = validateJsonSchema(value, readJson(path.join(root, schemaPath)));
@@ -38,13 +39,23 @@ function recordMapping(root, provider, operation) {
   const mappings = loadProviderMappings(root, provider);
   const candidates = mappings.filter((mapping) => {
     return mapping.capabilities?.includes(operation.capability)
-      && mapping.recordTypes?.some((record) => record.id === operation.input.recordType);
+      && mapping.recordTypes?.some((record) => {
+        return record.id === operation.input.recordType
+          && record.capabilities?.includes(operation.capability);
+      });
   });
   if (candidates.length !== 1) {
     throw new Error(operation.id + ' has no unique connected mapping for '
       + operation.input.recordType + '/' + operation.capability + '.');
   }
-  return candidates[0].recordTypes.find((record) => record.id === operation.input.recordType);
+  const mapping = candidates[0];
+  return {
+    mapping,
+    definition: mapping.recordTypes.find((record) => {
+      return record.id === operation.input.recordType
+        && record.capabilities.includes(operation.capability);
+    })
+  };
 }
 
 function assertMappedFields(operation, definition, values, label) {
@@ -62,8 +73,13 @@ function compileOperation(root, lock, operation, sequence) {
     throw new Error(operation.id + ' input fingerprint is stale.');
   }
   const provider = selectedProvider(root, lock, operation);
-  const definition = recordMapping(root, provider, operation);
+  const selectedMapping = recordMapping(root, provider, operation);
+  const definition = selectedMapping.definition;
   const input = structuredClone(operation.input);
+  assertContextRecordInput(root, operation.capability, input, {
+    modelId: selectedMapping.mapping.contextModel,
+    packIds: lock.packs.filter((pack) => pack.layer === 'context').map((pack) => pack.id)
+  });
   let precondition;
   let verificationId;
   let expectedFields;
@@ -90,7 +106,7 @@ function compileOperation(root, lock, operation, sequence) {
       expectedCount: 0
     };
     verificationId = null;
-    expectedFields = { ...input.fields, ...(input.body !== undefined ? { body: input.body } : {}) };
+    expectedFields = input.fields;
     recovery = {
       mode: 'manual-required',
       reason: 'The selected connected provider declares no tool that can compensate a newly created record.'

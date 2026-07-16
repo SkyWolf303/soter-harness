@@ -9,32 +9,32 @@
     "id": "meeting-intake",
     "version": null
   },
-  "configurationLockFingerprint": "sha256:49f1c65ab83d0bb3d6fa92e3969429db98c6c1a9fcd1fae5ad0b00da1351f048",
+  "configurationLockFingerprint": "sha256:df73e4b7c573b5e73c0a4475a52b49ab69f810055521aebe9dbf5316e8c433d8",
   "dependencies": [
     {
       "id": "kernel.soter",
       "version": "0.1.0",
-      "fingerprint": "sha256:aeaa6355166e12fc753f5d5161479c8836f18f8c0192d4fee7ec8872808ef723"
+      "fingerprint": "sha256:acf30ad7cc8e64d11a9ef39aa8b17e018fecc162db8e489b655d23ee500d3122"
     },
     {
       "id": "core.runtime",
       "version": "0.1.0",
-      "fingerprint": "sha256:d38da194a6d26943704dca87211a73051fe483d3239a6cb2779b96c20c133b70"
+      "fingerprint": "sha256:d212e775f9200ba56df531a05b03630f962fcda0218ba7f19da4f8272f3b0ab0"
     },
     {
       "id": "context.crm",
       "version": "0.1.0",
-      "fingerprint": "sha256:a631a98350809fecb318242ceb9f19d2e00ce348a86a4f14b74ddd1a8399ef07"
+      "fingerprint": "sha256:18341b55f4438d57462769f5587fe17fd5534d2ac0146e6975ddb33f47ef19cc"
     },
     {
       "id": "automation.meeting-intake",
       "version": "0.1.0",
-      "fingerprint": "sha256:c4c41d79189b236a2339d9aa6a16061c35e912a1e530e9b3a43d25e9e10983f9"
+      "fingerprint": "sha256:6b45c06cf5a170fe002521393adcb8fdb5a60cfaf0b9d6811bb07295087bea79"
     },
     {
       "id": "integration.notion",
       "version": "0.1.0",
-      "fingerprint": "sha256:3eb99687b11f5181f55f1b223887e2c76efab4138f2b02638e43d09d303102ec"
+      "fingerprint": "sha256:640943cbee2a8a93b5487897e39f1f9c36ab2baadf94d060b0ba7e4831c3f5b9"
     },
     {
       "id": "integration.otter",
@@ -52,7 +52,7 @@
     {
       "id": "integration.notion",
       "version": "0.1.0",
-      "manifestFingerprint": "sha256:3eb99687b11f5181f55f1b223887e2c76efab4138f2b02638e43d09d303102ec",
+      "manifestFingerprint": "sha256:640943cbee2a8a93b5487897e39f1f9c36ab2baadf94d060b0ba7e4831c3f5b9",
       "evidenceMaturity": "declared"
     },
     {
@@ -128,11 +128,11 @@
     {
       "role": "configuration",
       "path": "soter/configurations/meeting-intake.config.json",
-      "fingerprint": "sha256:b95ab9c50d4b89e975cf81cdf82fd13da61d277fa84df2f9d5655af583d4532a"
+      "fingerprint": "sha256:8d7b23b25103e37507702ace9da5e00a58d335fc9c2282d17a83b8c51bf99a1c"
     },
     {
       "role": "configuration-lock",
-      "fingerprint": "sha256:49f1c65ab83d0bb3d6fa92e3969429db98c6c1a9fcd1fae5ad0b00da1351f048"
+      "fingerprint": "sha256:df73e4b7c573b5e73c0a4475a52b49ab69f810055521aebe9dbf5316e8c433d8"
     }
   ],
   "effects": [],

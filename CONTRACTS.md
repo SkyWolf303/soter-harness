@@ -441,6 +441,29 @@ provider-neutral source identity, capability, authority, input, and fingerprint
 to an Integration probe. An Integration must never depend on an Automation's
 settings shape.
 
+A Context pack that owns portable records declares a
+`context-record-model/v1`. The model gives each record type and field one
+canonical meaning, value shape, create requirement, nullability, mutability,
+relationship identity, content kind, and set of valid deduplication fields.
+Kernel requires the definition to be an artifact of its exact Context pack.
+Core validates CRM inputs and normalized outputs against that model before a
+fixture or connected provider can establish a passed capability invocation.
+Automation may propose only Context-declared fields; grounding and decision
+evidence does not become a provider field merely because it was useful inside a
+run.
+
+`provider-mapping/v3` binds a typed provider mapping to one exact Context model.
+Every mapped record and portable field must exist in that model, list versus
+scalar decoding must preserve its value shape, and mapped page content must
+preserve the declared content kind. A mapping may intentionally implement only
+a subset. Each record type therefore declares its own read, create, and update
+scope; the mapping-level CRM capabilities are the exact union. Create scope
+requires every Context-required field and body mapping, while generic update
+scope cannot expose an immutable Context field. That subset is provider
+capability, not domain meaning: a valid
+Context field that is absent from the selected mapping remains visibly
+unrepresentable and fails compilation before approval.
+
 The normative Core state shapes are the
 [resolved lock](./soter/contracts/lock.schema.json),
 [run envelope](./soter/contracts/run-envelope.schema.json),
@@ -464,10 +487,12 @@ The normative Core state shapes are the
 integrations produce short-lived, secret-safe
 [single-call provider probes](./soter/contracts/provider-probe.schema.json) and
 [exact-check provider probes](./soter/contracts/provider-probe-v2.schema.json)
-as private runtime state rather than portable configuration. Typed provider
-record mappings use the
-[provider mapping v2 contract](./soter/contracts/provider-mapping-v2.schema.json)
-when current provider property types must be checked mechanically. The generated
+as private runtime state rather than portable configuration. Portable record
+meaning uses the
+[Context record model](./soter/contracts/context-record-model.schema.json), and
+Context-bound typed provider mappings use the
+[provider mapping v3 contract](./soter/contracts/provider-mapping-v3.schema.json).
+The generated
 [meeting-intake fixtures](./soter/fixtures/meeting-intake/) show how those
 documents link while distinguishing local fixture-provider behavior from
 connected or live provider behavior.
@@ -900,6 +925,12 @@ performs earlier reads.
 Connected writes use a separate transaction boundary rather than widening the
 general operation-plan interface. `connected-operation-batch/v1` compiles an
 exact proposed change set against the selected connected provider and mapping.
+Before checking provider representability, Core validates each portable input
+against the mapping's exact Context record model.
+Automation owns outcome-specific change-set construction and post-write
+acceptance checks. Core owns approval matching, capability dispatch,
+checkpointing, rollback mechanics, and the invocation of an Automation-owned
+verifier; moving a routine into Core does not make its domain decisions generic.
 Every operation carries its portable input, provider identity, compare-before-
 write or deduplication precondition, read-after-write expectation, and recovery
 mode. Unmapped fields fail compilation before approval or provider arguments.

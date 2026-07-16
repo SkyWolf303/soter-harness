@@ -13,6 +13,12 @@
       "version": "^0.1.0",
       "optional": false,
       "reason": "Integration binding, effect policy, evidence, and health are supplied by Core."
+    },
+    {
+      "pack": "context.crm",
+      "version": "^0.1.0",
+      "optional": false,
+      "reason": "Notion maps provider fields into the canonical portable CRM record model owned by Context."
     }
   ],
   "capabilities": {

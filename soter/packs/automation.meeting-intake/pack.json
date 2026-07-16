@@ -51,7 +51,7 @@
         "id": "crm.records.update",
         "version": "^1.0.0",
         "optional": false,
-        "reason": "Approved meeting links, deduplicated tasks, and project state require bounded updates."
+        "reason": "Approved folding of existing meeting-derived tasks requires bounded updates."
       }
     ],
     "provides": []
@@ -77,6 +77,10 @@
   "artifacts": [
     {
       "path": "soter/automations/meeting-intake/context.mjs",
+      "role": "implementation"
+    },
+    {
+      "path": "soter/automations/meeting-intake/transaction.mjs",
       "role": "implementation"
     },
     {

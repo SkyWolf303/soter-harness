@@ -43,7 +43,8 @@ function nativePayload(response) {
 function mappingDocument(mappings, capability) {
   const matches = (mappings || []).filter((mapping) => {
     return (mapping?.$contract === 'soter://contracts/provider-mapping/v1'
-      || mapping?.$contract === 'soter://contracts/provider-mapping/v2')
+      || mapping?.$contract === 'soter://contracts/provider-mapping/v2'
+      || mapping?.$contract === 'soter://contracts/provider-mapping/v3')
       && mapping.capabilities?.includes(capability);
   });
   if (matches.length !== 1) {
@@ -68,8 +69,10 @@ function sqlString(value) {
   return "'" + String(value).replaceAll("'", "''") + "'";
 }
 
-function recordMapping(mapping, type) {
-  const matches = mapping.recordTypes.filter((item) => item.id === type);
+function recordMapping(mapping, type, capability) {
+  const matches = mapping.recordTypes.filter((item) => {
+    return item.id === type && item.capabilities?.includes(capability);
+  });
   if (matches.length !== 1) {
     throw providerError('validation', 'Notion mapping does not declare record type ' + type + '.');
   }
@@ -215,7 +218,7 @@ export function prepareMcp({ capability, input, settings, mappings }) {
   }
   const mapping = mappingDocument(mappings, capability);
   if (capability === 'crm.records.create') {
-    const definition = recordMapping(mapping, input.recordType);
+    const definition = recordMapping(mapping, input.recordType, capability);
     const properties = mappedProperties(definition, input.fields, 'Notion create');
     if (!definition.fields.some((field) => {
       return field.providerType === 'title' && Object.hasOwn(input.fields, field.portable);
@@ -224,7 +227,9 @@ export function prepareMcp({ capability, input, settings, mappings }) {
     }
     const page = { properties };
     if (input.body !== undefined && input.body !== null) {
-      if (typeof input.body !== 'string') {
+      if (definition.content?.portable !== 'body'
+        || definition.content.providerType !== 'markdown'
+        || typeof input.body !== 'string') {
         throw providerError('validation', 'Notion page content currently requires a string body.');
       }
       page.content = input.body;
@@ -238,7 +243,7 @@ export function prepareMcp({ capability, input, settings, mappings }) {
     };
   }
   if (capability === 'crm.records.update') {
-    const definition = recordMapping(mapping, input.recordType);
+    const definition = recordMapping(mapping, input.recordType, capability);
     return {
       tool: 'update_page',
       arguments: {
@@ -268,7 +273,7 @@ export function prepareMcp({ capability, input, settings, mappings }) {
   const params = [];
   const targetUris = [];
   const selects = input.recordTypes.map((type) => {
-    const definition = recordMapping(mapping, type);
+    const definition = recordMapping(mapping, type, capability);
     const target = requiredString(targets[definition.target], 'Notion target ' + definition.target);
     if (!/^collection:\/\/[a-f0-9-]{32,36}$/.test(target)) {
       throw providerError('validation', 'Notion target ' + definition.target + ' is not a collection URI.');
@@ -286,7 +291,7 @@ export function prepareMcp({ capability, input, settings, mappings }) {
 }
 
 function decodedFields(mapping, row) {
-  const definition = recordMapping(mapping, row.__soterType);
+  const definition = recordMapping(mapping, row.__soterType, 'crm.records.read');
   const raw = requiredObject(
     parseJsonText(row.__soterFields, 'Notion normalized field envelope'),
     'Notion normalized field envelope'
@@ -355,7 +360,8 @@ export function completeMcp({ capability, authority, input, response, at, mappin
       record: {
         type: input.recordType,
         id,
-        fields: { ...input.fields, ...(input.body !== undefined ? { body: input.body } : {}) }
+        fields: { ...input.fields },
+        ...(input.body !== undefined ? { body: input.body } : {})
       },
       created: true,
       provenance: {
@@ -466,7 +472,7 @@ export function completeProbeMcp({ response, plan }) {
 
 function typedMapping(mappings) {
   const mapping = mappingDocument(mappings, 'crm.records.read');
-  if (mapping.$contract !== 'soter://contracts/provider-mapping/v2'
+  if (mapping.$contract !== 'soter://contracts/provider-mapping/v3'
     || mapping.recordTypes.some((record) => {
       return record.fields.some((field) => typeof field.providerType !== 'string');
     })) {

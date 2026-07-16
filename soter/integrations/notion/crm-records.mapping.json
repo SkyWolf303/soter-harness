@@ -1,16 +1,18 @@
 {
-  "$contract": "soter://contracts/provider-mapping/v2",
-  "contractVersion": "2.0.0",
+  "$contract": "soter://contracts/provider-mapping/v3",
+  "contractVersion": "3.0.0",
   "id": "mapping.integration.notion.crm-records",
   "pack": "integration.notion",
   "provider": "provider.integration.notion.mcp",
   "version": "0.1.0",
+  "contextModel": "model.context.crm.records",
   "settingsDefinition": "settings.integration.notion",
   "capabilities": ["crm.records.read", "crm.records.create", "crm.records.update"],
   "recordTypes": [
     {
       "id": "policy",
       "target": "policies",
+      "capabilities": ["crm.records.read"],
       "fields": [
         { "portable": "name", "provider": "Name", "providerType": "title", "decode": "scalar" }
       ]
@@ -18,6 +20,7 @@
     {
       "id": "organization",
       "target": "organizations",
+      "capabilities": ["crm.records.read"],
       "fields": [
         { "portable": "name", "provider": "Name", "providerType": "title", "decode": "scalar" },
         { "portable": "organizationType", "provider": "Type", "providerType": "select", "decode": "scalar" },
@@ -29,6 +32,7 @@
     {
       "id": "person",
       "target": "contacts",
+      "capabilities": ["crm.records.read"],
       "fields": [
         { "portable": "name", "provider": "Name", "providerType": "title", "decode": "scalar" },
         { "portable": "email", "provider": "Email", "providerType": "email", "decode": "scalar" },
@@ -42,6 +46,7 @@
     {
       "id": "project",
       "target": "projects",
+      "capabilities": ["crm.records.read"],
       "fields": [
         { "portable": "name", "provider": "Name", "providerType": "title", "decode": "scalar" },
         { "portable": "projectType", "provider": "Type", "providerType": "select", "decode": "scalar" },
@@ -53,6 +58,7 @@
     {
       "id": "task",
       "target": "tasks",
+      "capabilities": ["crm.records.read", "crm.records.update"],
       "fields": [
         { "portable": "title", "provider": "Name", "providerType": "title", "decode": "scalar" },
         { "portable": "status", "provider": "Status", "providerType": "status", "decode": "scalar" },
@@ -63,6 +69,7 @@
     {
       "id": "meeting",
       "target": "meetings",
+      "capabilities": ["crm.records.read"],
       "fields": [
         { "portable": "title", "provider": "Meeting Name", "providerType": "title", "decode": "scalar" },
         { "portable": "meetingType", "provider": "Type", "providerType": "select", "decode": "scalar" },
@@ -74,15 +81,18 @@
     {
       "id": "meeting-summary",
       "target": "documents",
+      "capabilities": ["crm.records.read", "crm.records.create"],
       "fields": [
         { "portable": "title", "provider": "Name", "providerType": "title", "decode": "scalar" },
         { "portable": "documentType", "provider": "Type", "providerType": "select", "decode": "scalar" },
         { "portable": "description", "provider": "Description", "providerType": "text", "decode": "scalar" },
         { "portable": "link", "provider": "Link", "providerType": "url", "decode": "scalar" }
-      ]
+      ],
+      "content": { "portable": "body", "provider": "page-content", "providerType": "markdown" }
     }
   ],
   "limitations": [
+    "Record-level capability scope permits reads for every mapped type, task updates, and meeting-summary creates only; other CRM writes require an explicit mapping revision and new lock.",
     "Policy rows identify definition documents but do not load or interpret their page bodies; domain context assembly requires a separate bounded fetch step.",
     "The connected translator consumes one mapped record type per host call; Core must durably orchestrate several targets as explicit plan steps rather than relying on cross-data-source SQL.",
     "Organization projects and contacts plus project tasks are exposed as provider relation URIs; meeting participant people identifiers are not assumed to be CRM contact record URIs.",

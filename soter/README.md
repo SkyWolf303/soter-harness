@@ -12,6 +12,7 @@ fields make that distinction mechanical.
 
 - contracts contains versioned machine-readable contracts.
 - packs contains one manifest for each selectable system.
+- contexts contains provider-neutral domain models owned by Context packs.
 - capabilities contains provider-neutral integration capability contracts.
 - providers contains typed implementation declarations, containment levels,
   logical host-transport allowlists, provider mappings, and explicit
@@ -94,6 +95,12 @@ applicability reason; this does not claim the prose was interpreted or enforced.
 Participant profiles remain unloaded. Core mechanically binds every snapshot
 entry to exactly one normalized plan output and passed effect before persisting
 it. The Notion provider returns deterministic versions for normalized records.
+`context.crm` now owns a machine-readable portable record model. Kernel checks
+that Automation writes and provider mappings use only its declared fields and
+preserve scalar, list, content, mutability, relationship, and deduplication
+semantics; Core enforces the same boundary on capability inputs and normalized
+outputs. The mapping also scopes read, create, and update per record type rather
+than making every mapped Notion database generically writable.
 Its private readiness plan emits identity, exact schema and one-row bounded read
 checks for every configured target, plus one exact read for every portable
 document source marked `probe-read`, one visible host request at a time. The
@@ -111,14 +118,19 @@ ordinary capability and operation-plan interfaces still block them. Core can
 compile an exact connected operation-batch preview with deduplication or
 expected-version preconditions, verification expectations, recovery modes, and
 an expiring approval bound to both the change set and batch. The current
-meeting-intake write set fails that compiler because it names fields absent from
-the connected mapping. A separately representable create remains blocked
-because the connector declares no automatic compensation route. No connected
+meeting-intake write set is Context-valid and mapped, so compilation isolates
+the remaining blocker: the connector declares no automatic compensation route
+for its summary create. No connected
 create is executable yet. Mapped updates now run through a private durable
 transaction checkpoint that consumes the exact approval, compares and retains
 prior mapped values, verifies each effect, compensates verified earlier updates
 in reverse after a later conflict, and surfaces ambiguous effects as
 `needs-attention` without overstating rollback.
+Meeting-intake Automation owns its proposal and post-write acceptance checks;
+Core owns only the generic approval, dispatch, checkpoint, rollback, and
+verifier-invocation mechanics. The contained proposer quotes one bounded fixture
+transcript and requires exactly one textually overlapping task. It does not yet
+define the durable host-judgment boundary for ambiguous or multiple candidates.
 Host-started end-to-end dispatch is unproven, and
 the checked-in connected doctor therefore reports `ready=unknown`; the separate
 operation-batch compiler reports the concrete write blockers. This

@@ -2,6 +2,7 @@ import path from 'node:path';
 
 import { validateJsonSchema } from '../kernel/verify.mjs';
 import { evaluateEffectPolicy, listProviderDeclarations } from './capabilities.mjs';
+import { assertContextRecordInput, assertContextRecordOutput } from './context-records.mjs';
 import {
   assertMcpRuntime,
   containsCredentialMaterial,
@@ -220,6 +221,9 @@ export async function prepareHostToolCall({
   }
 
   try {
+    assertContextRecordInput(resolvedRoot, capability, input, {
+      packIds: lock.packs.filter((pack) => pack.layer === 'context').map((pack) => pack.id)
+    });
     const implementation = await loadProviderModule(resolvedRoot, provider, translator);
     const prepare = implementation[provider.runtime.prepareExport];
     if (typeof prepare !== 'function') {
@@ -356,6 +360,9 @@ export async function completeHostToolCall({
       assertCallContract(resolvedRoot, completed);
       return { call: completed, output };
     }
+    assertContextRecordOutput(resolvedRoot, call.capability.id, output, {
+      packIds: lock.packs.filter((pack) => pack.layer === 'context').map((pack) => pack.id)
+    });
     const completed = {
       ...call,
       completedAt: at,

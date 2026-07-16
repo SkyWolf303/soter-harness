@@ -915,7 +915,7 @@ async function selftest(root) {
             __soterFields: JSON.stringify({
               title: 'MCP plan meeting',
               meetingType: 'Project Sync',
-              recordingUri: null,
+              recordingUri: 'https://otter.ai/u/mcp-plan-meeting',
               organizationUris: '[]',
               participantIds: '[]'
             })
@@ -1064,7 +1064,7 @@ async function selftest(root) {
             __soterFields: JSON.stringify({
               title: 'CLI plan meeting',
               meetingType: 'Project Sync',
-              recordingUri: null,
+              recordingUri: 'https://otter.ai/u/cli-plan-meeting',
               organizationUris: '[]',
               participantIds: '[]'
             })
@@ -1217,7 +1217,7 @@ async function selftest(root) {
                 meetingType: 'Project Sync',
                 recordingUri: connectedRecording,
                 organizationUris: JSON.stringify([mcpOrganizationUri]),
-                participantIds: JSON.stringify(['person.retro'])
+                participantIds: JSON.stringify(['provider-person.retro'])
               })
             }],
             has_more: false

@@ -45,7 +45,8 @@
             "type": { "type": "string" },
             "id": { "type": "string" },
             "version": { "type": "string" },
-            "fields": { "type": "object" }
+            "fields": { "type": "object" },
+            "body": { "type": ["string", "object", "null"] }
           }
         }
       },

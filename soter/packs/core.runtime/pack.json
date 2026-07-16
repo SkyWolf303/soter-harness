@@ -32,6 +32,7 @@
     { "path": "soter/core/evidence.mjs", "role": "implementation" },
     { "path": "soter/core/doctor.mjs", "role": "implementation" },
     { "path": "soter/core/capabilities.mjs", "role": "implementation" },
+    { "path": "soter/core/context-records.mjs", "role": "implementation" },
     { "path": "soter/core/host-runtime.mjs", "role": "implementation" },
     { "path": "soter/core/host-tools.mjs", "role": "implementation" },
     { "path": "soter/core/operation-plans.mjs", "role": "implementation" },
