@@ -26,7 +26,9 @@ const RUNTIME_ARTIFACT_CONTRACTS = new Set([
   'soter://contracts/evidence/v1',
   'soter://contracts/doctor-result/v1',
   'soter://contracts/provider-probe/v1',
+  'soter://contracts/provider-probe/v2',
   'soter://contracts/provider-probe-call/v1',
+  'soter://contracts/provider-probe-plan-checkpoint/v1',
   'soter://contracts/host-tool-call/v1',
   'soter://contracts/host-call-checkpoint/v1',
   'soter://contracts/context-snapshot/v1',
@@ -484,7 +486,8 @@ function checkPackGraph(root, documents, out, census) {
     } else if (entry.contractId === 'soter://contracts/pack-settings/v1') {
       census.packSettings += 1;
       addUniqueRuntimeArtifact(packSettings, entry, 'pack-settings');
-    } else if (entry.contractId === 'soter://contracts/provider-mapping/v1') {
+    } else if (entry.contractId === 'soter://contracts/provider-mapping/v1'
+      || entry.contractId === 'soter://contracts/provider-mapping/v2') {
       census.providerMappings += 1;
       addUniqueRuntimeArtifact(providerMappings, entry, 'provider-mapping');
     } else if (entry.contractId === 'soter://contracts/context-snapshot/v1') {
@@ -493,7 +496,8 @@ function checkPackGraph(root, documents, out, census) {
     } else if (entry.contractId === 'soter://contracts/provider-fixture/v1') {
       census.providerFixtures += 1;
       addUniqueRuntimeArtifact(providerFixtures, entry, 'fixture');
-    } else if (entry.contractId === 'soter://contracts/provider-probe/v1') {
+    } else if (entry.contractId === 'soter://contracts/provider-probe/v1'
+      || entry.contractId === 'soter://contracts/provider-probe/v2') {
       census.providerProbes += 1;
       addUniqueRuntimeArtifact(providerProbes, entry, 'probe');
     } else if (entry.contractId === 'soter://contracts/provider-probe-call/v1') {
@@ -991,14 +995,20 @@ function checkCapabilityProviders(
       const missing = [
         'prepareExport',
         'completeExport',
-        'probePrepareExport',
-        'probeCompleteExport',
         'server',
         'tools',
         'probeTools'
       ]
         .filter((field) => !entry.doc.runtime[field]
           || (['tools', 'probeTools'].includes(field) && !entry.doc.runtime[field].length));
+      const legacyProbeRuntime = entry.doc.runtime.probePrepareExport
+        && entry.doc.runtime.probeCompleteExport;
+      const planProbeRuntime = entry.doc.runtime.probePlanExport
+        && entry.doc.runtime.probeStepCompleteExport
+        && entry.doc.runtime.probeFinalizeExport;
+      if (!legacyProbeRuntime && !planProbeRuntime) {
+        missing.push('one complete probe export set');
+      }
       if (missing.length) {
         out.push(violation(
           entry.file,
@@ -1163,6 +1173,7 @@ function checkCapabilityProviders(
       }
       recordTypes.add(record.id);
       const portableFields = record.fields.map((field) => field.portable);
+      const providerFields = record.fields.map((field) => field.provider);
       if (new Set(portableFields).size !== portableFields.length) {
         out.push(violation(
           entry.file,
@@ -1170,6 +1181,15 @@ function checkCapabilityProviders(
           'record mapping has duplicate portable fields: ' + record.id,
           'normalization must assign each portable field exactly once',
           'remove the duplicate field mapping'
+        ));
+      }
+      if (new Set(providerFields).size !== providerFields.length) {
+        out.push(violation(
+          entry.file,
+          'SOTER_PROVIDER_MAPPING_FIELD',
+          'record mapping has duplicate provider fields: ' + record.id,
+          'one provider property cannot normalize into multiple portable meanings in the same record',
+          'remove the duplicate provider field mapping or define an explicit composite translation'
         ));
       }
     }

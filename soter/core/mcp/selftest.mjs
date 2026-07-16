@@ -15,6 +15,51 @@ const runPath = 'soter/fixtures/meeting-intake/preflight.run.json';
 const completedRunPath = 'soter/fixtures/meeting-intake/transaction.run.json';
 const fixtureTime = '2026-07-15T12:00:00.000Z';
 
+function notionProbeResponse(checkpoint, marker, driftStepId = null) {
+  const source = checkpoint.plan.steps.find((step) => step.id === checkpoint.currentStepId);
+  if (source.kind === 'identity') {
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          metadata: { type: 'self' },
+          self: {
+            workspace: { id: 'workspace.mcp-selftest', name: marker },
+            user: { id: 'user.mcp-selftest', name: marker }
+          }
+        })
+      }],
+      isError: false
+    };
+  }
+  if (source.kind === 'schema') {
+    const schema = Object.fromEntries(source.scope.expectedFields.map((field) => {
+      return [field.provider, { name: field.provider, type: field.providerType }];
+    }));
+    if (source.id === driftStepId) {
+      const first = source.scope.expectedFields[0];
+      schema[first.provider].type = 'unexpected-mcp-selftest-type';
+    }
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          metadata: { type: 'data_source' },
+          title: 'Private target ' + marker,
+          url: 'https://notion.invalid/private-target',
+          text: '<data-source url="{{' + source.scope.targetUri + '}}">\n'
+            + '<data-source-state>\n' + JSON.stringify({ schema })
+            + '\n</data-source-state>\n</data-source>'
+        })
+      }],
+      isError: false
+    };
+  }
+  return {
+    structuredContent: { result: { results: [], has_more: false } }
+  };
+}
+
 function createFixtureRoot() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'soter-mcp-'));
   fs.cpSync(path.join(codeRoot, 'soter'), path.join(root, 'soter'), { recursive: true });
@@ -105,6 +150,7 @@ async function assertWrongHostRejected(root) {
 async function selftest(root) {
   let client = await connectClient(root);
   let preparedCapability;
+  let pendingNotionProbe;
   let requestedRunContents;
   const privateInputRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'soter-mcp-response-'));
   try {
@@ -183,6 +229,37 @@ async function selftest(root) {
     if (repeatedProbe.checkpoint.checkpointFingerprint
       !== completedProbe.checkpoint.checkpointFingerprint) {
       throw new Error('Repeating an identical provider result was not idempotent.');
+    }
+
+    const notionMarker = 'private-notion-probe-mcp-selftest-marker';
+    const preparedNotionProbe = await call(client, 'soter_prepare_provider_probe', {
+      lock_path: lockPath,
+      provider_implementation: 'provider.integration.notion.mcp',
+      probe_id: 'probe.mcp-selftest.notion-plan',
+      at: fixtureTime,
+      valid_for_seconds: 300
+    });
+    if (preparedNotionProbe.checkpoint?.state !== 'requested'
+      || preparedNotionProbe.checkpoint?.steps?.length !== 15
+      || preparedNotionProbe.currentCall?.transport?.operation !== 'fetch'
+      || preparedNotionProbe.currentCall?.arguments?.id !== 'self') {
+      throw new Error('MCP provider probe plan did not expose one exact first Notion call.');
+    }
+    pendingNotionProbe = await call(client, 'soter_complete_provider_probe', {
+      checkpoint_id: preparedNotionProbe.checkpoint.id,
+      call_id: preparedNotionProbe.currentCall.id,
+      response: notionProbeResponse(preparedNotionProbe.checkpoint, notionMarker),
+      at: fixtureTime
+    });
+    if (pendingNotionProbe.checkpoint?.state !== 'requested'
+      || pendingNotionProbe.currentCall?.id
+        === preparedNotionProbe.currentCall.id
+      || pendingNotionProbe.checkpoint.currentStepId !== 'step.target.policies.schema') {
+      throw new Error('MCP provider probe plan did not minimize identity and emit its next exact call.');
+    }
+    assertPrivateFile(checkpointFile(root, pendingNotionProbe));
+    if (fs.readFileSync(checkpointFile(root, pendingNotionProbe), 'utf8').includes(notionMarker)) {
+      throw new Error('Notion identity content reached durable provider probe plan state.');
     }
 
     const failedProbeRequest = await call(client, 'soter_prepare_provider_probe', {
@@ -284,6 +361,61 @@ async function selftest(root) {
 
   client = await connectClient(root);
   try {
+    let recoveredNotionProbe = await call(client, 'soter_get_host_call', {
+      checkpoint_id: pendingNotionProbe.checkpoint.id
+    });
+    if (recoveredNotionProbe.checkpoint.state !== 'requested'
+      || recoveredNotionProbe.currentCall?.id !== pendingNotionProbe.currentCall.id) {
+      throw new Error('Restarted MCP server did not recover the exact provider probe step.');
+    }
+    const notionMarker = 'private-notion-probe-mcp-selftest-marker';
+    while (recoveredNotionProbe.checkpoint.state === 'requested') {
+      recoveredNotionProbe = await call(client, 'soter_complete_provider_probe', {
+        checkpoint_id: recoveredNotionProbe.checkpoint.id,
+        call_id: recoveredNotionProbe.currentCall.id,
+        response: notionProbeResponse(recoveredNotionProbe.checkpoint, notionMarker),
+        at: fixtureTime
+      });
+    }
+    if (recoveredNotionProbe.checkpoint.state !== 'completed'
+      || recoveredNotionProbe.checkpoint.result?.$contract
+        !== 'soter://contracts/provider-probe/v2'
+      || recoveredNotionProbe.checkpoint.result?.checks?.length !== 15
+      || recoveredNotionProbe.checkpoint.result?.capabilities?.[0]?.state !== 'passed'
+      || JSON.stringify(recoveredNotionProbe).includes(notionMarker)
+      || fs.readFileSync(checkpointFile(root, recoveredNotionProbe), 'utf8')
+        .includes(notionMarker)) {
+      throw new Error('Recovered Notion probe plan did not close with minimized exact checks.');
+    }
+
+    let driftedNotionProbe = await call(client, 'soter_prepare_provider_probe', {
+      lock_path: lockPath,
+      provider_implementation: 'provider.integration.notion.mcp',
+      probe_id: 'probe.mcp-selftest.notion-drift',
+      at: fixtureTime
+    });
+    const driftStepId = 'step.target.organizations.schema';
+    while (driftedNotionProbe.checkpoint.state === 'requested') {
+      driftedNotionProbe = await call(client, 'soter_complete_provider_probe', {
+        checkpoint_id: driftedNotionProbe.checkpoint.id,
+        call_id: driftedNotionProbe.currentCall.id,
+        response: notionProbeResponse(
+          driftedNotionProbe.checkpoint,
+          notionMarker,
+          driftStepId
+        ),
+        at: fixtureTime
+      });
+    }
+    const driftedStep = driftedNotionProbe.checkpoint.steps.find((step) => {
+      return step.id === driftStepId;
+    });
+    if (driftedNotionProbe.checkpoint.state !== 'failed'
+      || driftedStep?.error?.kind !== 'validation'
+      || driftedNotionProbe.checkpoint.result !== null) {
+      throw new Error('MCP provider probe plan did not fail closed on target schema drift.');
+    }
+
     const recovered = await call(client, 'soter_get_host_call', {
       checkpoint_id: preparedCapability.checkpoint.id
     });
@@ -859,6 +991,7 @@ async function selftest(root) {
       '--lock', lockPath,
       '--level', 'connected',
       '--probe-checkpoint', cliCompleted.checkpoint.id,
+      '--probe-checkpoint', recoveredNotionProbe.checkpoint.id,
       '--at', fixtureTime
     ]);
     const doctor = JSON.parse(doctorInvocation.stdout);
@@ -866,9 +999,11 @@ async function selftest(root) {
       || doctor.states.valid !== 'passed'
       || doctor.states.ready !== 'failed'
       || !doctor.providerProbeIds.includes('probe.cli-selftest.otter')
+      || !doctor.providerProbeIds.includes('probe.mcp-selftest.notion-plan')
       || doctor.diagnostics.some((item) => {
         return item.code === 'SOTER_PROVIDER_PROBE_MISSING'
-          && item.subject === 'provider.integration.otter.mcp';
+          && (item.subject === 'provider.integration.otter.mcp'
+            || item.subject === 'provider.integration.notion.mcp');
       })) {
       throw new Error('Connected doctor did not consume the durable provider probe checkpoint.');
     }

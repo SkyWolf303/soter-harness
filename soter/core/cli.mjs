@@ -226,11 +226,12 @@ async function main() {
     if (json) {
       print(prepared);
     } else {
+      const call = prepared.currentCall || prepared.checkpoint.call;
       process.stdout.write(
         'Prepared ' + prepared.checkpoint.id + ' in state ' + prepared.checkpoint.state + '.\n'
-          + 'Provider operation: ' + prepared.checkpoint.call.transport.server + '/'
-          + (prepared.checkpoint.call.transport.operation || 'none') + '\n'
-          + 'Native host tool: ' + (prepared.checkpoint.call.transport.tool || 'none') + '\n'
+          + 'Provider operation: ' + call.transport.server + '/'
+          + (call.transport.operation || 'none') + '\n'
+          + 'Native host tool: ' + (call.transport.tool || 'none') + '\n'
           + 'Durable checkpoint: ' + prepared.checkpointPath + '\n'
           + 'Raw provider response persistence: disabled by Core\n'
           + (output ? 'Wrote: ' + output + '\n' : '')
@@ -245,6 +246,7 @@ async function main() {
     const completed = await completeDurableProviderProbeExecution({
       root,
       checkpointId: requiredOption(args, '--checkpoint'),
+      callId: option(args, '--call'),
       response,
       at: createdAt
     });
@@ -259,10 +261,17 @@ async function main() {
     if (json) {
       print(completed);
     } else {
+      const nextCall = completed.currentCall;
       process.stdout.write(
-        'Completed ' + completed.checkpoint.id + ' in state '
+        'Advanced ' + completed.checkpoint.id + ' to state '
           + completed.checkpoint.state + '.\n'
           + 'Raw provider response persisted by Core: no\n'
+          + (nextCall
+            ? 'Next provider operation: ' + nextCall.transport.server + '/'
+              + nextCall.transport.operation + '\n'
+              + 'Next native host tool: ' + nextCall.transport.tool + '\n'
+              + 'Next call ID: ' + nextCall.id + '\n'
+            : '')
           + (completed.checkpoint.result
             ? 'Probe: ' + completed.checkpoint.result.id + '; capability compatibility remains '
               + completed.checkpoint.result.capabilities.map((item) => item.state).join(', ') + '.\n'
@@ -271,7 +280,7 @@ async function main() {
           + (probeOutput && completed.checkpoint.result ? 'Wrote probe: ' + probeOutput + '\n' : '')
       );
     }
-    if (completed.checkpoint.state !== 'completed') process.exitCode = 1;
+    if (completed.checkpoint.state === 'failed') process.exitCode = 1;
     return;
   }
 
@@ -662,7 +671,7 @@ async function main() {
       + '  transaction --lock PATH [--scenario PATH] [--approve] [--json]\n'
       + '  doctor --lock PATH [--level offline|connected] [--probe PATH ...] [--probe-checkpoint ID ...] [--config PATH] [--json]\n'
       + '  probe-prepare --lock PATH --provider ID [--output PATH] [--json]\n'
-      + '  probe-complete --checkpoint ID --response ABSOLUTE_PRIVATE_PATH [--probe-output PATH] [--json]\n'
+      + '  probe-complete --checkpoint ID [--call ID] --response ABSOLUTE_PRIVATE_PATH [--probe-output PATH] [--json]\n'
       + '  capability-prepare --lock PATH --run PATH --capability ID --authority ID --provider ID --input PATH [--output PATH] [--json]\n'
       + '  capability-complete --checkpoint ID --response ABSOLUTE_PRIVATE_PATH [--output PATH] [--json]\n'
       + '  plan-prepare --lock PATH --run PATH --plan ABSOLUTE_PRIVATE_PATH [--json]\n'

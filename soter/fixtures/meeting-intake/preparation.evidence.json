@@ -9,17 +9,17 @@
     "id": "run.meeting-intake.fixture",
     "version": null
   },
-  "configurationLockFingerprint": "sha256:f1f4187eec78f2c3ae5f79b5b7271ce3d736dad5c5b697c62950c3bd5d150df7",
+  "configurationLockFingerprint": "sha256:260e6ac8320316d42b6a9db85c8f7f5343a385d205fe52c7ce880453ea886b5e",
   "dependencies": [
     {
       "id": "kernel.soter",
       "version": "0.1.0",
-      "fingerprint": "sha256:79c23579d532c6bcc4da75cf60c85066c5eb4aa494da7c585514ce141f47c21c"
+      "fingerprint": "sha256:39876fffa1cdc2cd6cc09d0fe0cda213bd68a7e9f2c9fdf68677ac50491d9fa4"
     },
     {
       "id": "core.runtime",
       "version": "0.1.0",
-      "fingerprint": "sha256:b824f391f369fd2a3e20cf042541c03805d1e7d637bc3b294489627e996af8e7"
+      "fingerprint": "sha256:f35594cae3d146cda39134b71e1d8eb5449e729b66765712fb9a536539512fe3"
     },
     {
       "id": "context.crm",
@@ -124,7 +124,7 @@
     {
       "role": "run-envelope",
       "id": "run.meeting-intake.fixture",
-      "graphFingerprint": "sha256:f4b45fc46431f86e3a8664b7fefcdc3345351d6c556b27dc841eea8517fa1454"
+      "graphFingerprint": "sha256:56b018ea8a0c3e5fe19b6baa73a8062ab70b4f07cf5ff887c1b0efe7935d8a86"
     },
     {
       "role": "scenario",

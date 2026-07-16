@@ -23,6 +23,14 @@ import {
   failProviderProbeCall,
   prepareProviderProbeCall
 } from './provider-probes.mjs';
+import {
+  assertProviderProbePlanCheckpoint,
+  completeProviderProbePlanStep,
+  createProviderProbePlanCheckpoint,
+  failProviderProbePlanStep,
+  providerProbePlanCurrentCall,
+  providerUsesProbePlan
+} from './provider-probe-plans.mjs';
 import { fingerprintLock, lockMatchesResolution } from './resolve.mjs';
 import {
   hasContextSnapshotState,
@@ -151,6 +159,9 @@ function assertCheckpoint(root, checkpoint) {
   if (checkpoint?.$contract === 'soter://contracts/operation-plan-checkpoint/v1'
     || checkpoint?.$contract === 'soter://contracts/operation-plan-checkpoint/v2') {
     return assertOperationPlanCheckpoint(root, checkpoint);
+  }
+  if (checkpoint?.$contract === 'soter://contracts/provider-probe-plan-checkpoint/v1') {
+    return assertProviderProbePlanCheckpoint(root, checkpoint);
   }
   contractFailures(
     root,
@@ -511,6 +522,8 @@ function persistDurableCheckpoint(root, checkpoint, run = null) {
   };
   if (next.kind === 'operation-plan') {
     persisted.currentCall = operationPlanCurrentCall(next);
+  } else if (next.$contract === 'soter://contracts/provider-probe-plan-checkpoint/v1') {
+    persisted.currentCall = providerProbePlanCurrentCall(next);
   }
   return persisted;
 }
@@ -673,13 +686,42 @@ export async function prepareDurableOperationPlanExecution({
 }
 
 export async function prepareDurableProviderProbeExecution(options) {
-  const prepared = await prepareProviderProbeExecution(options);
   const { file: lockFile, lock } = exactLock(
     options.root,
     options.lockPath,
     options.expectedHost
   );
-  const at = options.at || prepared.call.createdAt;
+  const createdAt = atOrNow(options.at);
+  const providerPart = idPart(
+    options.providerImplementation.startsWith('provider.')
+      ? options.providerImplementation.slice('provider.'.length)
+      : options.providerImplementation
+  );
+  const probeId = options.probeId || 'probe.' + providerPart + '.' + idPart(createdAt);
+  if (providerUsesProbePlan(options.root, lock, options.providerImplementation)) {
+    if (options.callId) {
+      throw new Error('Multi-step provider probes use deterministic per-step call IDs.');
+    }
+    const checkpoint = await createProviderProbePlanCheckpoint({
+      root: options.root,
+      lock,
+      lockPath: repoRelativePath(options.root, lockFile),
+      providerImplementation: options.providerImplementation,
+      probeId,
+      validForSeconds: options.validForSeconds ?? 300,
+      at: createdAt
+    });
+    if (hasHostCallCheckpoint(options.root, checkpoint.id)) {
+      throw new Error('Durable provider probe checkpoint already exists: ' + checkpoint.id + '.');
+    }
+    return persistDurableCheckpoint(options.root, checkpoint);
+  }
+  const prepared = await prepareProviderProbeExecution({
+    ...options,
+    probeId,
+    at: createdAt
+  });
+  const at = prepared.call.createdAt;
   const checkpoint = baseDurableCheckpoint({
     root: options.root,
     lockFile,
@@ -763,6 +805,9 @@ function durableResult(root, state) {
   };
   if (state.checkpoint.kind === 'operation-plan') {
     result.currentCall = operationPlanCurrentCall(state.checkpoint);
+  } else if (state.checkpoint.$contract
+    === 'soter://contracts/provider-probe-plan-checkpoint/v1') {
+    result.currentCall = providerProbePlanCurrentCall(state.checkpoint);
   }
   return result;
 }
@@ -796,6 +841,7 @@ export async function completeDurableOperationPlanExecution({
 export async function completeDurableProviderProbeExecution({
   root,
   checkpointId,
+  callId,
   response,
   at,
   expectedHost
@@ -804,6 +850,19 @@ export async function completeDurableProviderProbeExecution({
   const checkpoint = state.checkpoint;
   if (checkpoint.kind !== 'provider-probe') {
     throw new Error('Checkpoint ' + checkpointId + ' is not a provider probe call.');
+  }
+  if (checkpoint.$contract === 'soter://contracts/provider-probe-plan-checkpoint/v1') {
+    if (!callId) throw new Error('Provider probe plans require the exact current call ID.');
+    const completed = await completeProviderProbePlanStep({
+      root,
+      lock: state.lock,
+      checkpoint,
+      callId,
+      response,
+      at: atOrNow(at)
+    });
+    if (completed.idempotent) return durableResult(root, state);
+    return persistDurableCheckpoint(root, completed.checkpoint);
   }
   const responseFingerprint = fingerprintJson(response);
   if (checkpoint.state !== 'requested') {
@@ -894,6 +953,19 @@ export function failDurableHostExecution({
     if (failed.idempotent) return durableResult(root, state);
     return persistDurableCheckpoint(root, failed.checkpoint, run);
   }
+  if (checkpoint.$contract === 'soter://contracts/provider-probe-plan-checkpoint/v1') {
+    if (!callId) throw new Error('Provider probe plan failures require the exact current call ID.');
+    const failed = failProviderProbePlanStep({
+      root,
+      lock: state.lock,
+      checkpoint,
+      callId,
+      error: { kind: errorKind, message },
+      at: atOrNow(at)
+    });
+    if (failed.idempotent) return durableResult(root, state);
+    return persistDurableCheckpoint(root, failed.checkpoint);
+  }
   if (checkpoint.state !== 'requested') {
     if (checkpoint.call.error?.kind === errorKind && checkpoint.call.error?.message === message) {
       return durableResult(root, state);
@@ -940,6 +1012,9 @@ export function getDurableHostExecution({ root, checkpointId, expectedHost }) {
   };
   if (state.checkpoint.kind === 'operation-plan') {
     result.currentCall = operationPlanCurrentCall(state.checkpoint);
+  } else if (state.checkpoint.$contract
+    === 'soter://contracts/provider-probe-plan-checkpoint/v1') {
+    result.currentCall = providerProbePlanCurrentCall(state.checkpoint);
   }
   return result;
 }
@@ -1185,10 +1260,15 @@ export function listDurableHostExecutions({ root, state, expectedHost }) {
     .filter((checkpoint) => !expectedHost || checkpoint.host.id === expectedHost)
     .filter((checkpoint) => !state || checkpoint.state === state)
     .map((checkpoint) => {
+      const planned = checkpoint.kind === 'operation-plan'
+        || checkpoint.$contract === 'soter://contracts/provider-probe-plan-checkpoint/v1';
       const call = checkpoint.kind === 'operation-plan'
         ? operationPlanCurrentCall(checkpoint)
           || checkpoint.steps.findLast((step) => step.call)?.call
-        : checkpoint.call;
+        : checkpoint.$contract === 'soter://contracts/provider-probe-plan-checkpoint/v1'
+          ? providerProbePlanCurrentCall(checkpoint)
+            || checkpoint.steps.findLast((step) => step.call)?.call
+          : checkpoint.call;
       return {
         id: checkpoint.id,
         kind: checkpoint.kind,
@@ -1196,13 +1276,14 @@ export function listDurableHostExecutions({ root, state, expectedHost }) {
         callId: call?.id || null,
         updatedAt: checkpoint.updatedAt,
         host: checkpoint.host.id,
-        provider: call?.provider.implementation || null,
+        provider: checkpoint.provider?.implementation
+          || call?.provider?.implementation || null,
         capability: checkpoint.kind === 'provider-probe'
           ? null
           : call?.capability.id || null,
         runId: checkpoint.run?.id || null,
-        planId: checkpoint.kind === 'operation-plan' ? checkpoint.plan.id : null,
-        currentStepId: checkpoint.kind === 'operation-plan' ? checkpoint.currentStepId : null
+        planId: planned ? checkpoint.plan.id : null,
+        currentStepId: planned ? checkpoint.currentStepId : null
       };
     });
   return { checkpoints };

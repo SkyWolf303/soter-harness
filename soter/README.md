@@ -29,8 +29,9 @@ fields make that distinction mechanical.
   or runtime storage.
 - core contains provider-neutral resolution, preflight, evidence, offline and
   connected doctor operations, a shared execution service, and separate
-  resumable capability-call, versioned sequential operation-plan, and
-  provider-probe bridges. The CLI and local Soter MCP server are thin interfaces
+  resumable capability-call, versioned sequential operation-plan, legacy
+  single-call probe, and explicit sequential provider-probe-plan bridges. The
+  CLI and local Soter MCP server are thin interfaces
   over that service; future graphical interfaces must consume the same boundary.
 - fixtures contains generated, cross-linked examples of exact locks, run
   envelopes, evidence, and doctor results. These are runtime-state examples,
@@ -81,10 +82,17 @@ It requires every referenced related ID to be returned before finalizing, then
 asks Core to persist a private snapshot and pause the same run. It does not
 claim policy page bodies or participant profiles are loaded. Core mechanically
 binds every snapshot entry to exactly one normalized plan output and passed
-effect before persisting it. The Notion provider returns
-deterministic versions for normalized records. Its identity probe proves only
-authentication and reachability;
-configured target access and schema/read compatibility remain unknown. Notion
+  effect before persisting it. The Notion provider returns deterministic
+  versions for normalized records. Its private readiness plan emits identity
+  plus exact schema and one-row bounded read checks for every configured target,
+  one visible host request at a time. The typed provider mapping binds current
+  property names and types—including the observed `🫂 Contacts` organization
+  relation—and schema drift fails closed. Only minimized booleans, counts, and
+  fingerprints enter the final probe; live row values and identity values do
+  not. Exact target references remain confined to the private checkpoint and
+  lock scope. This plan can establish exact-lock `crm.records.read`
+  readiness, but not writes, automation verification, or health. Otter's
+  identity-only probe still leaves transcript compatibility unknown. Notion
 create and update implementations are intentionally absent until Soter adds
 approval-bound operation batches, multi-call deduplication,
 compare-before-write, exact change-set approval, read-after-write verification,
@@ -145,12 +153,23 @@ Connected doctor accepts a completed durable probe through
 `--probe-checkpoint ID` and revalidates it against the current exact lock. A
 stale or incomplete checkpoint cannot contribute readiness observations.
 
+Inspect the Notion probe plan without calling Notion:
+
+    node soter/core/cli.mjs probe-prepare --lock soter/fixtures/meeting-intake/meeting-intake.lock.json --provider provider.integration.notion.mcp --json
+
+It returns `currentCall`, beginning with `fetch({id: "self"})`. Execute exactly
+that resolved native tool through the authenticated host route, then call
+`probe-complete --checkpoint ID --call CALL_ID --response ABSOLUTE_PRIVATE_PATH`.
+Each successful completion returns the next exact schema or bounded-read call;
+the fifteenth closes a `provider-probe/v2` with one fingerprint-bound check per
+step. A stopped, drifted, wrong-lock, or incomplete plan contributes no probe.
+
 After `npm install`, both host projections can start the same local
 `soter-core` stdio server, bound to the launching host identity. Its prepare
 tools durably checkpoint provider-neutral operations resolved through the
-selected host adapter. The host may explain
-`checkpoint.call.transport.operation`, but must execute exactly the native
-`checkpoint.call.transport.tool` through its separate authenticated MCP route
+selected host adapter. The host may explain `currentCall.transport.operation`
+when present (or the legacy `checkpoint.call.transport.operation`), but must
+execute exactly the matching native tool through its separate authenticated MCP route
 and return the native result to the matching complete tool. The server does
 not call providers, persist raw responses, or authorize
 confirmation-gated writes. Its stdio subprocess self-test establishes only the

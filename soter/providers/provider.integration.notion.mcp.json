@@ -12,9 +12,12 @@
     "completeExport": "completeMcp",
     "probePrepareExport": "prepareProbeMcp",
     "probeCompleteExport": "completeProbeMcp",
+    "probePlanExport": "prepareProbePlanMcp",
+    "probeStepCompleteExport": "completeProbePlanStepMcp",
+    "probeFinalizeExport": "finalizeProbePlanMcp",
     "server": "notion",
     "tools": ["fetch", "query_data_sources"],
-    "probeTools": ["fetch"]
+    "probeTools": ["fetch", "query_data_sources"]
   },
   "capabilities": [
     { "id": "crm.records.read", "version": "1.0.0" }
@@ -32,7 +35,7 @@
   "limitations": [
     "This first connected implementation is read-only. It does not declare crm.records.create or crm.records.update until approval-bound multi-call deduplication, compare-before-write, and read-after-write verification exist.",
     "Each connected record read accepts exactly one portable record type so it uses one Notion data source per host call. Cross-data-source SQL is plan-gated and is not a portable execution assumption.",
-    "Identity probing establishes host authentication and endpoint reachability only; target authority and record-read compatibility remain unknown until bounded schema and row evidence are observed.",
+    "Connected readiness uses an explicit private sequence: authenticated identity, exact schema metadata, and one bounded mapped query for each configured target. A zero-row result establishes query and empty-envelope compatibility but not non-null value decoding.",
     "Meeting-intake context can follow only mapped organization, project, and task page URIs observed in prior normalized records. Empty relations skip without a provider call, and related results outside the exact requested type, IDs, filters, or limit fail closed.",
     "Meeting participant values are provider People IDs and are not assumed to identify CRM contact pages; participant expansion requires a separate identity contract.",
     "Definition records expose mapped row properties only. Policy page bodies require a later bounded context-fetch capability.",

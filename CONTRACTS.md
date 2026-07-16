@@ -419,6 +419,7 @@ The normative Core state shapes are the
 [change set](./soter/contracts/change-set.schema.json),
 [host tool call](./soter/contracts/host-tool-call.schema.json),
 [provider probe call](./soter/contracts/provider-probe-call.schema.json),
+[provider probe plan checkpoint](./soter/contracts/provider-probe-plan-checkpoint.schema.json),
 [durable host call checkpoint](./soter/contracts/host-call-checkpoint.schema.json),
 [fixed-input sequential operation plan](./soter/contracts/operation-plan.schema.json),
 [fixed-input durable operation-plan checkpoint](./soter/contracts/operation-plan-checkpoint.schema.json),
@@ -427,8 +428,12 @@ The normative Core state shapes are the
 [evidence record](./soter/contracts/evidence.schema.json), and
 [doctor result](./soter/contracts/doctor-result.schema.json). Connected
 integrations produce short-lived, secret-safe
-[provider probes](./soter/contracts/provider-probe.schema.json) as private
-runtime state rather than portable configuration. The generated
+[single-call provider probes](./soter/contracts/provider-probe.schema.json) and
+[exact-check provider probes](./soter/contracts/provider-probe-v2.schema.json)
+as private runtime state rather than portable configuration. Typed provider
+record mappings use the
+[provider mapping v2 contract](./soter/contracts/provider-mapping-v2.schema.json)
+when current provider property types must be checked mechanically. The generated
 [meeting-intake fixtures](./soter/fixtures/meeting-intake/) show how those
 documents link while distinguishing local fixture-provider behavior from
 connected or live provider behavior.
@@ -688,7 +693,10 @@ model.
 
 Provider-specific field semantics and user-specific target identities are
 separate contracts. An integration-owned provider mapping declares how
-portable record types and fields correspond to provider fields. A pack-owned
+portable record types and fields correspond to provider fields. Mapping v2 also
+declares the provider property type used by schema checks, so a renamed field,
+relation converted to text, or status converted to select fails mechanically
+instead of surfacing later as a misleading empty or malformed record. A pack-owned
 settings definition validates the selected user's target identifiers and other
 desired configuration under `settings[pack-id]`. Mappings are shareable pack
 content; target identities are configuration. Neither belongs in an automation
@@ -711,8 +719,9 @@ call from Core. A connected provider declaration names:
   one logical operation and argument object.
 - An integration-owned completion function that normalizes the host response
   into the capability output contract.
-- A narrower probe-tool allowlist plus prepare and completion functions for
-  non-mutating readiness observations.
+- A narrower probe-tool allowlist plus either one-call prepare/completion
+  functions or plan/step/finalize functions for non-mutating readiness
+  observations.
 - The exact provider, capability, authority, containment, and effects covered.
 
 Core creates a `host-tool-call/v1` record before dispatch. The record binds the
@@ -908,25 +917,42 @@ applicability, authority, and disclosure contracts. A private connected
 snapshot is not a provider probe, checked-in evidence, readiness result,
 live-health result, or proof that a host autonomously executed the plan.
 
-Provider readiness uses a separate `provider-probe-call/v1` state machine. Core
-derives its probe plan from the exact lock and desired configuration, including
-the selected provider, secret-reference identifiers, authorities, and
-capabilities. The integration may choose only a tool in its narrower
-`probeTools` allowlist. On resume, the integration returns typed observations;
-Core—not the integration—assembles the exact-lock `provider-probe/v1` document.
-This separation prevents an identity or metadata request from being recorded as
-a domain capability invocation and prevents a provider adapter from widening
-the scope of the readiness claims it was asked to check.
+Provider readiness uses a state machine separate from domain capability runs.
+Core derives the observation scope from the exact lock and desired
+configuration, including the selected provider, secret-reference identifiers,
+authorities, and capabilities. The integration may choose only tools in its
+narrower `probeTools` allowlist.
 
-Probe-call records contain request, response, and normalized-probe
-fingerprints, never provider response bodies. A successful identity request may
-establish authentication and endpoint reachability while leaving a capability
-`unknown`. File-based CLI completion accepts native results only from an absolute
-private path whose real target is outside the repository; the caller deletes
-that transient input after completion. A provider response file cannot become
-pack content, desired configuration, runtime evidence, or a committed fixture.
-Capability compatibility becomes `passed` only when the declared safe method
-actually observes enough behavior to support that claim.
+A provider may implement the legacy single-call `provider-probe-call/v1`
+handshake or an explicit sequential
+`provider-probe-plan-checkpoint/v1`. A probe plan records each semantic scope,
+logical operation, resolved native host tool, arguments, and fingerprint before
+emitting at most one `currentCall`. Every completion supplies the exact
+checkpoint and call IDs. Core rederives the complete plan from the current lock
+before accepting a response, persists only the integration's minimized step
+result, and then emits the next request or stops. The integration cannot hide a
+multi-request probe inside one translator call.
+
+After all steps complete, the integration returns typed observations rather
+than a readiness verdict. Core checks that credentials, authorities,
+capabilities, and one check per exact plan step cover neither more nor less than
+the locked plan, then assembles `provider-probe/v2`. Each check binds its step,
+kind, subject, scope fingerprint, safe method, and minimized expected/observed
+fingerprints. This separation prevents identity or metadata requests from being
+recorded as domain invocations and prevents an adapter from widening readiness
+claims.
+
+Probe-call and probe-plan records contain request, response, scope, minimized
+result, and normalized-probe fingerprints, never provider response bodies. A
+successful identity request may establish authentication and endpoint
+reachability while leaving a capability `unknown`. File-based CLI completion
+accepts native results only from an absolute private path whose real target is
+outside the repository; the caller deletes that transient input after
+completion. A provider response file cannot become pack content, desired
+configuration, runtime evidence, or a committed fixture. Capability
+compatibility becomes `passed` only when every exact required check observes
+enough safe behavior to support that claim. Probe success never implies write
+permission, write behavior, automation verification, or live health.
 
 ### Binding automations to integrations
 

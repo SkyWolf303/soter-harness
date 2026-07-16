@@ -162,9 +162,10 @@ The main remaining gaps are structural and behavioral:
   private snapshot. Core binds every snapshot entry to an exact plan output and
   passed effect before persisting it and pausing the run. Policy page bodies and
   participant profiles remain deliberately unloaded; provider People IDs are
-  not assumed to be CRM contact page URIs. Its identity-only probe can establish
-  authentication and reachability while leaving target authority and schema
-  compatibility unknown.
+  not assumed to be CRM contact page URIs. Notion readiness now uses a separate
+  15-step private plan that checks identity plus exact schema and one bounded
+  mapped query for every configured target. Core persists only minimized step
+  observations and assembles a v2 probe after the complete plan passes.
   Connected Notion writes remain intentionally undeclared until plans support
   approval-bound operation batches, multi-call deduplication,
   compare-before-write, exact change-set approval, read-after-write
@@ -272,7 +273,7 @@ The connected Notion declaration covers reads only, while the
 meeting-intake automation also requires create and update capabilities. With
 those connected writes intentionally absent and no current private Notion or
 Otter probe, that command exits nonzero with `ready=failed`. A connected
-integration must emit a `provider-probe/v1` document for the exact lock; Core
+integration must emit a short-lived provider probe for the exact lock; Core
 will reject
 missing, expired, malformed, ambiguous, or wrong-lock probes. Probe documents
 contain secret-reference identifiers and safe observations, never secret
@@ -287,20 +288,33 @@ Core also exposes the host-neutral probe handshake for adapters and debugging:
       --json
 
 Core atomically stores the exact request under `.soter/state/host-calls` before
-returning it. The host executes only `checkpoint.call.transport` with
-`checkpoint.call.arguments`, then resumes by checkpoint ID:
+returning it. The Otter legacy single-call probe exposes `checkpoint.call` and
+resumes by checkpoint ID:
 
     node soter/core/cli.mjs probe-complete \
       --checkpoint checkpoint.probecall.example \
       --response /private/transient/otter-response.json
 
+A probe plan instead exposes `currentCall`, executes one explicit safe request
+at a time, and resumes with both checkpoint and call IDs:
+
+    node soter/core/cli.mjs probe-complete \
+      --checkpoint checkpoint.probeplan.example \
+      --call probecall.example.current-step \
+      --response /private/transient/notion-response.json
+
 The response file must use an absolute private path outside the repository; the
 CLI rejects relative paths, repository paths, and symlinks that resolve into the
 repository. Delete the transient input after completion. Core never copies its
-native body into durable state; it stores the typed probe plus response
-fingerprint. The current Otter producer intentionally
+native body into durable state; it stores minimized typed observations and
+fingerprints. A successful plan completion may return the next `currentCall`.
+The current Otter producer intentionally
 reports `meeting.transcript.read=unknown` because `get_user_info` does not read a
-transcript.
+transcript. The Notion producer instead emits 15 explicit read-only steps:
+authenticated identity, then exact schema metadata and a one-row bounded mapped
+query for each of the seven configured targets. Its completed `provider-probe/v2`
+can pass `crm.records.read` only when every step succeeds. It never establishes
+write behavior or end-to-end automation health.
 
 A connected doctor can consume the completed private checkpoint directly:
 

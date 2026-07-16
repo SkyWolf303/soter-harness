@@ -24,8 +24,10 @@ import { prepareRunEnvelope } from './run.mjs';
 import { assertOperationPlanDocument } from './operation-plans.mjs';
 import {
   commitDurableContextSnapshot,
+  completeDurableProviderProbeExecution,
   completeDurableOperationPlanExecution,
   getDurableHostExecution,
+  prepareDurableProviderProbeExecution,
   prepareDurableOperationPlanExecution
 } from './service.mjs';
 import {
@@ -49,6 +51,54 @@ import {
 } from './transaction.mjs';
 
 const FIXTURE_TIME = '2026-07-15T12:00:00.000Z';
+
+function notionProbeStepResponse(checkpoint, identityMarker, driftStepId = null) {
+  const source = checkpoint.plan.steps.find((step) => step.id === checkpoint.currentStepId);
+  if (source.kind === 'identity') {
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          metadata: { type: 'self' },
+          self: {
+            workspace: { id: 'workspace.selftest', name: identityMarker },
+            user: { id: 'user.selftest', name: identityMarker }
+          }
+        })
+      }],
+      isError: false
+    };
+  }
+  if (source.kind === 'schema') {
+    const schema = Object.fromEntries(source.scope.expectedFields.map((field) => {
+      return [field.provider, { name: field.provider, type: field.providerType }];
+    }));
+    if (source.id === driftStepId) {
+      const field = source.scope.expectedFields[0];
+      schema[field.provider].type = 'unexpected-selftest-type';
+    }
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          metadata: { type: 'data_source' },
+          title: 'Private target title ' + identityMarker,
+          url: 'https://notion.invalid/private-target',
+          text: '<data-source url="{{' + source.scope.targetUri + '}}">\n'
+            + '<data-source-state>\n'
+            + JSON.stringify({ schema })
+            + '\n</data-source-state>\n</data-source>'
+        })
+      }],
+      isError: false
+    };
+  }
+  return {
+    structuredContent: {
+      result: { results: [], has_more: false }
+    }
+  };
+}
 
 function copyExternalPackArtifacts(sourceRoot, targetRoot) {
   const packDir = path.join(sourceRoot, 'soter', 'packs');
@@ -412,6 +462,118 @@ export async function selftest(root) {
       || completedNotionProbe.probe?.capabilities.some((item) => item.state !== 'unknown')
       || JSON.stringify(completedNotionProbe).includes(notionIdentityMarker)) {
       failures.push('Notion identity probe did not preserve native routing, minimization, and honest unknown states');
+    }
+
+    const notionPlanMarker = 'private-notion-plan-selftest-marker';
+    let notionPlan = await prepareDurableProviderProbeExecution({
+      root: temp,
+      lockPath,
+      providerImplementation: connectedProviders.notion.id,
+      probeId: 'probe.integration.notion.plan-selftest',
+      at: FIXTURE_TIME,
+      validForSeconds: 300
+    });
+    const firstNotionPlanCall = notionPlan.currentCall;
+    const firstNotionPlanResponse = notionProbeStepResponse(
+      notionPlan.checkpoint,
+      notionPlanMarker
+    );
+    notionPlan = await completeDurableProviderProbeExecution({
+      root: temp,
+      checkpointId: notionPlan.checkpoint.id,
+      callId: firstNotionPlanCall.id,
+      response: firstNotionPlanResponse,
+      at: FIXTURE_TIME
+    });
+    const repeatedNotionPlanStep = await completeDurableProviderProbeExecution({
+      root: temp,
+      checkpointId: notionPlan.checkpoint.id,
+      callId: firstNotionPlanCall.id,
+      response: firstNotionPlanResponse,
+      at: FIXTURE_TIME
+    });
+    if (repeatedNotionPlanStep.checkpoint.checkpointFingerprint
+      !== notionPlan.checkpoint.checkpointFingerprint
+      || repeatedNotionPlanStep.currentCall?.id !== notionPlan.currentCall?.id) {
+      failures.push('Notion probe plan did not idempotently recover a repeated completed step response');
+    }
+    let notionPlanCalls = 1;
+    while (notionPlan.checkpoint.state === 'requested') {
+      const currentCall = notionPlan.currentCall;
+      const response = notionProbeStepResponse(
+        notionPlan.checkpoint,
+        notionPlanMarker
+      );
+      notionPlan = await completeDurableProviderProbeExecution({
+        root: temp,
+        checkpointId: notionPlan.checkpoint.id,
+        callId: currentCall.id,
+        response,
+        at: FIXTURE_TIME
+      });
+      notionPlanCalls += 1;
+    }
+    const notionPlanState = fs.readFileSync(
+      path.join(temp, notionPlan.checkpointPath),
+      'utf8'
+    );
+    if (notionPlanCalls !== 15
+      || notionPlan.checkpoint.state !== 'completed'
+      || notionPlan.checkpoint.result?.$contract !== 'soter://contracts/provider-probe/v2'
+      || notionPlan.checkpoint.result?.checks.length !== 15
+      || notionPlan.checkpoint.result?.checks.some((check) => check.state !== 'passed')
+      || notionPlan.checkpoint.result?.capabilities[0]?.state !== 'passed'
+      || notionPlan.currentCall !== null
+      || JSON.stringify(notionPlan).includes(notionPlanMarker)
+      || notionPlanState.includes(notionPlanMarker)) {
+      failures.push(
+        'Notion probe plan did not sequence, minimize, and close exact schema/read checks: '
+          + JSON.stringify({
+            calls: notionPlanCalls,
+            state: notionPlan.checkpoint.state,
+            contract: notionPlan.checkpoint.result?.$contract || null,
+            checks: notionPlan.checkpoint.result?.checks?.length || null,
+            capability: notionPlan.checkpoint.result?.capabilities?.[0]?.state || null,
+            currentCall: notionPlan.currentCall?.id || null,
+            markerInResult: JSON.stringify(notionPlan).includes(notionPlanMarker),
+            markerInState: notionPlanState.includes(notionPlanMarker),
+            failedStep: notionPlan.checkpoint.steps.find((step) => step.state === 'failed')?.id || null,
+            error: notionPlan.checkpoint.steps.find((step) => step.state === 'failed')?.error || null
+          })
+      );
+    }
+
+    let driftedNotionPlan = await prepareDurableProviderProbeExecution({
+      root: temp,
+      lockPath,
+      providerImplementation: connectedProviders.notion.id,
+      probeId: 'probe.integration.notion.schema-drift-selftest',
+      at: FIXTURE_TIME,
+      validForSeconds: 300
+    });
+    const driftStepId = 'step.target.organizations.schema';
+    while (driftedNotionPlan.checkpoint.state === 'requested') {
+      const currentCall = driftedNotionPlan.currentCall;
+      const response = notionProbeStepResponse(
+        driftedNotionPlan.checkpoint,
+        notionPlanMarker,
+        driftStepId
+      );
+      driftedNotionPlan = await completeDurableProviderProbeExecution({
+        root: temp,
+        checkpointId: driftedNotionPlan.checkpoint.id,
+        callId: currentCall.id,
+        response,
+        at: FIXTURE_TIME
+      });
+    }
+    const driftedStep = driftedNotionPlan.checkpoint.steps.find((step) => {
+      return step.id === driftStepId;
+    });
+    if (driftedNotionPlan.checkpoint.state !== 'failed'
+      || driftedStep?.error?.kind !== 'validation'
+      || driftedNotionPlan.checkpoint.result !== null) {
+      failures.push('Notion probe plan did not fail closed on mapped provider schema drift');
     }
 
     const resolutionEvidence = createResolutionEvidence({
@@ -1797,7 +1959,7 @@ export async function selftest(root) {
     return false;
   }
   process.stdout.write(
-    'CORE SELFTEST PASS: deterministic lock, typed fixture reads/writes, exact-scope approval, deduplication, expected-version conflicts, rollback, read-after-write verification, resumable fixed and bound sequential operation plans, bounded connected context finalization, resumable MCP host dispatch, connected probe readiness, expiry, exact-lock binding, honest states, and stale-lock detection.\n'
+    'CORE SELFTEST PASS: deterministic lock, typed fixture reads/writes, exact-scope approval, deduplication, expected-version conflicts, rollback, read-after-write verification, resumable fixed and bound sequential operation plans, bounded connected context finalization, resumable MCP host dispatch, exact-lock single and multi-step provider probes, schema drift rejection, connected readiness, expiry, honest states, and stale-lock detection.\n'
   );
   return true;
 }

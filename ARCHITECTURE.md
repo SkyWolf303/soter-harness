@@ -265,13 +265,19 @@ boundary:
    it into the portable capability output, and Core validates the output and
    records only the response and output fingerprints needed for traceability.
 
-Readiness checks use a parallel but distinct resumable probe call. Core fixes
-the credential-reference, authority, and capability scope from the resolved
-configuration; the integration chooses from a narrower safe probe-tool
-allowlist and returns observations rather than a readiness verdict. Core then
-builds the exact-lock, expiring probe. An identity result can therefore prove
-authentication and reachability without being mistaken for transcript or
-record compatibility.
+Readiness checks use a parallel but distinct resumable probe state machine.
+Core fixes the credential-reference, authority, and capability scope from the
+resolved configuration; the integration chooses from a narrower safe
+probe-tool allowlist and returns observations rather than a readiness verdict.
+A single safe request can use the legacy call contract. When readiness requires
+several resources or methods, a private probe-plan checkpoint exposes one exact
+host request at a time, fingerprints its semantic scope and arguments, and
+requires checkpoint plus call identity on resume. Core rederives the complete
+plan before accepting each response, stores only minimized step observations,
+and assembles the exact-lock, expiring probe after every required step passes.
+An identity result can therefore prove authentication and reachability without
+being mistaken for transcript or record compatibility, and an integration
+cannot hide several host calls behind one translator invocation.
 
 This keeps provider credentials and raw host transport outside Core while
 preventing Codex- or Claude-qualified tool names from becoming automation API.
@@ -470,8 +476,9 @@ resolution, artifact-fingerprinted locks, effect-free preflight, typed fixture
 capability dispatch, authority-aware context snapshots, exact-scope approvals,
 transactional fixture writes, rollback proof, read-after-write verification,
 claim-scoped evidence, an offline doctor, contract-enforced aggregation of
-short-lived connected provider probes, and private durable checkpoints for
-host-dispatched calls and their run envelopes. Core now also has versioned
+short-lived connected provider probes, explicit sequential provider-probe plans,
+and private durable checkpoints for host-dispatched calls and their run
+envelopes. Core now also has versioned
 sequential operation-plan contracts: v1 retains fixed inputs, while v2 binds
 typed string-list references from earlier normalized outputs into later inputs.
 The private checkpoint emits one exact policy-bound call at a time, fingerprints
@@ -490,17 +497,24 @@ do not contain authoritative page bodies. Participant People IDs are not treated
 as CRM contact page URIs. The current target includes the
 first connected Otter provider mapping, exact transcript-fetch request
 translation, and identity-only probe producer. It also includes a read-only
-connected Notion provider whose pack-owned settings, provider field mapping,
+connected Notion provider whose pack-owned settings, typed provider field mapping,
 bounded one-target query translator, normalized record versions, and exact
 per-host native tool mappings are mechanically checked. The one-target boundary
 avoids depending on plan-gated cross-data-source SQL; multi-target reads can be
 explicit ordered capability steps, and the initial connected context boundary
 now exercises that orchestration without broad reads across every CRM target.
-Identity probes deliberately leave
-domain compatibility unknown, and unobserved response shapes fail closed.
+Notion readiness is a separate 15-step private plan: identity, then schema and
+one-row bounded read checks for all seven configured targets. Schema checks bind
+every portable field to its current provider property name and type; read
+checks discard row values and persist only minimized counts, booleans, and
+fingerprints. The checked mapping now names the observed `🫂 Contacts`
+organization relation, but that development observation is not reusable
+connected evidence: another exact lock must run its own expiring probe. Otter's
+identity-only probe deliberately leaves transcript compatibility unknown, and
+all unobserved response shapes fail closed.
 Connected readiness still fails because Notion create and update
 implementations are intentionally absent and no current private probes are
-checked in. Repeatable exact-lock Notion schema/read evidence, observed Otter
+checked in. Observed Otter
 transcript conformance, host-started end-to-end dispatch, policy body loading and
 applicability, participant identity resolution, approval-bound multi-call
 writes, compensation, live health, host judgment, and host conformance remain

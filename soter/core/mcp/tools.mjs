@@ -49,13 +49,13 @@ export function createSoterMcpServer({ root, host }) {
   const server = new McpServer(
     { name: 'soter-core', version: '0.1.0' },
     {
-      instructions: 'Soter Core validates exact locks and runs for the active ' + host + ' host projection, then saves a private durable checkpoint before emitting a provider-neutral operation resolved to an exact native host tool. After compaction or restart, use soter_list_host_calls and soter_get_host_call to recover pending work. For a one-call checkpoint, invoke exactly checkpoint.call.transport.tool. For an operation plan, invoke exactly currentCall.transport.tool and return both checkpoint.id and currentCall.id; a successful completion may emit the next exact call. A completed meeting-intake context plan must be finalized with soter_finalize_meeting_intake_context before its snapshot is used. Always pass the requested arguments through the separately configured provider MCP route and return the native result unchanged. Never fabricate a provider response. Soter does not invoke providers, persist raw responses, or authorize connected writes.'
+      instructions: 'Soter Core validates exact locks and runs for the active ' + host + ' host projection, then saves a private durable checkpoint before emitting a provider-neutral operation resolved to an exact native host tool. After compaction or restart, use soter_list_host_calls and soter_get_host_call to recover pending work. Invoke exactly currentCall.transport.tool when currentCall is present; otherwise invoke the legacy checkpoint.call.transport.tool. Return both checkpoint.id and currentCall.id for operation and provider-probe plans because a successful completion may emit the next exact call. A completed meeting-intake context plan must be finalized with soter_finalize_meeting_intake_context before its snapshot is used. Always pass the requested arguments through the separately configured provider MCP route and return the native result unchanged. Never fabricate a provider response. Soter does not invoke providers, persist raw responses, or authorize connected writes.'
     }
   );
 
   server.registerTool('soter_prepare_provider_probe', {
     title: 'Prepare Soter provider probe',
-    description: 'Validate an exact configuration lock, durably checkpoint it, and emit one identity-minimized provider operation resolved to an exact native host tool. This tool does not call the provider.',
+    description: 'Validate an exact configuration lock, durably checkpoint an explicit provider readiness plan, and emit at most its first minimized native host request. This tool does not call the provider.',
     inputSchema: {
       lock_path: z.string().min(1),
       provider_implementation: z.string().min(1),
@@ -82,9 +82,10 @@ export function createSoterMcpServer({ root, host }) {
 
   server.registerTool('soter_complete_provider_probe', {
     title: 'Complete Soter provider probe',
-    description: 'Resume a durable provider probe checkpoint, validate and minimize the native result, and atomically close the checkpoint without persisting the raw response.',
+    description: 'Resume the exact provider probe call, validate and minimize the native result, and atomically emit the next explicit call or close the checkpoint without persisting the raw response.',
     inputSchema: {
       checkpoint_id: z.string().min(1),
+      call_id: z.string().min(1).optional(),
       response: jsonObject,
       at: z.string().min(20).optional()
     },
@@ -94,11 +95,12 @@ export function createSoterMcpServer({ root, host }) {
     const completed = await completeDurableProviderProbeExecution({
       root,
       checkpointId: input.checkpoint_id,
+      callId: input.call_id,
       response: input.response,
       at: input.at,
       expectedHost: host
     });
-    return result(completed, 'Validated and minimized the provider probe result.');
+    return result(completed, 'Advanced the exact provider probe without persisting the native response.');
   });
 
   server.registerTool('soter_prepare_capability_call', {

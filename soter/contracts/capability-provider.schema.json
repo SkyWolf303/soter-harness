@@ -46,6 +46,9 @@
         "completeExport": { "type": "string", "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$" },
         "probePrepareExport": { "type": "string", "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$" },
         "probeCompleteExport": { "type": "string", "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$" },
+        "probePlanExport": { "type": "string", "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$" },
+        "probeStepCompleteExport": { "type": "string", "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$" },
+        "probeFinalizeExport": { "type": "string", "pattern": "^[A-Za-z_$][A-Za-z0-9_$]*$" },
         "server": {
           "type": "string",
           "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*$"

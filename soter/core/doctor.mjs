@@ -249,7 +249,16 @@ export function runConnectedDoctor({
   const diagnostics = offline.report.diagnostics
     .filter((item) => item.code !== 'SOTER_OFFLINE_SCOPE');
   const lockFingerprint = fingerprintLock(lock);
-  const probeSchema = readJson(path.join(resolvedRoot, 'soter/contracts/provider-probe.schema.json'));
+  const probeSchemas = new Map([
+    [
+      'soter://contracts/provider-probe/v1',
+      readJson(path.join(resolvedRoot, 'soter/contracts/provider-probe.schema.json'))
+    ],
+    [
+      'soter://contracts/provider-probe/v2',
+      readJson(path.join(resolvedRoot, 'soter/contracts/provider-probe-v2.schema.json'))
+    ]
+  ]);
   const providers = listProviderDeclarations(resolvedRoot);
   const connectedProviders = providers.filter((provider) => provider.containment === 'connected');
   const validProbes = [];
@@ -257,7 +266,10 @@ export function runConnectedDoctor({
   const seenProbeIds = new Set();
 
   for (const probe of providerProbes) {
-    const failures = validateJsonSchema(probe, probeSchema);
+    const probeSchema = probeSchemas.get(probe?.$contract);
+    const failures = probeSchema
+      ? validateJsonSchema(probe, probeSchema)
+      : [{ path: '$.$contract', message: 'is not a supported provider probe contract' }];
     if (failures.length || seenProbeIds.has(probe?.id)) {
       probeContractStates.push('failed');
       diagnostics.push(diagnostic({
@@ -268,7 +280,7 @@ export function runConnectedDoctor({
         claim: 'Every connected provider probe is uniquely identified and satisfies its runtime contract.',
         subject: probe?.id || 'unknown provider probe',
         path: ['providerProbes'],
-        expected: 'A unique soter://contracts/provider-probe/v1 document.',
+        expected: 'A unique supported provider-probe/v1 or provider-probe/v2 document.',
         observed: seenProbeIds.has(probe?.id)
           ? 'The probe id occurs more than once.'
           : failures.slice(0, 5).map((item) => item.path + ' ' + item.message).join('; '),

@@ -42,7 +42,8 @@ function nativePayload(response) {
 
 function mappingDocument(mappings, capability) {
   const matches = (mappings || []).filter((mapping) => {
-    return mapping?.$contract === 'soter://contracts/provider-mapping/v1'
+    return (mapping?.$contract === 'soter://contracts/provider-mapping/v1'
+      || mapping?.$contract === 'soter://contracts/provider-mapping/v2')
       && mapping.capabilities?.includes(capability);
   });
   if (matches.length !== 1) {
@@ -272,6 +273,258 @@ export function completeProbeMcp({ response, plan }) {
     limitations: [
       'This identity-only probe establishes host authentication and endpoint reachability, not access to configured data sources, schema compatibility, record normalization, or end-to-end health.',
       'The provider response body and returned identity values are excluded; only typed observations and fingerprints may persist.'
+    ]
+  };
+}
+
+function typedMapping(mappings) {
+  const mapping = mappingDocument(mappings, 'crm.records.read');
+  if (mapping.$contract !== 'soter://contracts/provider-mapping/v2'
+    || mapping.recordTypes.some((record) => {
+      return record.fields.some((field) => typeof field.providerType !== 'string');
+    })) {
+    throw providerError(
+      'validation',
+      'Notion schema probes require a typed provider mapping contract.'
+    );
+  }
+  return mapping;
+}
+
+function sortedFieldSignature(fields) {
+  return fields.map((field) => ({
+    provider: field.provider,
+    providerType: field.providerType
+  })).sort((left, right) => left.provider.localeCompare(right.provider, 'en'));
+}
+
+function dataSourceState(payload, targetUri) {
+  if (payload?.metadata?.type !== 'data_source' || typeof payload.text !== 'string') {
+    throw providerError('validation', 'Notion fetch target did not return data-source metadata.');
+  }
+  const source = payload.text.match(/<data-source\s+url="([^"]+)">/);
+  const state = payload.text.match(/<data-source-state>\s*([\s\S]*?)\s*<\/data-source-state>/);
+  const sourceUri = source?.[1]?.replace(/^\{\{/, '').replace(/\}\}$/, '');
+  if (sourceUri !== targetUri || !state?.[1]) {
+    throw providerError(
+      'validation',
+      'Notion fetch target did not identify the exact configured data source.'
+    );
+  }
+  const parsed = requiredObject(
+    parseJsonText(state[1], 'Notion data-source state'),
+    'Notion data-source state'
+  );
+  return requiredObject(parsed.schema, 'Notion data-source schema');
+}
+
+function schemaObservation(step, response) {
+  const schema = dataSourceState(
+    requiredObject(nativePayload(response), 'Notion data-source result'),
+    step.scope.targetUri
+  );
+  const expected = step.scope.expectedFields;
+  const observed = expected.map((field) => {
+    const property = requiredObject(
+      schema[field.provider],
+      'Notion mapped property ' + field.provider
+    );
+    if (property.name !== field.provider || property.type !== field.providerType) {
+      throw providerError(
+        'validation',
+        'Notion mapped property ' + field.provider + ' expected type '
+          + field.providerType + ' but observed ' + String(property.type) + '.'
+      );
+    }
+    return { provider: property.name, providerType: property.type };
+  }).sort((left, right) => left.provider.localeCompare(right.provider, 'en'));
+  const expectedSignature = sortedFieldSignature(expected);
+  return {
+    schemaCompatible: true,
+    mappedFieldCount: observed.length,
+    expectedFingerprint: fingerprintJson(expectedSignature),
+    observedFingerprint: fingerprintJson(observed)
+  };
+}
+
+export function prepareProbePlanMcp({ plan, settings, mappings }) {
+  const mapping = typedMapping(mappings);
+  const targets = notionSettings(settings);
+  const steps = [
+    {
+      id: 'step.identity',
+      kind: 'identity',
+      subject: 'provider.identity',
+      scope: {
+        expectation: {
+          metadataType: 'self',
+          workspaceIdType: 'string',
+          userIdType: 'string'
+        }
+      },
+      tool: 'fetch',
+      arguments: { id: 'self' }
+    }
+  ];
+  for (const record of mapping.recordTypes) {
+    const targetUri = requiredString(
+      targets[record.target],
+      'Notion target ' + record.target
+    );
+    if (!/^collection:\/\/[a-f0-9-]{32,36}$/.test(targetUri)) {
+      throw providerError('validation', 'Notion target ' + record.target + ' is not a collection URI.');
+    }
+    const expectedFields = record.fields.map((field) => ({
+      portable: field.portable,
+      provider: field.provider,
+      providerType: field.providerType,
+      decode: field.decode
+    }));
+    steps.push({
+      id: 'step.target.' + record.target + '.schema',
+      kind: 'schema',
+      subject: 'target.' + record.target,
+      scope: {
+        targetKey: record.target,
+        targetUri,
+        recordType: record.id,
+        mappingId: mapping.id,
+        mappingVersion: mapping.version,
+        expectedFields
+      },
+      tool: 'fetch',
+      arguments: { id: targetUri }
+    });
+    const input = { recordTypes: [record.id], filters: {}, limit: 1 };
+    const request = prepareMcp({
+      capability: 'crm.records.read',
+      input,
+      settings,
+      mappings
+    });
+    steps.push({
+      id: 'step.target.' + record.target + '.read',
+      kind: 'read',
+      subject: 'target.' + record.target,
+      scope: {
+        targetKey: record.target,
+        targetUri,
+        recordType: record.id,
+        mappingId: mapping.id,
+        mappingVersion: mapping.version,
+        input,
+        expectation: {
+          resultEnvelope: 'bounded-normalized-records',
+          maximumRows: 1
+        }
+      },
+      tool: request.tool,
+      arguments: request.arguments
+    });
+  }
+  if (!plan.capabilities.includes('crm.records.read')) {
+    throw providerError('validation', 'Notion probe plan is outside crm.records.read scope.');
+  }
+  return { steps };
+}
+
+export function completeProbePlanStepMcp({ step, response, plan, mappings, at }) {
+  if (step.kind === 'identity') {
+    const payload = requiredObject(nativePayload(response), 'Notion identity result');
+    if (payload?.metadata?.type !== 'self'
+      || typeof payload?.self?.workspace?.id !== 'string'
+      || typeof payload?.self?.user?.id !== 'string') {
+      throw providerError(
+        'authentication',
+        'Notion fetch(self) did not return an authenticated workspace and user identity.'
+      );
+    }
+    return {
+      identityAuthenticated: true,
+      expectedFingerprint: fingerprintJson(step.scope.expectation),
+      observedFingerprint: fingerprintJson({
+        metadataType: payload.metadata.type,
+        workspaceIdType: typeof payload.self.workspace.id,
+        userIdType: typeof payload.self.user.id
+      })
+    };
+  }
+  if (step.kind === 'schema') return schemaObservation(step, response);
+  if (step.kind === 'read') {
+    const normalized = completeMcp({
+      capability: 'crm.records.read',
+      authority: plan.authorities[0],
+      input: step.scope.input,
+      response,
+      at,
+      mappings
+    });
+    return {
+      queryAccepted: true,
+      normalized: true,
+      rowCount: normalized.records.length,
+      rowObserved: normalized.records.length > 0,
+      expectedFingerprint: fingerprintJson(step.scope.expectation),
+      observedFingerprint: fingerprintJson({
+        resultEnvelope: 'bounded-normalized-records',
+        rowCount: normalized.records.length,
+        rowObserved: normalized.records.length > 0
+      })
+    };
+  }
+  throw providerError('validation', 'Unsupported Notion provider probe step kind.');
+}
+
+export function finalizeProbePlanMcp({ plan, steps, results }) {
+  const byStep = new Map(results.map((item) => [item.stepId, item]));
+  const checks = steps.map((step) => {
+    const observed = byStep.get(step.id);
+    if (!observed?.result || typeof observed.resultFingerprint !== 'string') {
+      throw providerError('validation', 'Notion provider probe is missing a minimized step result.');
+    }
+    return {
+      id: 'check.' + step.id.slice('step.'.length),
+      stepId: step.id,
+      kind: step.kind,
+      subject: step.subject,
+      scopeFingerprint: step.scopeFingerprint,
+      state: 'passed',
+      method: step.kind === 'read' ? 'read-only' : 'metadata',
+      expectedFingerprint: observed.result.expectedFingerprint,
+      observedFingerprint: observed.result.observedFingerprint,
+      details: step.kind === 'identity'
+        ? 'The host-authenticated Notion identity response matched the minimized identity contract.'
+        : step.kind === 'schema'
+          ? 'The exact configured target exposed every mapped property with its declared provider type.'
+          : 'The exact configured target accepted its bounded mapped query and returned a normalizable result envelope.'
+    };
+  });
+  return {
+    credentials: plan.credentialRefs.map((secretRefId) => ({
+      secretRefId,
+      state: 'passed',
+      details: 'The host-authenticated Notion identity endpoint returned a workspace and user.'
+    })),
+    reachability: {
+      state: 'passed',
+      details: 'The host reached every explicit identity, target-schema, and bounded target-read probe step.'
+    },
+    authorities: plan.authorities.map((id) => ({
+      id,
+      state: 'passed',
+      details: 'Every exact configured CRM target required by this locked authority scope was schema-compatible and readable.'
+    })),
+    capabilities: plan.capabilities.map((id) => ({
+      id,
+      state: 'passed',
+      method: 'read-only',
+      details: 'Every configured mapped target accepted a one-row bounded query whose result envelope normalized successfully.'
+    })),
+    checks,
+    limitations: [
+      'This exact-lock probe establishes current configured target access, mapped schema compatibility, and bounded read-query normalization only; it does not establish write behavior or end-to-end automation health.',
+      'A target that returns zero rows proves query and empty-envelope compatibility but does not exercise non-null value decoding for that target.',
+      'Raw provider responses, row values, target identifiers, workspace identity values, and user identity values are excluded from the persisted observations.'
     ]
   };
 }

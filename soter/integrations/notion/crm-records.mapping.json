@@ -1,6 +1,6 @@
 {
-  "$contract": "soter://contracts/provider-mapping/v1",
-  "contractVersion": "1.0.0",
+  "$contract": "soter://contracts/provider-mapping/v2",
+  "contractVersion": "2.0.0",
   "id": "mapping.integration.notion.crm-records",
   "pack": "integration.notion",
   "provider": "provider.integration.notion.mcp",
@@ -12,73 +12,73 @@
       "id": "policy",
       "target": "policies",
       "fields": [
-        { "portable": "name", "provider": "Name", "decode": "scalar" }
+        { "portable": "name", "provider": "Name", "providerType": "title", "decode": "scalar" }
       ]
     },
     {
       "id": "organization",
       "target": "organizations",
       "fields": [
-        { "portable": "name", "provider": "Name", "decode": "scalar" },
-        { "portable": "organizationType", "provider": "Type", "decode": "scalar" },
-        { "portable": "tags", "provider": "Tags", "decode": "json" },
-        { "portable": "projectUris", "provider": "Projects", "decode": "json" },
-        { "portable": "contactUris", "provider": "Contacts", "decode": "json" }
+        { "portable": "name", "provider": "Name", "providerType": "title", "decode": "scalar" },
+        { "portable": "organizationType", "provider": "Type", "providerType": "select", "decode": "scalar" },
+        { "portable": "tags", "provider": "Tags", "providerType": "multi_select", "decode": "json" },
+        { "portable": "projectUris", "provider": "Projects", "providerType": "relation", "decode": "json" },
+        { "portable": "contactUris", "provider": "🫂 Contacts", "providerType": "relation", "decode": "json" }
       ]
     },
     {
       "id": "person",
       "target": "contacts",
       "fields": [
-        { "portable": "name", "provider": "Name", "decode": "scalar" },
-        { "portable": "email", "provider": "Email", "decode": "scalar" },
-        { "portable": "role", "provider": "Role", "decode": "scalar" },
-        { "portable": "status", "provider": "Status", "decode": "scalar" },
-        { "portable": "disposition", "provider": "Disposition", "decode": "scalar" },
-        { "portable": "authority", "provider": "Authority", "decode": "json" },
-        { "portable": "organizationUris", "provider": "Org", "decode": "json" }
+        { "portable": "name", "provider": "Name", "providerType": "title", "decode": "scalar" },
+        { "portable": "email", "provider": "Email", "providerType": "email", "decode": "scalar" },
+        { "portable": "role", "provider": "Role", "providerType": "select", "decode": "scalar" },
+        { "portable": "status", "provider": "Status", "providerType": "select", "decode": "scalar" },
+        { "portable": "disposition", "provider": "Disposition", "providerType": "select", "decode": "scalar" },
+        { "portable": "authority", "provider": "Authority", "providerType": "multi_select", "decode": "json" },
+        { "portable": "organizationUris", "provider": "Org", "providerType": "relation", "decode": "json" }
       ]
     },
     {
       "id": "project",
       "target": "projects",
       "fields": [
-        { "portable": "name", "provider": "Name", "decode": "scalar" },
-        { "portable": "projectType", "provider": "Type", "decode": "scalar" },
-        { "portable": "status", "provider": "Status", "decode": "scalar" },
-        { "portable": "organizationUris", "provider": "Organization", "decode": "json" },
-        { "portable": "taskUris", "provider": "Tasks", "decode": "json" }
+        { "portable": "name", "provider": "Name", "providerType": "title", "decode": "scalar" },
+        { "portable": "projectType", "provider": "Type", "providerType": "select", "decode": "scalar" },
+        { "portable": "status", "provider": "Status", "providerType": "status", "decode": "scalar" },
+        { "portable": "organizationUris", "provider": "Organization", "providerType": "relation", "decode": "json" },
+        { "portable": "taskUris", "provider": "Tasks", "providerType": "relation", "decode": "json" }
       ]
     },
     {
       "id": "task",
       "target": "tasks",
       "fields": [
-        { "portable": "title", "provider": "Name", "decode": "scalar" },
-        { "portable": "status", "provider": "Status", "decode": "scalar" },
-        { "portable": "context", "provider": "Context", "decode": "scalar" },
-        { "portable": "projectUris", "provider": "Project", "decode": "json" }
+        { "portable": "title", "provider": "Name", "providerType": "title", "decode": "scalar" },
+        { "portable": "status", "provider": "Status", "providerType": "status", "decode": "scalar" },
+        { "portable": "context", "provider": "Context", "providerType": "select", "decode": "scalar" },
+        { "portable": "projectUris", "provider": "Project", "providerType": "relation", "decode": "json" }
       ]
     },
     {
       "id": "meeting",
       "target": "meetings",
       "fields": [
-        { "portable": "title", "provider": "Meeting Name", "decode": "scalar" },
-        { "portable": "meetingType", "provider": "Type", "decode": "scalar" },
-        { "portable": "recordingUri", "provider": "Recording", "decode": "scalar" },
-        { "portable": "organizationUris", "provider": "Org", "decode": "json" },
-        { "portable": "participantIds", "provider": "Participants", "decode": "json" }
+        { "portable": "title", "provider": "Meeting Name", "providerType": "title", "decode": "scalar" },
+        { "portable": "meetingType", "provider": "Type", "providerType": "select", "decode": "scalar" },
+        { "portable": "recordingUri", "provider": "Recording", "providerType": "url", "decode": "scalar" },
+        { "portable": "organizationUris", "provider": "Org", "providerType": "relation", "decode": "json" },
+        { "portable": "participantIds", "provider": "Participants", "providerType": "person", "decode": "json" }
       ]
     },
     {
       "id": "meeting-summary",
       "target": "documents",
       "fields": [
-        { "portable": "title", "provider": "Name", "decode": "scalar" },
-        { "portable": "documentType", "provider": "Type", "decode": "scalar" },
-        { "portable": "description", "provider": "Description", "decode": "scalar" },
-        { "portable": "link", "provider": "Link", "decode": "scalar" }
+        { "portable": "title", "provider": "Name", "providerType": "title", "decode": "scalar" },
+        { "portable": "documentType", "provider": "Type", "providerType": "select", "decode": "scalar" },
+        { "portable": "description", "provider": "Description", "providerType": "text", "decode": "scalar" },
+        { "portable": "link", "provider": "Link", "providerType": "url", "decode": "scalar" }
       ]
     }
   ],

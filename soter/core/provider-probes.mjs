@@ -21,7 +21,7 @@ function uniqueSorted(values) {
   return [...new Set(values)].sort(compareText);
 }
 
-function selectedProvider(root, lock, implementation) {
+export function selectedProvider(root, lock, implementation) {
   const matches = listProviderDeclarations(root).filter((provider) => {
     return provider.id === implementation
       && provider.containment === 'connected'
@@ -56,7 +56,7 @@ function desiredConfiguration(root, lock) {
   return configuration;
 }
 
-function probePlan(root, lock, provider, bindings) {
+export function probePlan(root, lock, provider, bindings) {
   const configuration = desiredConfiguration(root, lock);
   const desiredBindings = configuration.bindings.filter((binding) => {
     return binding.providerPack === provider.pack
@@ -89,8 +89,11 @@ function assertCallContract(root, call) {
   }
 }
 
-function assertProbeContract(root, probe) {
-  const schema = readJson(path.join(root, 'soter/contracts/provider-probe.schema.json'));
+export function assertProbeContract(root, probe) {
+  const schemaPath = probe?.$contract === 'soter://contracts/provider-probe/v2'
+    ? 'soter/contracts/provider-probe-v2.schema.json'
+    : 'soter/contracts/provider-probe.schema.json';
+  const schema = readJson(path.join(root, schemaPath));
   const failures = validateJsonSchema(probe, schema);
   if (failures.length) {
     throw Object.assign(new Error(
@@ -126,7 +129,7 @@ function exactlyScoped(items, key, expected) {
     && sameItems(ids, expected);
 }
 
-function assertObservationScope(plan, observations) {
+export function assertObservationScope(plan, observations) {
   if (!observations || typeof observations !== 'object' || Array.isArray(observations)) {
     throw Object.assign(new Error('Probe translator must return structured observations.'), {
       kind: 'validation'
@@ -142,7 +145,7 @@ function assertObservationScope(plan, observations) {
   }
 }
 
-function validUntil(at, seconds) {
+export function validUntil(at, seconds) {
   const timestamp = Date.parse(at);
   if (!Number.isFinite(timestamp)) {
     throw Object.assign(new Error('Probe completion time is not a valid timestamp.'), {
