@@ -59,6 +59,10 @@
   "effects": ["read", "disclosure", "write"],
   "artifacts": [
     {
+      "path": "soter/automations/meeting-intake/context.mjs",
+      "role": "implementation"
+    },
+    {
       "path": "soter/scenarios/meeting-intake/happy-path.scenario.json",
       "role": "evaluation"
     },

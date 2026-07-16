@@ -25,11 +25,14 @@ import {
 } from './provider-probes.mjs';
 import { fingerprintLock, lockMatchesResolution } from './resolve.mjs';
 import {
+  hasContextSnapshotState,
   hasHostCallCheckpoint,
   hasRunState,
   listHostCallCheckpointDocuments,
+  readContextSnapshotState,
   readHostCallCheckpoint,
   readRunState,
+  writeContextSnapshotState,
   writeHostCallCheckpoint,
   writeRunState
 } from './runtime-state.mjs';
@@ -83,6 +86,30 @@ function assertExactRun(root, lockFile, lock, run, allowedStates = EXECUTABLE_RU
     || fingerprintJson(run.bindings) !== fingerprintJson(lock.bindings)
     || fingerprintJson(run.effectPolicies) !== fingerprintJson(lock.effectPolicies)) {
     throw new Error('Run envelope does not match the exact lock, graph, host, bindings, and effect policy.');
+  }
+  const selectedAutomation = lock.packs.filter((pack) => {
+    return pack.id === run.automation.id && pack.layer === 'automation';
+  });
+  const runAuthorities = run.context.map((item) => ({
+    id: item.authority,
+    subject: item.subject,
+    role: item.role,
+    uri: item.uri,
+    declarationFingerprint: item.declarationFingerprint
+  })).sort((left, right) => left.id.localeCompare(right.id, 'en'));
+  const lockAuthorities = lock.authorities.map((item) => ({
+    id: item.id,
+    subject: item.subject,
+    role: item.role,
+    uri: item.uri,
+    declarationFingerprint: item.declarationFingerprint
+  })).sort((left, right) => left.id.localeCompare(right.id, 'en'));
+  if (selectedAutomation.length !== 1
+    || selectedAutomation[0].version !== run.automation.version
+    || fingerprintJson(runAuthorities) !== fingerprintJson(lockAuthorities)) {
+    throw new Error(
+      'Run envelope does not match the exact selected automation and authority declarations.'
+    );
   }
   if (!allowedStates.has(run.lifecycleState)) {
     throw new Error(
@@ -193,10 +220,14 @@ function runCheckpointEntry(call) {
   };
 }
 
+function effectIdForCall(call) {
+  return 'effect.' + call.id.slice('toolcall.'.length);
+}
+
 function invocationFromCall(call) {
   if (call.state === 'requested') return null;
   return {
-    id: 'effect.' + call.id.slice('toolcall.'.length),
+    id: effectIdForCall(call),
     capability: call.capability.id,
     capabilityVersion: call.capability.version,
     providerPack: call.provider.pack,
@@ -273,6 +304,7 @@ function operationPlanRunEntry(checkpoint) {
 }
 
 function syncRunWithOperationPlan(run, checkpoint) {
+  const priorLifecycle = run.lifecycleState;
   let next = structuredClone(run);
   for (const step of checkpoint.steps) {
     if (!step.call) continue;
@@ -282,9 +314,16 @@ function syncRunWithOperationPlan(run, checkpoint) {
   const index = next.checkpoints.findIndex((item) => item.id === entry.id);
   if (index >= 0) next.checkpoints[index] = entry;
   else next.checkpoints.push(entry);
-  next.lifecycleState = checkpoint.state === 'requested' || checkpoint.state === 'completed'
-    ? 'executing'
-    : 'paused';
+  const laterLifecycle = ['verifying', 'completed', 'failed', 'paused'].includes(priorLifecycle);
+  if (checkpoint.state === 'requested') {
+    next.lifecycleState = 'executing';
+  } else if (checkpoint.state === 'completed') {
+    next.lifecycleState = laterLifecycle ? priorLifecycle : 'executing';
+  } else {
+    next.lifecycleState = ['completed', 'failed'].includes(priorLifecycle)
+      ? priorLifecycle
+      : 'paused';
+  }
   return next;
 }
 
@@ -902,6 +941,225 @@ export function getDurableHostExecution({ root, checkpointId, expectedHost }) {
     result.currentCall = operationPlanCurrentCall(state.checkpoint);
   }
   return result;
+}
+
+export function getExactDurableHostExecution({ root, checkpointId, expectedHost }) {
+  const state = exactCheckpoint(root, checkpointId, expectedHost);
+  return durableResult(root, state);
+}
+
+function replaceExactById(items, value, label) {
+  const next = structuredClone(items);
+  const index = next.findIndex((item) => item.id === value.id);
+  if (index >= 0) {
+    if (fingerprintJson(next[index]) !== fingerprintJson(value)) {
+      throw new Error(label + ' conflicts with existing durable state: ' + value.id + '.');
+    }
+  } else {
+    next.push(value);
+  }
+  return next;
+}
+
+function assertSnapshotEntryMatchesStep(entry, step) {
+  const call = step.call;
+  if (entry.valueFingerprint !== step.outputFingerprint
+    || fingerprintJson(entry.value) !== step.outputFingerprint
+    || entry.authority !== call.authority
+    || entry.capability !== call.capability.id
+    || entry.providerPack !== call.provider.pack
+    || entry.providerImplementation !== call.provider.implementation
+    || entry.providerVersion !== call.provider.version
+    || entry.observedAt !== step.output.observedAt
+    || fingerprintJson(entry.provenance) !== fingerprintJson(step.output.provenance)) {
+    return false;
+  }
+  return true;
+}
+
+export function commitDurableContextSnapshot({
+  root,
+  checkpointId,
+  snapshot,
+  contextUpdates,
+  checkpointDetails,
+  expectedHost
+}) {
+  const resolvedRoot = path.resolve(root);
+  const state = exactCheckpoint(resolvedRoot, checkpointId, expectedHost);
+  const checkpoint = state.checkpoint;
+  if (checkpoint.kind !== 'operation-plan' || checkpoint.state !== 'completed') {
+    throw new Error('Context snapshots can commit only from a completed operation plan.');
+  }
+  contractFailures(
+    resolvedRoot,
+    snapshot,
+    'soter/contracts/context-snapshot.schema.json',
+    'Context snapshot'
+  );
+  if (snapshot.privacy.scope !== 'private'
+    || snapshot.containment !== 'connected'
+    || containsCredentialMaterial(snapshot)) {
+    throw new Error('Connected context snapshots must remain private and credential-free.');
+  }
+  if (typeof checkpointDetails !== 'string'
+    || checkpointDetails.length < 12
+    || containsCredentialMaterial(checkpointDetails)
+    || containsCredentialMaterial(contextUpdates)) {
+    throw new Error('Context snapshot commit metadata must be explicit and credential-free.');
+  }
+  if (snapshot.runId !== checkpoint.run.id
+    || snapshot.createdAt !== checkpoint.updatedAt
+    || snapshot.configurationLockFingerprint !== checkpoint.configurationLock.fingerprint
+    || snapshot.graphFingerprint !== checkpoint.graphFingerprint) {
+    throw new Error(
+      'Context snapshot does not match the exact operation plan run, completion, lock, and graph.'
+    );
+  }
+
+  const completedSteps = checkpoint.steps.filter((step) => {
+    return step.state === 'completed' && step.call && step.output && step.outputFingerprint;
+  });
+  if (completedSteps.length !== checkpoint.steps.length
+    || snapshot.entries.length !== completedSteps.length) {
+    throw new Error('Context snapshot must represent every completed operation-plan output exactly once.');
+  }
+  if (new Set(snapshot.entries.map((entry) => entry.id)).size !== snapshot.entries.length) {
+    throw new Error('Context snapshot entry identifiers must be unique.');
+  }
+  const matchedStepIds = new Set();
+  for (const entry of snapshot.entries) {
+    const matches = completedSteps.filter((step) => {
+      return !matchedStepIds.has(step.id) && assertSnapshotEntryMatchesStep(entry, step);
+    });
+    if (matches.length !== 1) {
+      throw new Error(
+        'Context snapshot entry ' + entry.id
+          + ' does not bind exactly one normalized operation-plan output.'
+      );
+    }
+    matchedStepIds.add(matches[0].id);
+  }
+  const expectedEffectIds = completedSteps.map((step) => effectIdForCall(step.call)).sort();
+  const snapshotEffectIds = [...snapshot.effectIds].sort();
+  if (fingerprintJson(snapshotEffectIds) !== fingerprintJson(expectedEffectIds)) {
+    throw new Error('Context snapshot effects do not match the completed operation plan exactly.');
+  }
+
+  const run = durableRunForCheckpoint(
+    resolvedRoot,
+    state.lockFile,
+    state.lock,
+    checkpoint
+  );
+  if (!run || run.id !== snapshot.runId) {
+    throw new Error('Context snapshot does not match its durable run.');
+  }
+  for (const entry of snapshot.entries) {
+    const authorities = run.context.filter((item) => item.authority === entry.authority);
+    if (authorities.length !== 1
+      || authorities[0].subject !== entry.subject
+      || authorities[0].role !== entry.role) {
+      throw new Error(
+        'Context snapshot entry ' + entry.id
+          + ' does not match its run authority subject and role.'
+      );
+    }
+  }
+  for (const effectId of expectedEffectIds) {
+    if (!run.effects.some((item) => item.id === effectId && item.state === 'passed')) {
+      throw new Error('Durable run is missing completed context effect ' + effectId + '.');
+    }
+  }
+  if (!Array.isArray(contextUpdates)
+    || contextUpdates.length < 1
+    || contextUpdates.some((update) => {
+      return !update
+        || typeof update.authority !== 'string'
+        || typeof update.status !== 'string'
+        || typeof update.provenance !== 'string'
+        || typeof update.freshness !== 'string';
+    })) {
+    throw new Error('Context snapshot commit requires explicit run context updates.');
+  }
+  const entryAuthorities = new Set(snapshot.entries.map((entry) => entry.authority));
+  const updateAuthorities = new Set(contextUpdates.map((update) => update.authority));
+  if (updateAuthorities.size !== contextUpdates.length
+    || fingerprintJson([...updateAuthorities].sort())
+      !== fingerprintJson([...entryAuthorities].sort())) {
+    throw new Error('Context updates must cover each snapshot authority exactly once.');
+  }
+
+  const nextRun = structuredClone(run);
+  for (const update of contextUpdates) {
+    const index = nextRun.context.findIndex((item) => item.authority === update.authority);
+    if (index < 0) {
+      throw new Error('Durable run does not declare context authority ' + update.authority + '.');
+    }
+    nextRun.context[index] = {
+      ...nextRun.context[index],
+      status: update.status,
+      provenance: update.provenance,
+      freshness: update.freshness
+    };
+  }
+  const snapshotFingerprint = fingerprintJson(snapshot);
+  nextRun.checkpoints = replaceExactById(nextRun.checkpoints, {
+    id: 'context-assembly.' + snapshot.id,
+    kind: 'context-assembly',
+    state: 'passed',
+    planId: checkpoint.plan.id,
+    planFingerprint: checkpoint.planFingerprint,
+    snapshotId: snapshot.id,
+    snapshotFingerprint,
+    updatedAt: snapshot.createdAt,
+    details: checkpointDetails
+  }, 'Context assembly checkpoint');
+  nextRun.outputs = replaceExactById(nextRun.outputs, {
+    id: snapshot.id,
+    type: 'context-snapshot',
+    fingerprint: snapshotFingerprint
+  }, 'Context snapshot output');
+  nextRun.lifecycleState = 'paused';
+  contractFailures(
+    resolvedRoot,
+    nextRun,
+    'soter/contracts/run-envelope.schema.json',
+    'Context-updated run envelope'
+  );
+  assertExactRun(
+    resolvedRoot,
+    state.lockFile,
+    state.lock,
+    nextRun,
+    DURABLE_RUN_STATES
+  );
+
+  let snapshotState;
+  if (hasContextSnapshotState(resolvedRoot, snapshot.id)) {
+    snapshotState = readContextSnapshotState(resolvedRoot, snapshot.id);
+    contractFailures(
+      resolvedRoot,
+      snapshotState.snapshot,
+      'soter/contracts/context-snapshot.schema.json',
+      'Durable context snapshot'
+    );
+    if (fingerprintJson(snapshotState.snapshot) !== snapshotFingerprint) {
+      throw new Error('Context snapshot conflicts with existing durable state.');
+    }
+    snapshotState.path = repoRelativePath(resolvedRoot, snapshotState.file);
+  } else {
+    snapshotState = writeContextSnapshotState(resolvedRoot, snapshot);
+  }
+  const runState = writeRunState(resolvedRoot, nextRun);
+  return {
+    checkpoint,
+    checkpointPath: repoRelativePath(resolvedRoot, state.checkpointFile),
+    snapshot,
+    snapshotPath: snapshotState.path,
+    run: nextRun,
+    runPath: runState.path
+  };
 }
 
 export function getDurableProviderProbe({ root, checkpointId, expectedHost }) {

@@ -6,7 +6,7 @@
   "level": "connected",
   "configuration": {
     "name": "meeting-intake",
-    "lockFingerprint": "sha256:6481fee66130064cbfd77dd82a0a404764a9d92ca3d35f05beb713f71b223235"
+    "lockFingerprint": "sha256:216fe9162ac12104dc26421f29112ec0c567a95d8f0ab5414c2fd72dcd0b7a50"
   },
   "states": {
     "valid": "passed",
@@ -112,7 +112,7 @@
         "providerProbes",
         "provider.integration.notion.mcp"
       ],
-      "expected": "One current probe bound to sha256:6481fee66130064cbfd77dd82a0a404764a9d92ca3d35f05beb713f71b223235.",
+      "expected": "One current probe bound to sha256:216fe9162ac12104dc26421f29112ec0c567a95d8f0ab5414c2fd72dcd0b7a50.",
       "observed": "Found 0 matching probes.",
       "evidenceIds": [],
       "remediation": "Run the provider adapter read-only probe and pass its structured result to the connected doctor."
@@ -140,7 +140,7 @@
         "providerProbes",
         "provider.integration.otter.mcp"
       ],
-      "expected": "One current probe bound to sha256:6481fee66130064cbfd77dd82a0a404764a9d92ca3d35f05beb713f71b223235.",
+      "expected": "One current probe bound to sha256:216fe9162ac12104dc26421f29112ec0c567a95d8f0ab5414c2fd72dcd0b7a50.",
       "observed": "Found 0 matching probes.",
       "evidenceIds": [],
       "remediation": "Run the provider adapter read-only probe and pass its structured result to the connected doctor."

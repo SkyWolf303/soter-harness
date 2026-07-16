@@ -115,9 +115,11 @@ async function selftest(root) {
       'soter_complete_operation_plan',
       'soter_complete_provider_probe',
       'soter_fail_host_call',
+      'soter_finalize_meeting_intake_context',
       'soter_get_host_call',
       'soter_list_host_calls',
       'soter_prepare_capability_call',
+      'soter_prepare_meeting_intake_context',
       'soter_prepare_operation_plan',
       'soter_prepare_provider_probe'
     ];
@@ -559,6 +561,162 @@ async function selftest(root) {
       || cliCompletedPlan.currentCall !== null
       || JSON.stringify(cliCompletedPlan).includes(cliPlanMarker)) {
       throw new Error('CLI operation-plan projection drifted from the durable Core service.');
+    }
+
+    const connectedContextRunPath = 'soter/fixtures/meeting-intake/mcp-connected-context.run.json';
+    const connectedContextRun = JSON.parse(fs.readFileSync(path.join(root, runPath), 'utf8'));
+    connectedContextRun.id = 'run.meeting-intake.mcp-connected-context';
+    fs.writeFileSync(
+      path.join(root, connectedContextRunPath),
+      JSON.stringify(connectedContextRun, null, 2) + '\n'
+    );
+    const connectedRecording = 'https://otter.ai/u/mcp-context-selftest';
+    const preparedContext = await call(client, 'soter_prepare_meeting_intake_context', {
+      lock_path: lockPath,
+      run_path: connectedContextRunPath,
+      snapshot_id: 'context.meeting-intake.connected.mcp-selftest',
+      meeting_id: 'meeting.mcp-context-selftest',
+      recording_uri: connectedRecording,
+      at: '2026-07-15T12:00:09.000Z'
+    });
+    if (preparedContext.checkpoint?.currentStepId !== 'step.context-definition-index'
+      || preparedContext.currentCall?.transport?.tool
+        !== 'mcp__codex_apps__notion_notion_query_data_sources') {
+      throw new Error('MCP connected context did not emit its exact first source call.');
+    }
+    await expectToolError(client, 'soter_finalize_meeting_intake_context', {
+      checkpoint_id: preparedContext.checkpoint.id
+    }, 'completed operation plan');
+    const contextMarkers = [
+      'private-mcp-context-policy-marker',
+      'private-mcp-context-transcript-marker',
+      'private-mcp-context-meeting-marker'
+    ];
+    const contextTranscript = await call(client, 'soter_complete_operation_plan', {
+      checkpoint_id: preparedContext.checkpoint.id,
+      call_id: preparedContext.currentCall.id,
+      response: {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            results: [{
+              __soterType: 'policy',
+              __soterId: 'https://app.notion.com/mcp-context-policy',
+              __soterFields: JSON.stringify({ name: 'MCP context policy index' })
+            }],
+            has_more: false
+          })
+        }],
+        privateMarker: contextMarkers[0]
+      },
+      at: '2026-07-15T12:00:10.000Z'
+    });
+    await client.close();
+    client = await connectClient(root);
+    const recoveredContext = await call(client, 'soter_get_host_call', {
+      checkpoint_id: preparedContext.checkpoint.id
+    });
+    if (recoveredContext.checkpoint?.currentStepId !== 'step.context-transcript'
+      || recoveredContext.currentCall?.id !== contextTranscript.currentCall.id
+      || recoveredContext.currentCall?.transport?.tool !== 'mcp__otter__fetch') {
+      throw new Error('MCP connected context did not recover its exact transcript source.');
+    }
+    const contextMeeting = await call(client, 'soter_complete_operation_plan', {
+      checkpoint_id: preparedContext.checkpoint.id,
+      call_id: recoveredContext.currentCall.id,
+      response: {
+        structuredContent: {
+          result: {
+            speakers: [{ id: 'speaker.retro', displayName: 'Retro' }],
+            segments: [{
+              speakerId: 'speaker.retro',
+              text: 'Ground this connected context before any write.',
+              startSeconds: 3
+            }]
+          }
+        },
+        privateMarker: contextMarkers[1]
+      },
+      at: '2026-07-15T12:00:11.000Z'
+    });
+    if (contextMeeting.checkpoint?.currentStepId !== 'step.context-meeting-record'
+      || contextMeeting.currentCall?.arguments?.data?.params?.[0] !== connectedRecording) {
+      throw new Error('MCP connected context did not bind the matching meeting filter.');
+    }
+    const contextCompleted = await call(client, 'soter_complete_operation_plan', {
+      checkpoint_id: preparedContext.checkpoint.id,
+      call_id: contextMeeting.currentCall.id,
+      response: {
+        structuredContent: {
+          result: {
+            results: [{
+              __soterType: 'meeting',
+              __soterId: 'https://app.notion.com/mcp-context-meeting',
+              __soterFields: JSON.stringify({
+                title: 'MCP connected context',
+                meetingType: 'Project Sync',
+                recordingUri: connectedRecording,
+                organizationUris: '[]',
+                participantIds: '[]'
+              })
+            }],
+            has_more: false
+          }
+        },
+        privateMarker: contextMarkers[2]
+      },
+      at: '2026-07-15T12:00:12.000Z'
+    });
+    const finalizedContext = await call(client, 'soter_finalize_meeting_intake_context', {
+      checkpoint_id: preparedContext.checkpoint.id
+    });
+    const cliFinalizedContext = runCli(root, [
+      'context-connected-finalize',
+      '--checkpoint', preparedContext.checkpoint.id
+    ]);
+    assertPrivateFile(path.join(root, finalizedContext.snapshotPath));
+    const contextDurableContents = [
+      finalizedContext.snapshotPath,
+      finalizedContext.checkpointPath,
+      finalizedContext.runPath
+    ].map((file) => fs.readFileSync(path.join(root, file), 'utf8')).join('\n');
+    if (contextCompleted.checkpoint?.state !== 'completed'
+      || finalizedContext.snapshot?.containment !== 'connected'
+      || finalizedContext.snapshot?.entries?.length !== 3
+      || finalizedContext.run?.lifecycleState !== 'paused'
+      || cliFinalizedContext.snapshotPath !== finalizedContext.snapshotPath
+      || contextMarkers.some((marker) => contextDurableContents.includes(marker))) {
+      throw new Error('MCP and CLI connected-context projections drifted or persisted a raw response.');
+    }
+    const cliContextRunPath = 'soter/fixtures/meeting-intake/cli-connected-context.run.json';
+    const cliContextRun = JSON.parse(fs.readFileSync(path.join(root, runPath), 'utf8'));
+    cliContextRun.id = 'run.meeting-intake.cli-connected-context';
+    fs.writeFileSync(
+      path.join(root, cliContextRunPath),
+      JSON.stringify(cliContextRun, null, 2) + '\n'
+    );
+    const cliPreparedContext = runCli(root, [
+      'context-connected-prepare',
+      '--lock', lockPath,
+      '--run', cliContextRunPath,
+      '--snapshot-id', 'context.meeting-intake.connected.cli-selftest',
+      '--meeting-id', 'meeting.cli-context-selftest',
+      '--recording-uri', 'https://otter.ai/u/cli-context-selftest',
+      '--at', '2026-07-15T12:00:13.000Z'
+    ]);
+    const cliClosedContext = runCli(root, [
+      'host-fail',
+      '--checkpoint', cliPreparedContext.checkpoint.id,
+      '--call', cliPreparedContext.currentCall.id,
+      '--kind', 'unavailable',
+      '--message', 'Synthetic CLI context source was intentionally not dispatched.',
+      '--at', '2026-07-15T12:00:14.000Z'
+    ]);
+    if (cliPreparedContext.checkpoint.currentStepId !== 'step.context-definition-index'
+      || cliPreparedContext.currentCall.transport.tool
+        !== 'mcp__codex_apps__notion_notion_query_data_sources'
+      || cliClosedContext.checkpoint.state !== 'failed') {
+      throw new Error('CLI connected-context preparation drifted from the shared Core service.');
     }
 
     await assertWrongHostRejected(root);

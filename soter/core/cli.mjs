@@ -6,6 +6,10 @@ import { fileURLToPath } from 'node:url';
 import { formatDoctorReport, runConnectedDoctor, runOfflineDoctor } from './doctor.mjs';
 import { assembleMeetingIntakeContext } from './context.mjs';
 import {
+  finalizeMeetingIntakeConnectedContext,
+  prepareMeetingIntakeConnectedContext
+} from '../automations/meeting-intake/context.mjs';
+import {
   createContextAssemblyEvidence,
   createContainedTransactionEvidence,
   createResolutionEvidence,
@@ -360,7 +364,7 @@ async function main() {
             ? 'Provider operation: ' + call.transport.server + '/'
               + call.transport.operation + '\n'
               + 'Native host tool: ' + call.transport.tool + '\n'
-          + 'Exact call ID: ' + call.id + '\n'
+              + 'Exact call ID: ' + call.id + '\n'
             : 'Host request emitted: no\n')
           + 'Durable checkpoint: ' + prepared.checkpointPath + '\n'
           + 'Connected write approval accepted by this command: no\n'
@@ -401,6 +405,62 @@ async function main() {
       );
     }
     if (!['requested', 'completed'].includes(completed.checkpoint.state)) process.exitCode = 1;
+    return;
+  }
+
+  if (command === 'context-connected-prepare') {
+    const prepared = await prepareMeetingIntakeConnectedContext({
+      root,
+      lockPath: requiredOption(args, '--lock'),
+      runPath: requiredOption(args, '--run'),
+      snapshotId: option(
+        args,
+        '--snapshot-id',
+        'context.meeting-intake.connected.' + idPart
+      ),
+      meetingId: requiredOption(args, '--meeting-id'),
+      recordingUri: requiredOption(args, '--recording-uri'),
+      at: createdAt
+    });
+    if (json) {
+      print(prepared);
+    } else {
+      const call = prepared.currentCall;
+      process.stdout.write(
+        'Prepared connected meeting-intake context ' + prepared.checkpoint.plan.id
+          + ' in state ' + prepared.checkpoint.state + '.\n'
+          + 'Current source: ' + (prepared.checkpoint.currentStepId || 'none') + '\n'
+          + (call
+            ? 'Provider operation: ' + call.transport.server + '/'
+              + call.transport.operation + '\n'
+              + 'Native host tool: ' + call.transport.tool + '\n'
+              + 'Exact call ID: ' + call.id + '\n'
+            : 'Host request emitted: no\n')
+          + 'Durable checkpoint: ' + prepared.checkpointPath + '\n'
+          + 'Connected write approval accepted by this command: no\n'
+      );
+    }
+    if (!['requested', 'completed'].includes(prepared.checkpoint.state)) process.exitCode = 1;
+    return;
+  }
+
+  if (command === 'context-connected-finalize') {
+    const finalized = finalizeMeetingIntakeConnectedContext({
+      root,
+      checkpointId: requiredOption(args, '--checkpoint')
+    });
+    if (json) {
+      print(finalized);
+    } else {
+      process.stdout.write(
+        'Finalized connected context snapshot ' + finalized.snapshot.id + '.\n'
+          + 'Entries: ' + finalized.snapshot.entries.length + '\n'
+          + 'Containment: ' + finalized.snapshot.containment + '\n'
+          + 'Run state: ' + finalized.run.lifecycleState + '\n'
+          + 'Private snapshot: ' + finalized.snapshotPath + '\n'
+          + 'External writes executed: 0\n'
+      );
+    }
     return;
   }
 
@@ -593,10 +653,12 @@ async function main() {
   }
 
   throw new Error(
-    'Usage: node soter/core/cli.mjs <resolve|prepare|context|transaction|doctor|probe-prepare|probe-complete|capability-prepare|capability-complete|plan-prepare|plan-complete|host-fail|host-get|host-list|fixtures|selftest> [options]\n'
+    'Usage: node soter/core/cli.mjs <resolve|prepare|context|context-connected-prepare|context-connected-finalize|transaction|doctor|probe-prepare|probe-complete|capability-prepare|capability-complete|plan-prepare|plan-complete|host-fail|host-get|host-list|fixtures|selftest> [options]\n'
       + '  resolve [--config PATH] [--output PATH] [--json]\n'
       + '  prepare --lock PATH [--scenario PATH] [--output PATH] [--evidence-dir PATH] [--json]\n'
       + '  context --lock PATH --meeting-id ID --recording-uri URI [--scenario PATH] [--json]\n'
+      + '  context-connected-prepare --lock PATH --run PATH --meeting-id ID --recording-uri URI [--snapshot-id ID] [--json]\n'
+      + '  context-connected-finalize --checkpoint ID [--json]\n'
       + '  transaction --lock PATH [--scenario PATH] [--approve] [--json]\n'
       + '  doctor --lock PATH [--level offline|connected] [--probe PATH ...] [--probe-checkpoint ID ...] [--config PATH] [--json]\n'
       + '  probe-prepare --lock PATH --provider ID [--output PATH] [--json]\n'

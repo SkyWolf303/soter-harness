@@ -24,6 +24,9 @@ fields make that distinction mechanical.
 - scenarios contains behavior-level fixtures and expected evidence.
 - migrations maps prototype artifacts to their target ownership and state.
 - kernel contains the target verifier shared by every future host projection.
+- automations contains outcome-specific orchestration and completeness rules;
+  it asks Core to resolve and persist state rather than owning provider transport
+  or runtime storage.
 - core contains provider-neutral resolution, preflight, evidence, offline and
   connected doctor operations, a shared execution service, and separate
   resumable capability-call, fixed-input sequential operation-plan, and
@@ -68,9 +71,14 @@ for each host adapter. A connected read is limited to one record type and data
 source per host call, avoiding a hidden dependency on plan-gated
 cross-data-source SQL. Core can now orchestrate several such reads through one
 private sequential operation-plan checkpoint, emitting one exact call at a
-time and resuming by checkpoint plus call ID. Context assembly does not consume
-that plan yet. It returns deterministic versions for normalized records. Its
-identity probe proves only authentication and reachability;
+time and resuming by checkpoint plus call ID. Meeting-intake Automation uses
+that plan for a bounded policy index read, exact transcript, and CRM meeting
+matched by recording URI, then asks Core to persist a private snapshot and
+pause the same run. It does not claim policy bodies or related CRM records are
+loaded. Core mechanically binds every snapshot entry to exactly one normalized
+plan output and passed effect before persisting it. The Notion provider returns
+deterministic versions for normalized records. Its identity probe proves only
+authentication and reachability;
 configured target access and schema/read compatibility remain unknown. Notion
 create and update implementations are intentionally absent until Soter adds
 typed output binding, multi-call deduplication, compare-before-write, exact
@@ -154,8 +162,20 @@ write approval, so confirmation-gated steps block without arguments. Output
 bindings, branching, parallelism, plan-level retries, compensation,
 approval-bound write batches, and rollback remain future contracts.
 
-Private run and call state lives under `.soter/state`, uses atomic restricted
-files, and is ignored by Git. `soter_list_host_calls` and
+Meeting intake also exposes `soter_prepare_meeting_intake_context` and
+`soter_finalize_meeting_intake_context`; the CLI equivalents are
+`context-connected-prepare` and `context-connected-finalize`. The prepare tool
+derives providers and authorities from the exact lock and returns the first
+ordinary plan call. After generic plan completion closes all three sources,
+finalization requires a non-empty speaker-consistent transcript and exactly one
+CRM meeting with the same normalized recording URI. It stores the private
+snapshot under `.soter/state/context-snapshots`, updates the durable run, and
+pauses before relationship expansion or writes. Policy rows remain an index,
+so the definition authority stays declared until a later capability loads and
+selects authoritative policy bodies.
+
+Private run, call, and context-snapshot state lives under `.soter/state`, uses
+atomic restricted files, and is ignored by Git. `soter_list_host_calls` and
 `soter_get_host_call` are the recovery interface after compaction or restart.
 This state may contain portable inputs and normalized outputs; it must not be
 distributed as pack content, fixtures, configuration, or evidence.

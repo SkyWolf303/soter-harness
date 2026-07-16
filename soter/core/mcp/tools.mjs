@@ -2,6 +2,10 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import * as z from 'zod/v4';
 
 import {
+  finalizeMeetingIntakeConnectedContext,
+  prepareMeetingIntakeConnectedContext
+} from '../../automations/meeting-intake/context.mjs';
+import {
   completeDurableCapabilityExecution,
   completeDurableOperationPlanExecution,
   completeDurableProviderProbeExecution,
@@ -45,7 +49,7 @@ export function createSoterMcpServer({ root, host }) {
   const server = new McpServer(
     { name: 'soter-core', version: '0.1.0' },
     {
-      instructions: 'Soter Core validates exact locks and runs for the active ' + host + ' host projection, then saves a private durable checkpoint before emitting a provider-neutral operation resolved to an exact native host tool. After compaction or restart, use soter_list_host_calls and soter_get_host_call to recover pending work. For a one-call checkpoint, invoke exactly checkpoint.call.transport.tool. For an operation plan, invoke exactly currentCall.transport.tool and return both checkpoint.id and currentCall.id; a successful completion may emit the next exact call. Always pass the requested arguments through the separately configured provider MCP route and return the native result unchanged. Never fabricate a provider response. Soter does not invoke providers, persist raw responses, or authorize connected writes.'
+      instructions: 'Soter Core validates exact locks and runs for the active ' + host + ' host projection, then saves a private durable checkpoint before emitting a provider-neutral operation resolved to an exact native host tool. After compaction or restart, use soter_list_host_calls and soter_get_host_call to recover pending work. For a one-call checkpoint, invoke exactly checkpoint.call.transport.tool. For an operation plan, invoke exactly currentCall.transport.tool and return both checkpoint.id and currentCall.id; a successful completion may emit the next exact call. A completed meeting-intake context plan must be finalized with soter_finalize_meeting_intake_context before its snapshot is used. Always pass the requested arguments through the separately configured provider MCP route and return the native result unchanged. Never fabricate a provider response. Soter does not invoke providers, persist raw responses, or authorize connected writes.'
     }
   );
 
@@ -193,6 +197,56 @@ export function createSoterMcpServer({ root, host }) {
       expectedHost: host
     });
     return result(completed, 'Advanced the exact operation plan without persisting the native provider response.');
+  });
+
+  server.registerTool('soter_prepare_meeting_intake_context', {
+    title: 'Prepare connected meeting-intake context',
+    description: 'Build, preflight, and durably start the bounded connected source plan for one meeting-intake run. The plan loads the policy index, exact transcript, and matching CRM meeting record without writes.',
+    inputSchema: {
+      lock_path: z.string().min(1),
+      run_path: z.string().min(1),
+      snapshot_id: z.string().min(1),
+      meeting_id: z.string().min(1),
+      recording_uri: z.string().min(1),
+      at: z.string().min(20).optional()
+    },
+    outputSchema: resultSchema,
+    annotations: statefulAnnotations
+  }, async (input) => {
+    const prepared = await prepareMeetingIntakeConnectedContext({
+      root,
+      lockPath: input.lock_path,
+      runPath: input.run_path,
+      snapshotId: input.snapshot_id,
+      meetingId: input.meeting_id,
+      recordingUri: input.recording_uri,
+      at: input.at,
+      expectedHost: host
+    });
+    return result(
+      prepared,
+      'Durably started the bounded connected meeting-intake context plan and emitted at most one native host call.'
+    );
+  });
+
+  server.registerTool('soter_finalize_meeting_intake_context', {
+    title: 'Finalize connected meeting-intake context',
+    description: 'Validate a completed exact context plan, require non-empty and identity-matched sources, persist one private context snapshot, update its durable run, and pause before related-context expansion or writes.',
+    inputSchema: {
+      checkpoint_id: z.string().min(1)
+    },
+    outputSchema: resultSchema,
+    annotations: completionAnnotations
+  }, async (input) => {
+    const finalized = finalizeMeetingIntakeConnectedContext({
+      root,
+      checkpointId: input.checkpoint_id,
+      expectedHost: host
+    });
+    return result(
+      finalized,
+      'Finalized the bounded connected context snapshot and paused its durable run before writes.'
+    );
   });
 
   server.registerTool('soter_fail_host_call', {

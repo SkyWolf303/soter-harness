@@ -8,6 +8,10 @@ import {
   invokeCapability
 } from './capabilities.mjs';
 import { assembleMeetingIntakeContext } from './context.mjs';
+import {
+  finalizeMeetingIntakeConnectedContext,
+  prepareMeetingIntakeConnectedContext
+} from '../automations/meeting-intake/context.mjs';
 import { runConnectedDoctor, runOfflineDoctor } from './doctor.mjs';
 import {
   createContextAssemblyEvidence,
@@ -19,6 +23,7 @@ import { fingerprintLock, resolveConfiguration } from './resolve.mjs';
 import { prepareRunEnvelope } from './run.mjs';
 import { assertOperationPlanDocument } from './operation-plans.mjs';
 import {
+  commitDurableContextSnapshot,
   completeDurableOperationPlanExecution,
   getDurableHostExecution,
   prepareDurableOperationPlanExecution
@@ -636,6 +641,31 @@ export async function selftest(root) {
     } catch (error) {
       duplicatePlanStepRejected = error.message.includes('identifiers must be unique');
     }
+    const wrongAutomationRunPath = 'soter/fixtures/meeting-intake/wrong-automation-selftest.run.json';
+    const wrongAutomationRun = readJson(
+      path.join(temp, 'soter/fixtures/meeting-intake/preflight.run.json')
+    );
+    wrongAutomationRun.id = 'run.meeting-intake.wrong-automation-selftest';
+    wrongAutomationRun.automation.id = 'automation.not-selected';
+    writeJson(path.join(temp, wrongAutomationRunPath), wrongAutomationRun);
+    const wrongAutomationPlan = structuredClone(operationPlan);
+    wrongAutomationPlan.id = 'plan.meeting-intake.wrong-automation-selftest';
+    wrongAutomationPlan.runId = wrongAutomationRun.id;
+    let wrongAutomationRejected = false;
+    try {
+      await prepareDurableOperationPlanExecution({
+        root: temp,
+        lockPath,
+        runPath: wrongAutomationRunPath,
+        plan: wrongAutomationPlan,
+        at: FIXTURE_TIME,
+        expectedHost: 'codex'
+      });
+    } catch (error) {
+      wrongAutomationRejected = error.message.includes(
+        'exact selected automation and authority declarations'
+      );
+    }
     const invalidTailPlan = structuredClone(operationPlan);
     invalidTailPlan.id = 'plan.meeting-intake.invalid-tail-selftest';
     invalidTailPlan.steps[1].providerImplementation = 'provider.missing.connected';
@@ -749,6 +779,7 @@ export async function selftest(root) {
       expectedHost: 'codex'
     });
     if (!duplicatePlanStepRejected
+      || !wrongAutomationRejected
       || !invalidTailRejectedBeforeDispatch
       || fs.existsSync(invalidTailCheckpoint)
       || preparedPlan.checkpoint.state !== 'requested'
@@ -768,6 +799,261 @@ export async function selftest(root) {
         !== completedPlan.checkpoint.checkpointFingerprint
       || JSON.stringify(completedPlan).includes('raw-plan-')) {
       failures.push('durable operation plan did not preserve exact sequential dispatch, recovery, idempotency, and response minimization');
+    }
+    const connectedContextRecording = 'https://otter.ai/u/context-selftest';
+    const connectedContextRunPath = 'soter/fixtures/meeting-intake/connected-context-selftest.run.json';
+    const connectedContextRun = readJson(
+      path.join(temp, 'soter/fixtures/meeting-intake/preflight.run.json')
+    );
+    connectedContextRun.id = 'run.meeting-intake.connected-context-selftest';
+    writeJson(path.join(temp, connectedContextRunPath), connectedContextRun);
+    const preparedConnectedContext = await prepareMeetingIntakeConnectedContext({
+      root: temp,
+      lockPath,
+      runPath: connectedContextRunPath,
+      snapshotId: 'context.meeting-intake.connected.selftest',
+      meetingId: 'meeting.context-selftest',
+      recordingUri: connectedContextRecording,
+      at: '2026-07-15T12:00:04.000Z',
+      expectedHost: 'codex'
+    });
+    let incompleteContextRejected = false;
+    try {
+      finalizeMeetingIntakeConnectedContext({
+        root: temp,
+        checkpointId: preparedConnectedContext.checkpoint.id,
+        expectedHost: 'codex'
+      });
+    } catch (error) {
+      incompleteContextRejected = error.message.includes('completed operation plan');
+    }
+    const contextPolicyMarker = 'raw-connected-context-policy-marker';
+    const contextPolicyResponse = {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          results: [{
+            __soterType: 'policy',
+            __soterId: 'https://app.notion.com/context-policy-selftest',
+            __soterFields: JSON.stringify({ name: 'Meeting intake policy index' })
+          }],
+          has_more: false
+        })
+      }],
+      privateMarker: contextPolicyMarker
+    };
+    const connectedContextTranscript = await completeDurableOperationPlanExecution({
+      root: temp,
+      checkpointId: preparedConnectedContext.checkpoint.id,
+      callId: preparedConnectedContext.currentCall.id,
+      response: contextPolicyResponse,
+      at: '2026-07-15T12:00:05.000Z',
+      expectedHost: 'codex'
+    });
+    const contextTranscriptMarker = 'raw-connected-context-transcript-marker';
+    const contextTranscriptResponse = {
+      structuredContent: {
+        result: {
+          speakers: [
+            { id: 'speaker.retro', displayName: 'Retro' },
+            { id: 'speaker.maya', displayName: 'Maya' }
+          ],
+          segments: [{
+            speakerId: 'speaker.maya',
+            text: 'Please send the grounded follow-up.',
+            startSeconds: 12
+          }]
+        }
+      },
+      privateMarker: contextTranscriptMarker
+    };
+    const connectedContextMeeting = await completeDurableOperationPlanExecution({
+      root: temp,
+      checkpointId: preparedConnectedContext.checkpoint.id,
+      callId: connectedContextTranscript.currentCall.id,
+      response: contextTranscriptResponse,
+      at: '2026-07-15T12:00:06.000Z',
+      expectedHost: 'codex'
+    });
+    const contextMeetingMarker = 'raw-connected-context-meeting-marker';
+    const contextMeetingResponse = {
+      structuredContent: {
+        result: {
+          results: [{
+            __soterType: 'meeting',
+            __soterId: 'https://app.notion.com/context-meeting-selftest',
+            __soterFields: JSON.stringify({
+              title: 'Connected context selftest',
+              meetingType: 'Project Sync',
+              recordingUri: connectedContextRecording,
+              organizationUris: '[]',
+              participantIds: '[]'
+            })
+          }],
+          has_more: false
+        }
+      },
+      privateMarker: contextMeetingMarker
+    };
+    const completedConnectedContext = await completeDurableOperationPlanExecution({
+      root: temp,
+      checkpointId: preparedConnectedContext.checkpoint.id,
+      callId: connectedContextMeeting.currentCall.id,
+      response: contextMeetingResponse,
+      at: '2026-07-15T12:00:07.000Z',
+      expectedHost: 'codex'
+    });
+    const finalizedConnectedContext = finalizeMeetingIntakeConnectedContext({
+      root: temp,
+      checkpointId: preparedConnectedContext.checkpoint.id,
+      expectedHost: 'codex'
+    });
+    const replayedConnectedContext = finalizeMeetingIntakeConnectedContext({
+      root: temp,
+      checkpointId: preparedConnectedContext.checkpoint.id,
+      expectedHost: 'codex'
+    });
+    const connectedSnapshotFile = path.join(temp, finalizedConnectedContext.snapshotPath);
+    const connectedDurableContents = [
+      finalizedConnectedContext.snapshotPath,
+      finalizedConnectedContext.checkpointPath,
+      finalizedConnectedContext.runPath
+    ].map((file) => fs.readFileSync(path.join(temp, file), 'utf8')).join('\n');
+    const connectedAuthorities = new Map(
+      finalizedConnectedContext.run.context.map((item) => [item.authority, item.status])
+    );
+    if (!incompleteContextRejected
+      || preparedConnectedContext.currentCall?.capability.id !== 'crm.records.read'
+      || preparedConnectedContext.currentCall?.arguments?.data?.data_source_urls?.length !== 1
+      || connectedContextTranscript.currentCall?.capability.id !== 'meeting.transcript.read'
+      || connectedContextTranscript.currentCall?.arguments?.id !== 'context-selftest'
+      || connectedContextMeeting.currentCall?.capability.id !== 'crm.records.read'
+      || connectedContextMeeting.currentCall?.arguments?.data?.params?.[0]
+        !== connectedContextRecording
+      || completedConnectedContext.checkpoint.state !== 'completed'
+      || finalizedConnectedContext.snapshot.containment !== 'connected'
+      || finalizedConnectedContext.snapshot.entries.length !== 3
+      || finalizedConnectedContext.run.lifecycleState !== 'paused'
+      || connectedAuthorities.get('authority.crm.definition') !== 'declared'
+      || connectedAuthorities.get('authority.crm.instance') !== 'loaded'
+      || connectedAuthorities.get('authority.otter.provider') !== 'loaded'
+      || connectedAuthorities.get('authority.notion.provider') !== 'declared'
+      || replayedConnectedContext.snapshotPath !== finalizedConnectedContext.snapshotPath
+      || fingerprintJson(replayedConnectedContext.snapshot)
+        !== fingerprintJson(finalizedConnectedContext.snapshot)
+      || (process.platform !== 'win32'
+        && (fs.statSync(connectedSnapshotFile).mode & 0o777) !== 0o600)
+      || [contextPolicyMarker, contextTranscriptMarker, contextMeetingMarker]
+        .some((marker) => connectedDurableContents.includes(marker))) {
+      failures.push('connected context did not preserve bounded sources, exact identities, private durable recovery, and honest authority state');
+    }
+    const unboundSnapshot = structuredClone(finalizedConnectedContext.snapshot);
+    unboundSnapshot.id = 'context.meeting-intake.connected.unbound-selftest';
+    unboundSnapshot.entries[0].value.unboundMutation = true;
+    const unboundContextUpdates = [...new Set(
+      finalizedConnectedContext.snapshot.entries.map((entry) => entry.authority)
+    )].map((authority) => {
+      const current = finalizedConnectedContext.run.context.find((item) => {
+        return item.authority === authority;
+      });
+      return {
+        authority,
+        status: current.status,
+        provenance: current.provenance,
+        freshness: current.freshness
+      };
+    });
+    let unboundSnapshotRejected = false;
+    try {
+      commitDurableContextSnapshot({
+        root: temp,
+        checkpointId: preparedConnectedContext.checkpoint.id,
+        snapshot: unboundSnapshot,
+        contextUpdates: unboundContextUpdates,
+        checkpointDetails: 'Reject a snapshot value that is not the normalized plan output.',
+        expectedHost: 'codex'
+      });
+    } catch (error) {
+      unboundSnapshotRejected = error.message.includes('normalized operation-plan output');
+    }
+    if (!unboundSnapshotRejected
+      || fs.existsSync(path.join(
+        temp,
+        '.soter/state/context-snapshots/context.meeting-intake.connected.unbound-selftest.json'
+      ))) {
+      failures.push('Core accepted context that was not mechanically bound to normalized plan output');
+    }
+    const mismatchContextRunPath = 'soter/fixtures/meeting-intake/mismatch-context-selftest.run.json';
+    const mismatchContextRun = structuredClone(connectedContextRun);
+    mismatchContextRun.id = 'run.meeting-intake.mismatch-context-selftest';
+    writeJson(path.join(temp, mismatchContextRunPath), mismatchContextRun);
+    const preparedMismatchContext = await prepareMeetingIntakeConnectedContext({
+      root: temp,
+      lockPath,
+      runPath: mismatchContextRunPath,
+      snapshotId: 'context.meeting-intake.connected.mismatch-selftest',
+      meetingId: 'meeting.mismatch-context-selftest',
+      recordingUri: connectedContextRecording,
+      at: '2026-07-15T12:00:08.000Z',
+      expectedHost: 'codex'
+    });
+    const mismatchTranscriptCall = await completeDurableOperationPlanExecution({
+      root: temp,
+      checkpointId: preparedMismatchContext.checkpoint.id,
+      callId: preparedMismatchContext.currentCall.id,
+      response: contextPolicyResponse,
+      at: '2026-07-15T12:00:09.000Z',
+      expectedHost: 'codex'
+    });
+    const mismatchMeetingCall = await completeDurableOperationPlanExecution({
+      root: temp,
+      checkpointId: preparedMismatchContext.checkpoint.id,
+      callId: mismatchTranscriptCall.currentCall.id,
+      response: contextTranscriptResponse,
+      at: '2026-07-15T12:00:10.000Z',
+      expectedHost: 'codex'
+    });
+    await completeDurableOperationPlanExecution({
+      root: temp,
+      checkpointId: preparedMismatchContext.checkpoint.id,
+      callId: mismatchMeetingCall.currentCall.id,
+      response: {
+        structuredContent: {
+          result: {
+            results: [{
+              __soterType: 'meeting',
+              __soterId: 'https://app.notion.com/mismatch-context-meeting',
+              __soterFields: JSON.stringify({
+                title: 'Mismatched connected context',
+                meetingType: 'Project Sync',
+                recordingUri: 'https://otter.ai/u/a-different-meeting',
+                organizationUris: '[]',
+                participantIds: '[]'
+              })
+            }],
+            has_more: false
+          }
+        }
+      },
+      at: '2026-07-15T12:00:11.000Z',
+      expectedHost: 'codex'
+    });
+    let mismatchedMeetingRejected = false;
+    try {
+      finalizeMeetingIntakeConnectedContext({
+        root: temp,
+        checkpointId: preparedMismatchContext.checkpoint.id,
+        expectedHost: 'codex'
+      });
+    } catch (error) {
+      mismatchedMeetingRejected = error.message.includes('exactly one CRM meeting record');
+    }
+    if (!mismatchedMeetingRejected
+      || fs.existsSync(path.join(
+        temp,
+        '.soter/state/context-snapshots/context.meeting-intake.connected.mismatch-selftest.json'
+      ))) {
+      failures.push('connected context accepted a CRM meeting that did not match the selected recording identity');
     }
     const blockedWritePlan = await prepareDurableOperationPlanExecution({
       root: temp,
@@ -1118,7 +1404,7 @@ export async function selftest(root) {
     return false;
   }
   process.stdout.write(
-    'CORE SELFTEST PASS: deterministic lock, typed fixture reads/writes, exact-scope approval, deduplication, expected-version conflicts, rollback, read-after-write verification, resumable sequential operation plans, resumable MCP host dispatch, connected probe readiness, expiry, exact-lock binding, honest states, and stale-lock detection.\n'
+    'CORE SELFTEST PASS: deterministic lock, typed fixture reads/writes, exact-scope approval, deduplication, expected-version conflicts, rollback, read-after-write verification, resumable sequential operation plans, bounded connected context finalization, resumable MCP host dispatch, connected probe readiness, expiry, exact-lock binding, honest states, and stale-lock detection.\n'
   );
   return true;
 }

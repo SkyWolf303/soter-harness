@@ -819,6 +819,51 @@ arguments. Connected writes require later contracts that bind generated
 operations to an exact change-set fingerprint and approval, then verify or
 compensate every applied effect.
 
+#### Bounded connected context finalization
+
+Meeting intake uses the operation-plan service as its connected context
+transport; it does not introduce a second provider execution path. Automation
+derives the selected connected provider implementations and authorities from
+the exact lock, then generates three fixed sources in order:
+
+1. A bounded CRM policy index read under the definition authority.
+2. The exact transcript selected by meeting ID and canonical recording URI.
+3. A CRM meeting read filtered by that same recording URI with a limit of two,
+   so zero matches and duplicate matches remain distinguishable.
+
+The plan is preflighted and checkpointed like any other operation plan. The
+host completes each emitted request through the generic plan completion
+contract. A process restart does not change which source is current or which
+host-native tool and arguments are allowed.
+
+Context finalization is a local Automation transition backed by a Core commit
+and accepts only the completed exact plan. Automation requires at least one
+typed policy index row, a non-empty transcript whose segments reference known
+speakers, and exactly one typed CRM meeting whose normalized recording URI
+equals the transcript request. Provider query filtering alone is not accepted
+as proof of identity. Missing, empty, duplicate, mismatched, stale-lock,
+wrong-host, failed, blocked, or incomplete sources fail before a context
+snapshot is written.
+
+Core requires every entry in the resulting `context-snapshot/v1` to match
+exactly one normalized completed-plan output, its subject and role to match the
+declared run authority, and its effect set to match all passed plan effects
+before writing private restricted runtime state and synchronizing the run.
+Repeating finalization with the same completed plan is idempotent; a conflicting
+snapshot or run output fails closed. The run records the snapshot fingerprint,
+marks the CRM instance and transcript context sources loaded for this snapshot,
+and pauses before related context expansion or writes. The CRM definition
+authority remains `declared`: a policy row index proves neither policy page
+content nor applicable policy selection.
+
+This initial snapshot is grounding, not complete meeting-intake context. It
+does not load policy bodies or traverse meeting-to-organization-to-project-to-
+task relationships. That expansion requires typed output-to-input bindings and
+empty-relation behavior so Core can follow only observed references without
+broadly disclosing an entire CRM target. A private connected snapshot is not a
+provider probe, checked-in evidence, readiness result, live-health result, or
+proof that a host autonomously executed the plan.
+
 Provider readiness uses a separate `provider-probe-call/v1` state machine. Core
 derives its probe plan from the exact lock and desired configuration, including
 the selected provider, secret-reference identifiers, authorities, and

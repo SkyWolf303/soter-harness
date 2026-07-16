@@ -66,12 +66,20 @@ export function hostCallCheckpointPath(root, checkpointId) {
   return stateFile(root, 'host-calls', safeId(checkpointId, 'checkpoint id'));
 }
 
+export function contextSnapshotStatePath(root, snapshotId) {
+  return stateFile(root, 'context-snapshots', safeId(snapshotId, 'context snapshot id'));
+}
+
 export function hasHostCallCheckpoint(root, checkpointId) {
   return fs.existsSync(hostCallCheckpointPath(root, checkpointId));
 }
 
 export function hasRunState(root, runId) {
   return fs.existsSync(runStatePath(root, runId));
+}
+
+export function hasContextSnapshotState(root, snapshotId) {
+  return fs.existsSync(contextSnapshotStatePath(root, snapshotId));
 }
 
 export function readRunState(root, runId) {
@@ -83,6 +91,20 @@ export function readRunState(root, runId) {
 export function writeRunState(root, run) {
   const file = runStatePath(root, run.id);
   atomicWriteJson(file, run);
+  return { file, path: repoRelativePath(root, file) };
+}
+
+export function readContextSnapshotState(root, snapshotId) {
+  const file = contextSnapshotStatePath(root, snapshotId);
+  if (!fs.existsSync(file)) {
+    throw new Error('Durable context snapshot does not exist: ' + snapshotId + '.');
+  }
+  return { file, snapshot: readJson(file) };
+}
+
+export function writeContextSnapshotState(root, snapshot) {
+  const file = contextSnapshotStatePath(root, snapshot.id);
+  atomicWriteJson(file, snapshot);
   return { file, path: repoRelativePath(root, file) };
 }
 

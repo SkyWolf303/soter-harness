@@ -151,13 +151,19 @@ The main remaining gaps are structural and behavioral:
   pack-owned field mapping and user-configured target identities. Each call is
   limited to one target so cross-data-source SQL never becomes a hidden Notion
   plan requirement; several targets can now be expressed as explicit ordered
-  capability steps, although connected context assembly does not consume that
-  plan yet. Its identity-only probe can establish authentication and
+  capability steps. The first connected context lifecycle now generates a
+  bounded three-source plan for the policy index, exact transcript, and CRM
+  meeting selected by the same recording URI; after all three normalize,
+  Automation validates domain completeness and Core binds every snapshot entry
+  to an exact plan output and passed effect before persisting one private
+  context snapshot and pausing the run. Policy page bodies and related
+  organization, contact, project, and task context are deliberately not claimed
+  as loaded. Its identity-only probe can establish authentication and
   reachability while leaving target authority and schema compatibility unknown.
-  Connected Notion
-  writes remain intentionally undeclared until plans support output bindings,
-  multi-call deduplication, compare-before-write, exact change-set approval,
-  read-after-write verification, and compensation. Checked-in connected
+  Connected Notion writes remain intentionally undeclared until plans support
+  output bindings, multi-call deduplication, compare-before-write, exact
+  change-set approval, read-after-write verification, and compensation.
+  Checked-in connected
   response-shape evidence, host-started end-to-end dispatch, and host-level
   agent behavior remain unproven.
 - Legacy provider behavior remains mixed into automations. The target now
@@ -311,7 +317,9 @@ another host. Its tools follow one explicit sequence:
 
 1. Call `soter_prepare_provider_probe` or
    `soter_prepare_capability_call` for one request, or
-   `soter_prepare_operation_plan` for an ordered sequence.
+   `soter_prepare_operation_plan` for an ordered sequence. Meeting intake may
+   use `soter_prepare_meeting_intake_context` to generate its bounded source
+   plan from the exact run and selected recording URI.
 2. Continue only when the checkpoint is `requested`. A one-call checkpoint
    exposes `checkpoint.call`; a plan exposes exactly one `currentCall`.
 3. Inspect that call's `transport.operation` for the provider-neutral
@@ -322,7 +330,9 @@ another host. Its tools follow one explicit sequence:
    completion also requires the exact current call ID and may return the next
    call. Close a failed request with `soter_fail_host_call`, including the call
    ID for a plan.
-5. After restart or compaction, use `soter_list_host_calls` and
+5. When a generated meeting-intake context plan completes, call
+   `soter_finalize_meeting_intake_context` before using the snapshot.
+6. After restart or compaction, use `soter_list_host_calls` and
    `soter_get_host_call` instead of reconstructing the request from memory.
 
 The local server never calls Otter, Notion, or another provider itself. Its MCP
@@ -363,6 +373,29 @@ retry or compensation, approval-bound write batch, or rollback. Because the
 plan interface accepts no approval, a confirmation-gated write step blocks
 without emitting provider arguments.
 
+Connected meeting-intake grounding uses that same plan service rather than a
+second orchestration engine:
+
+    node soter/core/cli.mjs context-connected-prepare \
+      --lock soter/fixtures/meeting-intake/meeting-intake.lock.json \
+      --run soter/fixtures/meeting-intake/preflight.run.json \
+      --snapshot-id context.meeting-intake.connected.example \
+      --meeting-id meeting.example \
+      --recording-uri https://otter.ai/u/EXACT_MEETING_ID
+
+After completing each emitted call with `plan-complete`, finalize the completed
+checkpoint locally:
+
+    node soter/core/cli.mjs context-connected-finalize \
+      --checkpoint checkpoint.plan.meeting-intake.connected-context.example
+
+Finalization requires at least one typed policy index row, a non-empty
+speaker-consistent transcript, and exactly one CRM meeting whose normalized
+recording URI matches the selected transcript. It stores the connected snapshot
+under `.soter/state/context-snapshots`, updates the same durable run, and pauses
+before relationship expansion or writes. The definition authority remains
+`declared`, because an index row is not the authoritative policy page body.
+
 `.soter/state` is private user runtime state and is ignored by Git. It may
 contain portable inputs and normalized provider outputs needed to resume work;
 do not copy it into packs, fixtures, commits, or shared configurations.
@@ -401,13 +434,14 @@ runtime is connected or ready.
    outcomes, scenarios, capability needs, authorities, effects, and migration
    mapping.
 3. Finish the connected integration slice: add an exact-lock Notion target
-   schema/read probe, drive connected context assembly through the sequential
-   read plan, validate Otter transcript response normalization with an
-   explicitly authorized private meeting fixture, and prove host-started Codex
-   and Claude dispatch and checkpoint recovery through the configured Core
-   service. Then add typed output bindings, an exact change-set approval-bound
-   write plan, compare-before-write, read-after-write verification,
-   compensation, and the separately authorized canary doctor level.
+   schema/read probe; add typed output bindings that expand the initial context
+   snapshot through only the selected meeting's organization, projects, tasks,
+   participants, and policy bodies; validate Otter transcript normalization
+   with an explicitly authorized private meeting fixture; and prove host-started
+   Codex and Claude dispatch and checkpoint recovery through the configured
+   Core service. Then add an exact change-set approval-bound write plan,
+   compare-before-write, read-after-write verification, compensation, and the
+   separately authorized canary doctor level.
 4. Prove the full judgment and orchestration slice through both Claude and
    Codex host adapters rather than treating deterministic fixture mechanics as
    agent behavior evidence.
