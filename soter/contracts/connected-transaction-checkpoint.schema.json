@@ -57,20 +57,23 @@
         "type": "object", "additionalProperties": false,
         "required": [
           "id", "sequence", "state", "priorFields", "priorVersion",
-          "appliedVersion", "compare", "write", "verification",
+          "appliedVersion", "createdRecordId", "compare", "write", "verification",
+          "contentVerification",
           "compensation", "compensationVerification", "ambiguities",
           "reconciliations", "error"
         ],
         "properties": {
           "id": { "type": "string", "minLength": 1 },
           "sequence": { "type": "integer", "minimum": 1 },
-          "state": { "enum": ["pending", "comparing", "writing", "verifying", "applied", "failed", "needs-attention", "reconciling", "compensating", "compensation-verifying", "compensated"] },
+          "state": { "enum": ["pending", "comparing", "writing", "verifying", "content-verifying", "applied", "failed", "needs-attention", "reconciling", "compensating", "compensation-verifying", "compensated"] },
           "priorFields": { "type": ["object", "null"] },
           "priorVersion": { "type": ["string", "null"] },
           "appliedVersion": { "type": ["string", "null"] },
+          "createdRecordId": { "type": ["string", "null"], "minLength": 1 },
           "compare": { "$ref": "#/$defs/phase" },
           "write": { "$ref": "#/$defs/phase" },
           "verification": { "$ref": "#/$defs/phase" },
+          "contentVerification": { "$ref": "#/$defs/phase" },
           "compensation": { "$ref": "#/$defs/phase" },
           "compensationVerification": { "$ref": "#/$defs/phase" },
           "ambiguities": {
@@ -90,7 +93,7 @@
       "required": ["operationId", "stage", "callId", "reconciliationId"],
       "properties": {
         "operationId": { "type": "string", "minLength": 1 },
-        "stage": { "enum": ["compare", "write", "verify", "compensate", "compensation-verify", "reconcile"] },
+        "stage": { "enum": ["compare", "write", "verify", "content-verify", "compensate", "compensation-verify", "reconcile"] },
         "callId": { "type": "string", "pattern": "^toolcall\\.[a-z0-9]+(?:[.-][a-z0-9]+)*$" },
         "reconciliationId": {
           "type": ["string", "null"],
@@ -135,7 +138,7 @@
       ],
       "properties": {
         "id": { "type": "string", "pattern": "^ambiguity\\.[a-z0-9]+(?:[.-][a-z0-9]+)*$" },
-        "stage": { "enum": ["write", "verify", "compensate", "compensation-verify"] },
+        "stage": { "enum": ["write", "verify", "content-verify", "compensate", "compensation-verify"] },
         "callId": {
           "type": ["string", "null"],
           "pattern": "^toolcall\\.[a-z0-9]+(?:[.-][a-z0-9]+)*$"
@@ -144,7 +147,9 @@
         "error": { "type": "object" },
         "status": { "enum": ["unresolved", "resolved"] },
         "resolvedAt": { "type": ["string", "null"], "minLength": 20 },
-        "resolution": { "enum": ["approved-fields", "prior-fields", null] }
+        "resolution": {
+          "enum": ["approved-fields", "approved-content", "prior-fields", "absent", null]
+        }
       }
     },
     "reconciliation": {
@@ -158,7 +163,17 @@
         "createdAt": { "type": "string", "minLength": 20 },
         "phase": { "$ref": "#/$defs/requiredPhase" },
         "outcome": {
-          "enum": ["approved-fields", "prior-fields", "missing", "diverged", "read-failed", null]
+          "enum": [
+            "approved-fields",
+            "approved-content",
+            "prior-fields",
+            "absent",
+            "missing",
+            "diverged",
+            "diverged-content",
+            "read-failed",
+            null
+          ]
         },
         "observedVersion": {
           "type": ["string", "null"],

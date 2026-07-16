@@ -72,6 +72,22 @@ export function proposeMeetingIntakeChangeSet({
   }).join('\n\n');
   const foldedTasks = decision.payload.tasks.filter((task) => task.disposition === 'fold');
   const operations = [
+    ...foldedTasks.map((task) => ({
+      id: 'operation.task.update',
+      capability: 'crm.records.update',
+      authority: 'authority.crm.instance',
+      reason: task.reason,
+      input: {
+        recordType: 'task',
+        id: task.recordId,
+        expectedVersion: records(snapshot, 'task').find((record) => {
+          return record.id === task.recordId;
+        }).version,
+        patch: {
+          context: 'Meeting'
+        }
+      }
+    })),
     {
       id: 'operation.summary.create',
       capability: 'crm.records.create',
@@ -92,23 +108,7 @@ export function proposeMeetingIntakeChangeSet({
         },
         body: summaryBody
       }
-    },
-    ...foldedTasks.map((task) => ({
-      id: 'operation.task.update',
-      capability: 'crm.records.update',
-      authority: 'authority.crm.instance',
-      reason: task.reason,
-      input: {
-        recordType: 'task',
-        id: task.recordId,
-        expectedVersion: records(snapshot, 'task').find((record) => {
-          return record.id === task.recordId;
-        }).version,
-        patch: {
-          context: 'Meeting'
-        }
-      }
-    }))
+    }
   ].map((operation) => ({
     ...operation,
     inputFingerprint: fingerprintJson(operation.input),

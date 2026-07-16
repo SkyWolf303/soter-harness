@@ -368,6 +368,7 @@ function connectedTransactionRunEntry(checkpoint) {
         operation.compare,
         operation.write,
         operation.verification,
+        operation.contentVerification,
         operation.compensation,
         operation.compensationVerification,
         ...operation.reconciliations.map((item) => item.phase)
@@ -418,7 +419,8 @@ function syncRunWithConnectedTransaction(run, checkpoint) {
   }
   for (const operation of checkpoint.operations) {
     for (const name of [
-      'compare', 'write', 'verification', 'compensation', 'compensationVerification'
+      'compare', 'write', 'verification', 'contentVerification',
+      'compensation', 'compensationVerification'
     ]) {
       const call = operation[name]?.call;
       if (call) next = syncRunWithCheckpoint(next, { kind: 'capability', call });
@@ -1885,6 +1887,7 @@ export function listDurableHostExecutions({ root, state, expectedHost }) {
               operation.compare,
               operation.write,
               operation.verification,
+              operation.contentVerification,
               operation.compensation,
               operation.compensationVerification,
               ...operation.reconciliations.map((item) => item.phase)

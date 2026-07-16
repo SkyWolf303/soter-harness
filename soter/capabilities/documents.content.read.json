@@ -3,7 +3,7 @@
   "contractVersion": "1.0.0",
   "id": "documents.content.read",
   "version": "1.0.0",
-  "purpose": "Reads one exact authoritative document body through a configured definition authority with bounded normalized content and provenance.",
+  "purpose": "Reads one exact document body through a configured document authority with bounded normalized content and provenance.",
   "portability": "portable",
   "inputSchema": {
     "type": "object",

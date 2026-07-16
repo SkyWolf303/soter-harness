@@ -83,9 +83,26 @@ function compileOperation(root, lock, operation, sequence) {
   let precondition;
   let verificationId;
   let expectedFields;
+  let contentVerification = null;
   let recovery;
   if (operation.capability === 'crm.records.create') {
     assertMappedFields(operation, definition, input.fields, 'create');
+    const readBinding = lock.bindings.find((binding) => {
+      return binding.capability === 'crm.records.read'
+        && binding.providerPack === provider.pack
+        && binding.authorities.includes(operation.authority);
+    });
+    if (!definition.capabilities.includes('crm.records.read')
+      || !readBinding
+      || !provider.capabilities.some((capability) => {
+        return capability.id === 'crm.records.read'
+          && capability.version === readBinding.capabilityVersion;
+      })) {
+      throw new Error(
+        operation.id + ' has no exact same-provider record-read verification route under '
+          + operation.authority + '.'
+      );
+    }
     const filter = input.deduplicationFilter;
     if (!filter || typeof filter !== 'object' || Array.isArray(filter)
       || typeof filter.field !== 'string' || typeof filter.value !== 'string'
@@ -107,9 +124,32 @@ function compileOperation(root, lock, operation, sequence) {
     };
     verificationId = null;
     expectedFields = input.fields;
+    if (typeof input.body === 'string') {
+      const contentBinding = lock.bindings.find((binding) => {
+        return binding.capability === 'documents.content.read'
+          && binding.providerPack === provider.pack
+          && binding.authorities.includes(operation.authority);
+      });
+      if (!contentBinding
+        || !provider.capabilities.some((capability) => {
+          return capability.id === 'documents.content.read'
+            && capability.version === contentBinding.capabilityVersion;
+        })) {
+        throw new Error(
+          operation.id + ' has no exact same-provider content-read route under '
+            + operation.authority + '.'
+        );
+      }
+      contentVerification = {
+        kind: 'exact-document-content',
+        capability: 'documents.content.read',
+        expectedTitle: input.fields.title,
+        expectedBodyFingerprint: fingerprintJson(input.body)
+      };
+    }
     recovery = {
-      mode: 'manual-required',
-      reason: 'The selected connected provider declares no tool that can compensate a newly created record.'
+      mode: 'terminal-idempotent-create',
+      reason: 'This deduplicated create may execute only as the final batch effect; ambiguity is reconciled by exact record and content reads rather than deletion or replay.'
     };
   } else {
     assertMappedFields(operation, definition, input.patch, 'update');
@@ -145,6 +185,7 @@ function compileOperation(root, lock, operation, sequence) {
       recordId: verificationId,
       expectedFieldsFingerprint: fingerprintJson(expectedFields)
     },
+    contentVerification,
     recovery
   };
 }
@@ -153,6 +194,55 @@ function batchFingerprint(batch) {
   const value = structuredClone(batch);
   delete value.batchFingerprint;
   return fingerprintJson(value);
+}
+
+function compiledOperationMatchesInput(operation) {
+  const input = operation.input;
+  const create = operation.capability === 'crm.records.create';
+  const expectedFields = create ? input.fields : input.patch;
+  if (!expectedFields
+    || operation.inputFingerprint !== fingerprintJson(input)
+    || operation.verification.kind !== 'record-fields-match'
+    || operation.verification.recordType !== input.recordType
+    || operation.verification.recordId !== (create ? null : input.id)
+    || operation.verification.expectedFieldsFingerprint !== fingerprintJson(expectedFields)) {
+    return false;
+  }
+  if (create) {
+    const filter = input.deduplicationFilter;
+    const expectedReadInput = filter && typeof filter.field === 'string'
+      ? {
+          recordTypes: [input.recordType],
+          filters: { [filter.field]: filter.value },
+          limit: 2
+        }
+      : null;
+    const expectedContent = typeof input.body === 'string'
+      ? {
+          kind: 'exact-document-content',
+          capability: 'documents.content.read',
+          expectedTitle: input.fields.title,
+          expectedBodyFingerprint: fingerprintJson(input.body)
+        }
+      : null;
+    return operation.precondition.kind === 'deduplication-absent'
+      && operation.precondition.expectedVersion === null
+      && operation.precondition.expectedCount === 0
+      && fingerprintJson(operation.precondition.readInput)
+        === fingerprintJson(expectedReadInput)
+      && fingerprintJson(operation.contentVerification) === fingerprintJson(expectedContent)
+      && operation.recovery.mode === 'terminal-idempotent-create';
+  }
+  return operation.precondition.kind === 'expected-version'
+    && operation.precondition.expectedVersion === input.expectedVersion
+    && operation.precondition.expectedCount === 1
+    && fingerprintJson(operation.precondition.readInput) === fingerprintJson({
+      recordTypes: [input.recordType],
+      ids: [input.id],
+      limit: 1
+    })
+    && operation.contentVerification === null
+    && operation.recovery.mode === 'restore-prior-fields';
 }
 
 export function assertConnectedOperationBatchApproval({ root, batch, changeSet, approval, at, allowExpired = false }) {
@@ -168,7 +258,17 @@ export function assertConnectedOperationBatchApproval({ root, batch, changeSet, 
     || new Set(operationIds).size !== operationIds.length
     || batch.operations.some((operation, index) => {
       return operation.sequence !== index + 1
-        || operation.inputFingerprint !== fingerprintJson(operation.input);
+        || !compiledOperationMatchesInput(operation);
+    })
+    || batch.operations.length !== changeSet.operations.length
+    || batch.operations.some((operation, index) => {
+      const source = changeSet.operations[index];
+      return !source
+        || operation.id !== source.id
+        || operation.capability !== source.capability
+        || operation.authority !== source.authority
+        || operation.inputFingerprint !== source.inputFingerprint
+        || fingerprintJson(operation.input) !== fingerprintJson(source.input);
     })
     || changeSet.state !== 'proposed'
     || batch.runId !== changeSet.runId
@@ -208,11 +308,23 @@ export function compileConnectedOperationBatch({ root, lock, changeSet, id, crea
   const operations = changeSet.operations.map((operation, index) => {
     return compileOperation(resolvedRoot, lock, operation, index + 1);
   });
+  const terminalCreates = operations.filter((operation) => {
+    return operation.recovery.mode === 'terminal-idempotent-create';
+  });
   const blockers = operations.filter((operation) => {
     return operation.recovery.mode === 'manual-required';
-  }).map((operation) => {
-    return operation.id + ' has no automatic compensation route.';
-  });
+  }).map((operation) => operation.id + ' has no automatic compensation route.');
+  if (terminalCreates.length > 1) {
+    blockers.push('A connected batch may contain at most one terminal idempotent create.');
+  }
+  for (const operation of terminalCreates) {
+    if (operation.sequence !== operations.length) {
+      blockers.push(operation.id + ' must be the final operation because it has no delete compensation.');
+    }
+    if (typeof operation.input.body === 'string' && !operation.contentVerification) {
+      blockers.push(operation.id + ' requires exact post-create content verification.');
+    }
+  }
   const batch = {
     $contract: 'soter://contracts/connected-operation-batch/v1',
     contractVersion: '1.0.0',

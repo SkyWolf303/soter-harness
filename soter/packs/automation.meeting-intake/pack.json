@@ -39,7 +39,7 @@
         "id": "documents.content.read",
         "version": "^1.0.0",
         "optional": false,
-        "reason": "The automation must load each explicitly applicable external policy body before proposing governed records."
+        "reason": "The automation must load each applicable policy body and Core must verify the exact body of a created meeting summary."
       },
       {
         "id": "crm.records.create",

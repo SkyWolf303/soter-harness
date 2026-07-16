@@ -9,7 +9,7 @@
     "id": "run.meeting-intake.contained-fixture",
     "version": null
   },
-  "configurationLockFingerprint": "sha256:7bd80295d6cbdf765bd07318889cb6c7467ffaa8e476ffc4f9190372ce7584a2",
+  "configurationLockFingerprint": "sha256:9b6e8a9125f02f9c580d18b9720b0f63f1cbf464938e71cfe2cb45e4392c2da6",
   "dependencies": [
     {
       "id": "kernel.soter",
@@ -29,7 +29,7 @@
     {
       "id": "automation.meeting-intake",
       "version": "0.1.0",
-      "fingerprint": "sha256:46dc84fbb9c5b8ee851ba739a24273bdc466bc8c88b9e516cc34b3fa13e6120a"
+      "fingerprint": "sha256:b19ea4d0eafbe26dbd7e96c211629c4fdf30353480e79537d358214fc66a7310"
     },
     {
       "id": "integration.notion",
@@ -133,7 +133,7 @@
     {
       "role": "context-snapshot",
       "id": "context.meeting-intake.contained-fixture",
-      "fingerprint": "sha256:a767a7bc8d339ce83d2906b9e0808db30c864b9aae77033d01c17de410fd8dfd"
+      "fingerprint": "sha256:c25394a2d48e2af593da4b16e30d737f6d4ec1066c08bcde3ffd209f2c1b48bd"
     }
   ],
   "effects": [

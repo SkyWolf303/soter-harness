@@ -37,7 +37,8 @@
         "additionalProperties": false,
         "required": [
           "id", "sequence", "capability", "authority", "provider",
-          "input", "inputFingerprint", "precondition", "verification", "recovery"
+          "input", "inputFingerprint", "precondition", "verification",
+          "contentVerification", "recovery"
         ],
         "properties": {
           "id": { "type": "string", "minLength": 1 },
@@ -78,12 +79,29 @@
               "expectedFieldsFingerprint": { "$ref": "#/$defs/fingerprint" }
             }
           },
+          "contentVerification": {
+            "type": ["object", "null"],
+            "additionalProperties": false,
+            "required": ["kind", "capability", "expectedTitle", "expectedBodyFingerprint"],
+            "properties": {
+              "kind": { "const": "exact-document-content" },
+              "capability": { "const": "documents.content.read" },
+              "expectedTitle": { "type": "string", "minLength": 1, "maxLength": 200 },
+              "expectedBodyFingerprint": { "$ref": "#/$defs/fingerprint" }
+            }
+          },
           "recovery": {
             "type": "object",
             "additionalProperties": false,
             "required": ["mode", "reason"],
             "properties": {
-              "mode": { "enum": ["restore-prior-fields", "manual-required"] },
+              "mode": {
+                "enum": [
+                  "restore-prior-fields",
+                  "terminal-idempotent-create",
+                  "manual-required"
+                ]
+              },
               "reason": { "type": "string", "minLength": 8 }
             }
           }

@@ -327,15 +327,19 @@ the request from conversational memory. Completion stores the normalized
 result in private state, records only fingerprints in the run envelope, and
 never persists the native provider response. One outstanding capability, plan,
 or transaction call per run prevents ambiguous concurrent resume. Connected
-update transactions expose explicit compare, write, and verify calls. If a
-later operation conflicts, Core restores verified earlier updates in reverse
-order and verifies each restoration. An unknown write outcome is not
+transactions expose explicit compare, write, and verify calls. Reversible
+updates run first; at most one deduplicated create may run last, after which Core
+verifies its mapped record fields and exact document content through separate
+reads. If a later pre-create operation conflicts, or a terminal create is proved
+absent after an ambiguous response, Core restores verified earlier updates in
+reverse order and verifies each restoration. An unknown write outcome is not
 represented as rollback: the checkpoint enters `needs-attention` for
 reconciliation because external systems do not provide an ACID transaction
-boundary. Reconciliation emits only an exact record read. Approved state can
-resume the batch, prior state can close or continue rollback, and missing,
-divergent, failed-read, or unproven compensation state remains paused. It never
-replays the ambiguous write.
+boundary. Reconciliation emits only an exact record or document-content read.
+Approved state can resume the batch, prior or absent state can close or continue
+rollback where safe, and missing, divergent, failed-read, or unproven
+compensation state remains paused. It never replays the ambiguous write or
+invents a delete compensation route.
 
 The stdio self-test terminates and restarts the server between preparation and
 completion, repairs planted partial cross-file updates, rejects stale and
@@ -576,28 +580,32 @@ issues. A `needs-input` decision records abstention and cannot produce a change
 set. Core stores connected decisions as private runtime state, registers the
 fingerprint on the same paused run, rejects a competing decision for that
 snapshot, and lets Automation project only a ready decision into a change set
-that carries the exact decision and snapshot basis. Core can compile that proposal into an exact connected
-operation batch with deduplication or expected-version preconditions,
+that carries the exact decision and snapshot basis. Core can compile that
+proposal into an exact connected operation batch with deduplication or expected-version preconditions,
 verification expectations, recovery modes, and a separate expiring approval
-fingerprint. The resulting batch is representable but remains blocked because
-the current connector route cannot compensate a newly created page. The
-compiler and preview CLI execute no provider calls; durable
-mapped updates now use a private `connected-transaction-checkpoint/v1`. Core
+fingerprint. The resulting batch is executable only in its constrained order:
+all compensatable updates precede one deduplicated terminal create. The compiler
+requires a same-provider content-read route for the summary body and the preview
+CLI executes no provider calls. Durable mapped updates and the terminal create
+use a private `connected-transaction-checkpoint/v1`. Core
 validates the exact approval before the first write, captures compared prior
-mapped fields, verifies each applied patch, compensates verified updates in
-reverse after a later conflict, and recovers the exact current host call after
-restart. It preflights every operation and recovery route before the first
-effect so an invalid tail cannot strand earlier changes. The CLI alone
+mapped fields, verifies each applied patch, captures the created record identity,
+then verifies the created fields and exact page body. It compensates verified
+updates in reverse after a later conflict or a create proved absent, and recovers
+the exact current host call after restart. It preflights every operation and
+recovery route before the first effect so an invalid tail cannot strand earlier
+changes. The CLI alone
 originates the authorized checkpoint; MCP only advances it or requests a
 checkpoint-bound read-only reconciliation. Reconciliation histories classify
-approved, prior, missing, divergent, and failed-read observations and resume
-only when the normalized record proves a safe transition. Synthetic local
-tests prove this Core state machine, not connected
+approved fields, approved content, prior fields, absence, missing, divergence,
+and failed reads and resume only when normalized evidence proves a safe
+transition. Synthetic local tests prove this Core state machine, not connected
 credentials, provider write conformance, or a live end-to-end write. Observed Otter
 transcript conformance, host-started end-to-end dispatch, policy interpretation
-quality and enforcement, participant identity resolution, compensated creates, live
-approval-bound provider writes, live health, judgment-quality evaluation, and host conformance remain
-future proof boundaries. The v2 plan contract is intentionally narrower than a
+quality and enforcement, participant identity resolution, validation of
+terminal-create consistency assumptions, live approval-bound provider writes,
+live health, judgment-quality evaluation, and host conformance remain future
+proof boundaries. The v2 plan contract is intentionally narrower than a
 general workflow language: arbitrary transforms, branching, parallelism,
 fan-out, retries, and compensation are not implemented.
 

@@ -9,7 +9,7 @@
     "id": "run.meeting-intake.transaction-fixture",
     "version": null
   },
-  "configurationLockFingerprint": "sha256:7bd80295d6cbdf765bd07318889cb6c7467ffaa8e476ffc4f9190372ce7584a2",
+  "configurationLockFingerprint": "sha256:9b6e8a9125f02f9c580d18b9720b0f63f1cbf464938e71cfe2cb45e4392c2da6",
   "dependencies": [
     {
       "id": "kernel.soter",
@@ -29,7 +29,7 @@
     {
       "id": "automation.meeting-intake",
       "version": "0.1.0",
-      "fingerprint": "sha256:46dc84fbb9c5b8ee851ba739a24273bdc466bc8c88b9e516cc34b3fa13e6120a"
+      "fingerprint": "sha256:b19ea4d0eafbe26dbd7e96c211629c4fdf30353480e79537d358214fc66a7310"
     },
     {
       "id": "integration.notion",
@@ -133,17 +133,17 @@
     {
       "role": "automation-decision",
       "id": "decision.meeting-intake.transaction-fixture",
-      "fingerprint": "sha256:4b7ded4f21de53ecbfd716dd3d00f41a73e91b242965663457f839cae71d7cb7"
+      "fingerprint": "sha256:afb12bfa296c71b11628e43eb73be6f8af1bc8e81be083c0e057b23410894ceb"
     },
     {
       "role": "change-set",
       "id": "changeset.meeting-intake.transaction-fixture",
-      "fingerprint": "sha256:6aface41317dfabec0b9f55da7912b8634d9ca51e13596e943f5dbe4e89f5bba"
+      "fingerprint": "sha256:8db094f9cda3f90a4ea57351a30ad43c35ace3734fe3e2552a6abf3d245f4396"
     },
     {
       "role": "approval",
       "id": "approval.meeting-intake.transaction-fixture",
-      "fingerprint": "sha256:d0af670cfa947180f7bcf7e67f42c45e20535a4ec2abc11fcc1d9f344656b11d"
+      "fingerprint": "sha256:b4e6c914e563089a7e19b79b5d305661506f2481f2814281b2c9af56472470be"
     }
   ],
   "effects": [
@@ -250,33 +250,6 @@
       "error": null
     },
     {
-      "id": "effect.meeting-intake.transaction-fixture.summary.create",
-      "capability": "crm.records.create",
-      "capabilityVersion": "1.0.0",
-      "providerPack": "integration.notion",
-      "providerImplementation": "provider.integration.notion.fixture",
-      "providerVersion": "0.1.0",
-      "containment": "fixture",
-      "authority": "authority.crm.instance",
-      "startedAt": "2026-07-15T12:00:00.000Z",
-      "completedAt": "2026-07-15T12:00:00.000Z",
-      "declaredEffects": [
-        "write"
-      ],
-      "policyDecisions": [
-        {
-          "effect": "write",
-          "mode": "confirm",
-          "decision": "confirmed",
-          "reason": "The complete external record batch requires one explicit user confirmation."
-        }
-      ],
-      "inputFingerprint": "sha256:b559a7c5cd430d811b988b1f4c7ade9dfdb43185da9cded57841a6f66766a087",
-      "state": "passed",
-      "outputFingerprint": "sha256:516c48fd733016bb8931f41fc1c8ed0f0f751ef7fd7342008c1373e72ccc9010",
-      "error": null
-    },
-    {
       "id": "effect.meeting-intake.transaction-fixture.task.update",
       "capability": "crm.records.update",
       "capabilityVersion": "1.0.0",
@@ -301,6 +274,33 @@
       "inputFingerprint": "sha256:b63d7115d37ee8dca7af5e1883b4a54ef8adfc3b41fc31accda1ee8b59f8a0c1",
       "state": "passed",
       "outputFingerprint": "sha256:1830079dbd8108a6507edb60f610ddeb2fa9e7b5c386ca2cb0be92c5740cb84c",
+      "error": null
+    },
+    {
+      "id": "effect.meeting-intake.transaction-fixture.summary.create",
+      "capability": "crm.records.create",
+      "capabilityVersion": "1.0.0",
+      "providerPack": "integration.notion",
+      "providerImplementation": "provider.integration.notion.fixture",
+      "providerVersion": "0.1.0",
+      "containment": "fixture",
+      "authority": "authority.crm.instance",
+      "startedAt": "2026-07-15T12:00:00.000Z",
+      "completedAt": "2026-07-15T12:00:00.000Z",
+      "declaredEffects": [
+        "write"
+      ],
+      "policyDecisions": [
+        {
+          "effect": "write",
+          "mode": "confirm",
+          "decision": "confirmed",
+          "reason": "The complete external record batch requires one explicit user confirmation."
+        }
+      ],
+      "inputFingerprint": "sha256:b559a7c5cd430d811b988b1f4c7ade9dfdb43185da9cded57841a6f66766a087",
+      "state": "passed",
+      "outputFingerprint": "sha256:516c48fd733016bb8931f41fc1c8ed0f0f751ef7fd7342008c1373e72ccc9010",
       "error": null
     },
     {
@@ -332,7 +332,7 @@
           "reason": "Selected records may enter the configured private run envelope."
         }
       ],
-      "inputFingerprint": "sha256:03c58b473fdfaa2e4372b32f007802270b1aa96bb3e1282235cd64c339d82037",
+      "inputFingerprint": "sha256:1bb712847664ebdd77e56f3a5bf352ecc11ac00b4d87a26e4d9bfa120f2e0f54",
       "state": "passed",
       "outputFingerprint": "sha256:7434a1497fa42a5613e1e06bf8911f1159710cdfbc4449e0c7ed5a19e3d1ca31",
       "error": null

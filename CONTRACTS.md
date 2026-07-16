@@ -936,26 +936,39 @@ Every operation carries its portable input, provider identity, compare-before-
 write or deduplication precondition, read-after-write expectation, and recovery
 mode. Unmapped fields fail compilation before approval or provider arguments.
 An update can declare reverse-order restoration from its compared prior fields.
-A create whose provider exposes no automatic compensation route remains a
-blocked, non-executable batch even when its fields and deduplication filter are
-otherwise representable.
+A create without a delete/restore route may use only the narrower
+`terminal-idempotent-create` mode: the batch contains at most one such create,
+it is last, and every prior effect is a compensatable update. Its deduplication
+filter must name one mapped field equal to the deduplication key. If it carries a
+body, compilation fingerprints the exact expected title and body. Compilation
+always requires a same-provider `crm.records.read` verification route; a body
+additionally requires a `documents.content.read` route under the same authority.
+Any create that cannot satisfy those constraints fails compilation or produces a
+blocked batch.
 
 `approval/v2` binds both the change-set scope fingerprint and the compiled
 operation-batch fingerprint, names only the approved effects, and expires. A
 changed input, binding, mapping, recovery plan, operation order, or batch
 fingerprint requires a new approval. A blocked batch cannot be approved. The
-compiler and preview command execute no provider calls.
+validator also requires every compiled operation to match the same ordered source
+change-set operation and recomputes its precondition and verification
+fingerprints from that input. The compiler and preview command execute no
+provider calls.
 
 `connected-transaction-checkpoint/v1` is the private durable execution boundary
-for an executable update-only batch. Preparation requires the exact current
+for an executable batch of compensatable updates followed by at most one
+terminal idempotent create. Preparation requires the exact current
 lock, graph, host, durable run, proposed batch, source change set, and unexpired
 `approval/v2`. Core validates all fingerprints and emits only the first
 compare-before-write read. Before that emission, it preflights every operation's
-compare, write, verify, compensation, and compensation-verification binding,
-input shape, provider translator, and native host route. An invalid tail fails
-before an earlier effect. The checkpoint embeds the exact authorization sources
-because resume must not reconstruct authority from conversation or a later
-prompt. It stores no credential value or native provider response.
+compare, write, verify, content-verify, compensation, and compensation-
+verification route that the operation can require. Inputs known before execution
+receive full translator validation; identity-dependent post-create reads receive
+binding and host-route preflight, then exact input and translator validation once
+the provider returns the created identity. An invalid tail fails before an
+earlier effect. The checkpoint embeds the exact authorization sources because
+resume must not reconstruct authority from conversation or a later prompt. It
+stores no credential value or native provider response.
 
 Each update proceeds sequentially through four explicit responsibilities:
 
@@ -964,6 +977,20 @@ Each update proceeds sequentially through four explicit responsibilities:
 3. Emit the approved update and then read the exact record again.
 4. Require the approved fields to match and retain the observed version needed
    for possible compensation.
+
+The optional terminal create proceeds through five explicit responsibilities:
+
+1. Read by the exact mapped deduplication filter with a limit of two and require
+   zero matches.
+2. Emit the approved create once and require a normalized result that identifies
+   one newly created record.
+3. Read that exact identity through `crm.records.read` and require every approved
+   mapped field to match.
+4. When the create contains a body, read the same identity through
+   `documents.content.read` and require the exact approved title and body
+   fingerprint.
+5. Mark the create applied only after every required read passes. There is no
+   following effect and no invented delete compensation.
 
 The first write must begin while the exact approval is current. Once an effect
 has begun, expiry does not prevent verification or compensation; stopping
@@ -979,18 +1006,19 @@ record and verifies that restoration. A successful reverse sequence closes as
 any write closes as `failed`.
 
 External providers do not supply an ACID boundary. A transport failure during a
-write, a missing post-write record, an unverified compensation, or another
-ambiguous effect closes as `needs-attention`. Core must not retry an ambiguous
-write automatically or claim rollback.
+write, a missing post-write record, mismatched post-create content, an unverified
+compensation, or another ambiguous effect closes as `needs-attention`. Core must
+not retry an ambiguous write automatically or claim rollback.
 
 An exact `needs-attention` checkpoint may begin read-only reconciliation. Core
 binds each reconciliation attempt to the unresolved operation, ambiguity,
-lock, graph, host, provider, authority, record ID, and checkpoint. It emits one
-ordinary `crm.records.read` request and stores only the normalized result and
-fingerprints. Reconciliation does not accept approval, emit provider arguments
-for a write, or reuse the ambiguous call. Attempts are bounded to twenty per
-operation so an unavailable or unstable provider cannot grow private state
-without limit.
+lock, graph, host, provider, authority, exact deduplication filter or record ID,
+and checkpoint. It emits one ordinary `crm.records.read` request, or one
+`documents.content.read` for a content ambiguity, and stores only the normalized
+result and fingerprints. Reconciliation does not accept approval, emit provider
+arguments for a write, or reuse the ambiguous call. Attempts are bounded to
+twenty per operation so an unavailable or unstable provider cannot grow private
+state without limit.
 
 Core classifies the exact record observation as:
 
@@ -1000,6 +1028,13 @@ Core classifies the exact record observation as:
 - `diverged` when the record matches neither state; or
 - `read-failed` when the reconciliation request cannot be completed and
   normalized.
+
+For a terminal create, `absent` means its exact deduplication or identity read
+returned zero records, while `approved-fields` means one record has every
+approved mapped value. A successfully normalized content observation is
+`approved-content` only when its identity, title, normalized body, and body
+fingerprint match; a different body is `diverged-content`, while identity,
+title, or normalization failure is `read-failed`.
 
 For an ambiguous update or verification, `approved-fields` proves the desired
 effect and resumes the remaining batch; `prior-fields` proves that operation
@@ -1011,13 +1046,20 @@ into an automatic write retry. A later read-only attempt may observe a stable
 resolvable state; otherwise a human must reconcile provider state before a new
 operation batch and approval are created.
 
-Mapped creates remain non-executable while the selected provider declares no
-automatic compensation route. Generic capability and operation-plan interfaces
-still accept no connected-write approval. The trusted CLI can create an exact
-approval and start the transaction. CLI and MCP can load, complete, fail, or
-request read-only reconciliation of the already-authorized checkpoint by exact
-checkpoint and current-call identity; MCP still cannot originate or widen
-approval.
+For an ambiguous terminal create, `approved-fields` captures the observed
+identity and proceeds to content verification when required; `absent` marks the
+create failed and compensates verified prior updates. It never retries the
+create. `approved-content` completes the create after a content ambiguity.
+Missing, divergent, diverged-content, or failed reads remain
+`needs-attention`. This is a consistency assumption about the selected
+provider's normalized reads, not proof of live behavior; live canary evidence is
+still required before claiming write conformance.
+
+Generic capability and operation-plan interfaces still accept no connected-
+write approval. The trusted CLI can create an exact approval and start the
+transaction. CLI and MCP can load, complete, fail, or request read-only
+reconciliation of the already-authorized checkpoint by exact checkpoint and
+current-call identity; MCP still cannot originate or widen approval.
 
 #### Bounded connected context finalization
 

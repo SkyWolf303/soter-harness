@@ -4,7 +4,7 @@
   "configuration": {
     "name": "meeting-intake",
     "path": "soter/configurations/meeting-intake.config.json",
-    "fingerprint": "sha256:8d7b23b25103e37507702ace9da5e00a58d335fc9c2282d17a83b8c51bf99a1c"
+    "fingerprint": "sha256:46e8f94ab211bb1e2666e7138cf316a13158bcb3cd0c242abefc1f8ac6d7358c"
   },
   "resolver": {
     "id": "core.resolver",
@@ -65,12 +65,12 @@
         {
           "path": "soter/contracts/connected-operation-batch.schema.json",
           "role": "definition",
-          "fingerprint": "sha256:90c96c413194d495ec3bc9438fd2ecc56b3c7340a3ca458eb9c26fc3460b375f"
+          "fingerprint": "sha256:01920271a1030bcace58c67585f9960d5bc0bcb835a2aa0e24b6aefa777d121e"
         },
         {
           "path": "soter/contracts/connected-transaction-checkpoint.schema.json",
           "role": "definition",
-          "fingerprint": "sha256:a8d43cb688f781e61dfcdbc33e9e07e2264e3c3162fcd5fbdbce9c9d001e2ebb"
+          "fingerprint": "sha256:32e3d60b03d20962f5a5f5549cd11f26b755f59ff8731bda1eae9543fc1615af"
         },
         {
           "path": "soter/contracts/context-record-model.schema.json",
@@ -242,12 +242,12 @@
         {
           "path": "soter/core/connected-transaction-runtime.mjs",
           "role": "implementation",
-          "fingerprint": "sha256:909a3487c301486f502cb08db1fb35e03ffc13062cbf559ec1a0e00f7cf17fac"
+          "fingerprint": "sha256:80191a032f16a7958b6d53b554e4bcbf109104e2c7839e618b4cf0ea49235fd4"
         },
         {
           "path": "soter/core/connected-transactions.mjs",
           "role": "implementation",
-          "fingerprint": "sha256:8e88d676edc5365d76024694f072481d20146e60d85da47eb3deae4af959402c"
+          "fingerprint": "sha256:f8e81ca47c3baf1c5f69ccf294cae33a4a55adf4ef82966e47393dc38ac940eb"
         },
         {
           "path": "soter/core/context-records.mjs",
@@ -292,7 +292,7 @@
         {
           "path": "soter/core/mcp/selftest.mjs",
           "role": "evaluation",
-          "fingerprint": "sha256:88975890b5955ec4558d9626c7e6015471f336ae8b36af4663508d895f5b1e35"
+          "fingerprint": "sha256:8af4427dba50c199c851354acad321c136b3aa6ced88571b4e93e13b8240b95c"
         },
         {
           "path": "soter/core/mcp/server.mjs",
@@ -337,12 +337,12 @@
         {
           "path": "soter/core/selftest.mjs",
           "role": "evaluation",
-          "fingerprint": "sha256:99d8d0b00737d37a1d365441cee4a5d6c1056a15eebb102434d0e82599478746"
+          "fingerprint": "sha256:b52149e24ebec2f537d573c46acfe1b56a1a43898df2e24559527801368b4104"
         },
         {
           "path": "soter/core/service.mjs",
           "role": "implementation",
-          "fingerprint": "sha256:f0c13333b6345bb67bfcd73ae303716fa78cfc8f5a10fa168c2683a0091c561c"
+          "fingerprint": "sha256:d1eb4e41dac764178b25e4fcedc53c2f3b7438d7d32df30cff83e393d6f8c7ea"
         },
         {
           "path": "soter/core/transaction.mjs",
@@ -376,7 +376,7 @@
       "evidenceMaturity": "declared",
       "source": "user",
       "reason": "The user selected the meeting-intake outcome for this named harness configuration.",
-      "manifestFingerprint": "sha256:46dc84fbb9c5b8ee851ba739a24273bdc466bc8c88b9e516cc34b3fa13e6120a",
+      "manifestFingerprint": "sha256:b19ea4d0eafbe26dbd7e96c211629c4fdf30353480e79537d358214fc66a7310",
       "artifacts": [
         {
           "path": "soter/automations/meeting-intake/context.mjs",
@@ -401,7 +401,7 @@
         {
           "path": "soter/automations/meeting-intake/transaction.mjs",
           "role": "implementation",
-          "fingerprint": "sha256:cc1389ff1a0ac64718d1925620a218f37a2c8e0aaaa21f90f4412a08596a528e"
+          "fingerprint": "sha256:8f35d0800853f5229e5515328fbfc08d424d11a35a499aae99c4f5055aee86da"
         },
         {
           "path": "soter/scenarios/meeting-intake/grounded-and-gated.scenario.json",
@@ -448,7 +448,7 @@
         {
           "path": "soter/capabilities/documents.content.read.json",
           "role": "definition",
-          "fingerprint": "sha256:cf232c4f9045a9d8253061f729409e3b99698fae57ef32006c97a1c3bb0101e7"
+          "fingerprint": "sha256:0ba8b94e03897a8afa93b1a747c20d1ea46bf9bff720b58ebdeeacbe63e6cbca"
         },
         {
           "path": "soter/fixtures/providers/notion/crm-records.json",
@@ -483,7 +483,7 @@
         {
           "path": "soter/providers/provider.integration.notion.mcp.json",
           "role": "implementation",
-          "fingerprint": "sha256:4050906924afa671d7b0832a86ec46c9603054882e4d39e9c49f3beca3b425ae"
+          "fingerprint": "sha256:921b80c6d26c17926c65567f27d8c501796d0a500dcb8ffd3307c66c34dec193"
         }
       ]
     },
@@ -600,7 +600,7 @@
     {
       "id": "documents.content.read",
       "version": "1.0.0",
-      "contractFingerprint": "sha256:0fa45de1ede9ee536d97fea389c5cc4ebba4390befd6252bce8500dfe8e5d2c6"
+      "contractFingerprint": "sha256:98c71812710a8968b84fd12b75c57ab918a479c5ec27d9a9ded7e2560d1f0e12"
     },
     {
       "id": "meeting.transcript.read",
@@ -656,13 +656,14 @@
       "providerPack": "integration.notion",
       "providerVersion": "0.1.0",
       "authorities": [
-        "authority.crm.definition"
+        "authority.crm.definition",
+        "authority.crm.instance"
       ],
       "effects": [
         "disclosure",
         "read"
       ],
-      "reason": "Notion supplies the exact external policy document bodies selected by meeting intake."
+      "reason": "Notion supplies exact configured policy bodies under definition authority and exact post-create summary bodies under instance authority."
     },
     {
       "capability": "meeting.transcript.read",
@@ -852,5 +853,5 @@
       "fingerprint": "sha256:76ee7cf92f64ea6a927008daa4cf80dff943769d749b9bd9d27737a1420f57be"
     }
   ],
-  "graphFingerprint": "sha256:4a1b1357e868dba761a79674075bb2f3793266385557131cbd3bd644398f41cd"
+  "graphFingerprint": "sha256:3a7f29b19d6dfbf96d48d3d0cc9cb162591e621581d56193f5b49138725da9ad"
 }

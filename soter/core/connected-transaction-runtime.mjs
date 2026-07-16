@@ -7,6 +7,7 @@ import {
 import {
   completeHostToolCall,
   failHostToolCall,
+  preflightHostToolBinding,
   prepareHostToolCall
 } from './host-tools.mjs';
 import { fingerprintJson, readJson } from './lib/canonical-json.mjs';
@@ -38,6 +39,7 @@ function validate(root, value, schemaPath, label) {
 
 function phaseName(stage) {
   return stage === 'verify' ? 'verification'
+    : stage === 'content-verify' ? 'contentVerification'
     : stage === 'compensate' ? 'compensation'
       : stage === 'compensation-verify' ? 'compensationVerification'
         : stage;
@@ -45,6 +47,7 @@ function phaseName(stage) {
 
 function stageName(name) {
   return name === 'verification' ? 'verify'
+    : name === 'contentVerification' ? 'content-verify'
     : name === 'compensation' ? 'compensate'
       : name === 'compensationVerification' ? 'compensation-verify'
         : name;
@@ -54,10 +57,32 @@ function sourceOperation(checkpoint, runtimeOperation) {
   return checkpoint.batch.operations.find((operation) => operation.id === runtimeOperation.id);
 }
 
+function isCreate(source) {
+  return source.capability === 'crm.records.create';
+}
+
+function expectedFields(source) {
+  return isCreate(source) ? source.input.fields : source.input.patch;
+}
+
 function inputForStage(source, runtimeOperation, stage) {
   if (stage === 'compare') return source.precondition.readInput;
   if (stage === 'write') return source.input;
-  if (stage === 'verify' || stage === 'compensation-verify') {
+  if (stage === 'verify') {
+    return runtimeOperation.createdRecordId
+      ? { recordTypes: [source.input.recordType], ids: [runtimeOperation.createdRecordId], limit: 1 }
+      : source.precondition.readInput;
+  }
+  if (stage === 'content-verify') {
+    if (!runtimeOperation.createdRecordId || !source.contentVerification) {
+      throw new Error('Connected create content verification is missing its exact record identity.');
+    }
+    return {
+      uri: runtimeOperation.createdRecordId,
+      expectedTitle: source.contentVerification.expectedTitle
+    };
+  }
+  if (stage === 'compensation-verify') {
     return { recordTypes: [source.input.recordType], ids: [source.input.id], limit: 1 };
   }
   if (stage === 'compensate') {
@@ -72,6 +97,7 @@ function inputForStage(source, runtimeOperation, stage) {
 }
 
 function capabilityForStage(source, stage) {
+  if (stage === 'content-verify') return source.contentVerification.capability;
   return stage === 'write' || stage === 'compensate'
     ? source.capability
     : 'crm.records.read';
@@ -141,11 +167,15 @@ export function assertConnectedTransactionCheckpoint(root, checkpoint) {
   });
   if (checkpoint.batch.runId !== checkpoint.run.id
     || checkpoint.batch.configurationLockFingerprint !== checkpoint.configurationLock.fingerprint
-    || checkpoint.batch.operations.some((operation) => {
-      return operation.capability !== 'crm.records.update'
-        || operation.recovery.mode !== 'restore-prior-fields';
+    || checkpoint.batch.operations.some((operation, index) => {
+      const update = operation.capability === 'crm.records.update'
+        && operation.recovery.mode === 'restore-prior-fields';
+      const terminalCreate = operation.capability === 'crm.records.create'
+        && operation.recovery.mode === 'terminal-idempotent-create'
+        && index === checkpoint.batch.operations.length - 1;
+      return !update && !terminalCreate;
     })) {
-    throw new Error('Connected transaction checkpoint is not an exact compensatable update batch.');
+    throw new Error('Connected transaction checkpoint is not an exact compensatable-update and terminal-create batch.');
   }
   checkpoint.operations.forEach((operation, index) => {
     if (operation.id !== checkpoint.batch.operations[index].id
@@ -158,8 +188,51 @@ export function assertConnectedTransactionCheckpoint(root, checkpoint) {
   const reconciliationIds = [];
   for (const runtimeOperation of checkpoint.operations) {
     const source = sourceOperation(checkpoint, runtimeOperation);
+    const create = isCreate(source);
+    const deduplicationFilter = source.input.deduplicationFilter;
+    const expectedPreconditionInput = create
+      && deduplicationFilter
+      && typeof deduplicationFilter.field === 'string'
+      ? {
+          recordTypes: [source.input.recordType],
+          filters: {
+            [deduplicationFilter.field]: deduplicationFilter.value
+          },
+          limit: 2
+        }
+      : create
+        ? null
+        : { recordTypes: [source.input.recordType], ids: [source.input.id], limit: 1 };
+    if (source.verification.expectedFieldsFingerprint !== fingerprintJson(expectedFields(source))
+      || source.verification.kind !== 'record-fields-match'
+      || source.verification.recordType !== source.input.recordType
+      || source.verification.recordId !== (create ? null : source.input.id)
+      || fingerprintJson(source.precondition.readInput)
+        !== fingerprintJson(expectedPreconditionInput)
+      || (create && (source.precondition.kind !== 'deduplication-absent'
+        || source.precondition.expectedCount !== 0
+        || source.precondition.expectedVersion !== null
+        || (typeof source.input.body === 'string'
+          && (source.contentVerification?.expectedBodyFingerprint
+            !== fingerprintJson(source.input.body)
+            || source.contentVerification.expectedTitle !== source.input.fields.title))
+        || (typeof source.input.body !== 'string' && source.contentVerification !== null)
+        || (!source.contentVerification && runtimeOperation.contentVerification !== null)))
+      || (!create && (source.precondition.kind !== 'expected-version'
+        || source.precondition.expectedCount !== 1
+        || source.precondition.expectedVersion !== source.input.expectedVersion
+        || source.contentVerification !== null
+        || runtimeOperation.contentVerification !== null
+        || runtimeOperation.createdRecordId !== null))
+      || (create && (runtimeOperation.priorFields !== null
+        || runtimeOperation.priorVersion !== null
+        || runtimeOperation.compensation !== null
+        || runtimeOperation.compensationVerification !== null))) {
+      throw new Error('Connected transaction operation does not preserve its exact recovery contract.');
+    }
     for (const name of [
-      'compare', 'write', 'verification', 'compensation', 'compensationVerification'
+      'compare', 'write', 'verification', 'contentVerification',
+      'compensation', 'compensationVerification'
     ]) {
       const stage = stageName(name);
       const record = runtimeOperation[name];
@@ -211,7 +284,10 @@ export function assertConnectedTransactionCheckpoint(root, checkpoint) {
         'soter/contracts/host-tool-call.schema.json',
         'Connected transaction reconciliation call'
       );
-      const expectedInput = inputForStage(source, runtimeOperation, 'verify');
+      const observationStage = ambiguity ? reconciliationStage(ambiguity) : 'verify';
+      const expectedInput = ambiguity
+        ? inputForReconciliation(source, runtimeOperation, ambiguity)
+        : source.precondition.readInput;
       const observation = record.call.state === 'completed' && ambiguity
         ? classifyReconciliation(record.output, source, runtimeOperation, ambiguity)
         : { record: null, outcome: 'read-failed' };
@@ -229,7 +305,7 @@ export function assertConnectedTransactionCheckpoint(root, checkpoint) {
         || record.call.provider.pack !== source.provider.pack
         || record.call.provider.version !== source.provider.version
         || record.call.provider.containment !== 'connected'
-        || record.call.capability.id !== 'crm.records.read'
+        || record.call.capability.id !== capabilityForStage(source, observationStage)
         || record.call.authority !== source.authority
         || record.call.inputFingerprint !== fingerprintJson(expectedInput)
         || record.outputFingerprint !== (record.output ? fingerprintJson(record.output) : null)
@@ -257,15 +333,24 @@ export function assertConnectedTransactionCheckpoint(root, checkpoint) {
       const resolvingOutcomes = runtimeOperation.reconciliations
         .filter((item) => item.ambiguityId === ambiguity.id)
         .map((item) => item.outcome)
-        .filter((outcome) => outcome === 'prior-fields' || outcome === 'approved-fields');
-      const expectedResolution = ambiguity.stage === 'compensate'
-        || ambiguity.stage === 'compensation-verify'
-        ? resolvingOutcomes.includes('prior-fields') ? 'prior-fields' : null
-        : resolvingOutcomes.includes('approved-fields')
-          ? 'approved-fields'
-          : resolvingOutcomes.includes('prior-fields')
-            ? 'prior-fields'
-            : null;
+        .filter((outcome) => [
+          'prior-fields', 'approved-fields', 'approved-content', 'absent'
+        ].includes(outcome));
+      const compensation = ambiguity.stage === 'compensate'
+        || ambiguity.stage === 'compensation-verify';
+      const expectedResolution = ambiguity.stage === 'content-verify'
+        ? resolvingOutcomes.includes('approved-content') ? 'approved-content' : null
+        : compensation
+          ? resolvingOutcomes.includes('prior-fields') ? 'prior-fields' : null
+          : isCreate(source)
+            ? resolvingOutcomes.includes('approved-fields')
+              ? 'approved-fields'
+              : resolvingOutcomes.includes('absent') ? 'absent' : null
+            : resolvingOutcomes.includes('approved-fields')
+              ? 'approved-fields'
+              : resolvingOutcomes.includes('prior-fields')
+                ? 'prior-fields'
+                : null;
       if ((ambiguity.status === 'resolved' && ambiguity.resolution !== expectedResolution)
         || (ambiguity.status === 'unresolved' && expectedResolution !== null)) {
         throw new Error('Connected transaction ambiguity does not match its reconciliation history.');
@@ -292,7 +377,8 @@ export function assertConnectedTransactionCheckpoint(root, checkpoint) {
     const expectedState = checkpoint.current.stage === 'compare' ? 'comparing'
       : checkpoint.current.stage === 'write' ? 'writing'
         : checkpoint.current.stage === 'verify' ? 'verifying'
-          : checkpoint.current.stage === 'compensate' ? 'compensating'
+          : checkpoint.current.stage === 'content-verify' ? 'content-verifying'
+            : checkpoint.current.stage === 'compensate' ? 'compensating'
             : checkpoint.current.stage === 'compensation-verify'
               ? 'compensation-verifying'
               : 'reconciling';
@@ -361,12 +447,23 @@ function phase(call, output = null, error = null) {
   };
 }
 
-function recordFor(output, operation) {
+function recordFor(output, source, runtimeOperation = null) {
   const records = output?.records;
   if (!Array.isArray(records) || records.length !== 1
-    || records[0].type !== operation.input.recordType
-    || records[0].id !== operation.input.id) return null;
+    || records[0].type !== source.input.recordType) return null;
+  const expectedId = runtimeOperation?.createdRecordId || source.input.id;
+  if (expectedId && records[0].id !== expectedId) return null;
   return records[0];
+}
+
+function createdRecordFor(output, source) {
+  const record = output?.record;
+  if (output?.created !== true
+    || !record
+    || record.type !== source.input.recordType
+    || typeof record.id !== 'string'
+    || !record.id) return null;
+  return record;
 }
 
 function fieldsMatch(record, expected) {
@@ -375,12 +472,45 @@ function fieldsMatch(record, expected) {
   });
 }
 
+function contentMatches(output, source, runtimeOperation) {
+  const document = output?.document;
+  return Boolean(source.contentVerification
+    && runtimeOperation.createdRecordId
+    && document?.uri === runtimeOperation.createdRecordId
+    && document.title === source.contentVerification.expectedTitle
+    && document.bodyFingerprint === source.contentVerification.expectedBodyFingerprint
+    && fingerprintJson(document.body) === source.contentVerification.expectedBodyFingerprint);
+}
+
+function reconciliationStage(ambiguity) {
+  return ambiguity.stage === 'content-verify' ? 'content-verify' : 'verify';
+}
+
+function inputForReconciliation(source, runtimeOperation, ambiguity) {
+  if (isCreate(source) && ambiguity.stage === 'write') {
+    return source.precondition.readInput;
+  }
+  return inputForStage(source, runtimeOperation, reconciliationStage(ambiguity));
+}
+
 function classifyReconciliation(output, source, runtimeOperation, ambiguity) {
-  const record = recordFor(output, source);
+  if (ambiguity.stage === 'content-verify') {
+    return {
+      record: null,
+      outcome: contentMatches(output, source, runtimeOperation)
+        ? 'approved-content'
+        : 'diverged-content'
+    };
+  }
+  const records = output?.records;
+  if (isCreate(source) && Array.isArray(records) && records.length === 0) {
+    return { record: null, outcome: 'absent' };
+  }
+  const record = recordFor(output, source, runtimeOperation);
   if (!record) return { record: null, outcome: 'missing' };
   const compensation = ambiguity.stage === 'compensate'
     || ambiguity.stage === 'compensation-verify';
-  const approved = fieldsMatch(record, source.input.patch);
+  const approved = fieldsMatch(record, expectedFields(source));
   const prior = Boolean(runtimeOperation.priorFields
     && fieldsMatch(record, runtimeOperation.priorFields));
   const outcome = compensation && prior ? 'prior-fields'
@@ -407,7 +537,7 @@ function completedResult(checkpoint, state, error = null) {
 }
 
 function markNeedsAttention({ checkpoint, runtimeOperation, stage, callId, at, error }) {
-  if (!['write', 'verify', 'compensate', 'compensation-verify'].includes(stage)) {
+  if (!['write', 'verify', 'content-verify', 'compensate', 'compensation-verify'].includes(stage)) {
     throw new Error('Unsupported connected transaction ambiguity stage ' + stage + '.');
   }
   if (unresolvedAmbiguity(checkpoint)) {
@@ -513,7 +643,7 @@ async function requestStage({ root, lock, checkpoint, runtimeOperation, stage, a
     if ((stage === 'compare' || stage === 'write') && applied) {
       return beginRollback({ root, lock, checkpoint, at, error: prepared.call.error });
     }
-    if (stage === 'verify' || stage.startsWith('compensat')) {
+    if (stage === 'verify' || stage === 'content-verify' || stage.startsWith('compensat')) {
       markNeedsAttention({
         checkpoint,
         runtimeOperation,
@@ -531,8 +661,9 @@ async function requestStage({ root, lock, checkpoint, runtimeOperation, stage, a
   runtimeOperation.state = stage === 'compare' ? 'comparing'
     : stage === 'write' ? 'writing'
       : stage === 'verify' ? 'verifying'
-        : stage === 'compensate' ? 'compensating'
-          : 'compensation-verifying';
+        : stage === 'content-verify' ? 'content-verifying'
+          : stage === 'compensate' ? 'compensating'
+            : 'compensation-verifying';
   runtimeOperation[phaseName(stage)] = phase(prepared.call);
   checkpoint.state = 'requested';
   checkpoint.current = {
@@ -562,15 +693,39 @@ async function beginRollback({ root, lock, checkpoint, at, error }) {
 
 async function preflightConnectedTransaction({ root, lock, runId, batch, at }) {
   for (const source of batch.operations) {
-    const priorFields = Object.fromEntries(
+    const create = isCreate(source);
+    const priorFields = create ? null : Object.fromEntries(
       Object.keys(source.input.patch).map((field) => [field, null])
     );
     const runtimeOperation = {
       id: source.id,
-      appliedVersion: source.input.expectedVersion,
+      appliedVersion: create ? null : source.input.expectedVersion,
+      createdRecordId: null,
       priorFields
     };
-    for (const stage of ['compare', 'write', 'verify', 'compensate', 'compensation-verify']) {
+    const stages = create
+      ? ['compare', 'write', 'verify', ...(source.contentVerification ? ['content-verify'] : [])]
+      : ['compare', 'write', 'verify', 'compensate', 'compensation-verify'];
+    for (const stage of stages) {
+      if (create && (stage === 'verify' || stage === 'content-verify')) {
+        try {
+          await preflightHostToolBinding({
+            root,
+            lock,
+            capability: capabilityForStage(source, stage),
+            authority: source.authority,
+            containment: 'connected',
+            providerImplementation: source.provider.implementation,
+            approvedEffects: []
+          });
+        } catch (error) {
+          throw new Error(
+            'Connected transaction preflight rejected ' + source.id + '/' + stage + ': '
+              + error.message
+          );
+        }
+        continue;
+      }
       const prepared = await prepareHostToolCall({
         root,
         lock,
@@ -605,11 +760,17 @@ export async function createConnectedTransactionCheckpoint({
     || batch.runId !== run.id) {
     throw new Error('Connected transaction sources do not match the exact lock and run.');
   }
-  if (batch.operations.some((operation) => {
-    return operation.capability !== 'crm.records.update'
-      || operation.recovery.mode !== 'restore-prior-fields';
+  if (batch.operations.some((operation, index) => {
+    const update = operation.capability === 'crm.records.update'
+      && operation.recovery.mode === 'restore-prior-fields';
+    const terminalCreate = operation.capability === 'crm.records.create'
+      && operation.recovery.mode === 'terminal-idempotent-create'
+      && index === batch.operations.length - 1;
+    return !update && !terminalCreate;
   })) {
-    throw new Error('Connected transaction execution currently requires compensatable updates only.');
+    throw new Error(
+      'Connected transaction execution requires compensatable updates followed by at most one terminal idempotent create.'
+    );
   }
   await preflightConnectedTransaction({
     root: resolvedRoot,
@@ -649,9 +810,11 @@ export async function createConnectedTransactionCheckpoint({
       priorFields: null,
       priorVersion: null,
       appliedVersion: null,
+      createdRecordId: null,
       compare: null,
       write: null,
       verification: null,
+      contentVerification: null,
       compensation: null,
       compensationVerification: null,
       ambiguities: [],
@@ -705,13 +868,14 @@ export async function prepareConnectedTransactionReconciliation({ root, lock, ch
   }
   const id = reconciliationId(runtimeOperation);
   const source = sourceOperation(next, runtimeOperation);
-  const input = inputForStage(source, runtimeOperation, 'verify');
+  const observationStage = reconciliationStage(ambiguity);
+  const input = inputForReconciliation(source, runtimeOperation, ambiguity);
   const prepared = await prepareHostToolCall({
     root: resolvedRoot,
     lock,
     runId: next.run.id,
     callId: callIdForReconciliation(next, runtimeOperation, id),
-    capability: 'crm.records.read',
+    capability: capabilityForStage(source, observationStage),
     authority: source.authority,
     containment: 'connected',
     providerImplementation: source.provider.implementation,
@@ -791,7 +955,11 @@ async function completeReconciliation({ root, lock, checkpoint, currentCall, res
   if (!current) throw new Error('Connected transaction reconciliation current call is missing.');
   const { operation: runtimeOperation, reconciliation } = current;
   const source = sourceOperation(checkpoint, runtimeOperation);
-  const input = inputForStage(source, runtimeOperation, 'verify');
+  const ambiguity = runtimeOperation.ambiguities.find((item) => {
+    return item.id === reconciliation.ambiguityId && item.status === 'unresolved';
+  });
+  if (!ambiguity) throw new Error('Connected transaction reconciliation ambiguity is missing.');
+  const input = inputForReconciliation(source, runtimeOperation, ambiguity);
   const completed = await completeHostToolCall({
     root,
     lock,
@@ -813,10 +981,6 @@ async function completeReconciliation({ root, lock, checkpoint, currentCall, res
     return checkpoint;
   }
 
-  const ambiguity = runtimeOperation.ambiguities.find((item) => {
-    return item.id === reconciliation.ambiguityId && item.status === 'unresolved';
-  });
-  if (!ambiguity) throw new Error('Connected transaction reconciliation ambiguity is missing.');
   const observation = classifyReconciliation(
     completed.output,
     source,
@@ -829,6 +993,14 @@ async function completeReconciliation({ root, lock, checkpoint, currentCall, res
     || ambiguity.stage === 'compensation-verify';
   reconciliation.outcome = observation.outcome;
 
+  if (reconciliation.outcome === 'approved-content') {
+    ambiguity.status = 'resolved';
+    ambiguity.resolvedAt = at;
+    ambiguity.resolution = 'approved-content';
+    runtimeOperation.state = 'applied';
+    return continueAfterApplied({ root, lock, checkpoint, at });
+  }
+
   if ((!compensation && reconciliation.outcome === 'approved-fields')
     || (compensation && reconciliation.outcome === 'prior-fields')) {
     ambiguity.status = 'resolved';
@@ -838,9 +1010,39 @@ async function completeReconciliation({ root, lock, checkpoint, currentCall, res
       runtimeOperation.state = 'compensated';
       return continueRollback({ root, lock, checkpoint, at });
     }
+    if (isCreate(source)) {
+      runtimeOperation.createdRecordId = record.id;
+      runtimeOperation.appliedVersion = record.version || null;
+      if (source.contentVerification) {
+        return requestStage({
+          root,
+          lock,
+          checkpoint,
+          runtimeOperation,
+          stage: 'content-verify',
+          at
+        });
+      }
+      runtimeOperation.state = 'applied';
+      return continueAfterApplied({ root, lock, checkpoint, at });
+    }
     runtimeOperation.state = 'applied';
     runtimeOperation.appliedVersion = record.version;
     return continueAfterApplied({ root, lock, checkpoint, at });
+  }
+
+  if (isCreate(source) && reconciliation.outcome === 'absent') {
+    ambiguity.status = 'resolved';
+    ambiguity.resolvedAt = at;
+    ambiguity.resolution = 'absent';
+    runtimeOperation.state = 'failed';
+    return beginRollback({
+      root,
+      lock,
+      checkpoint,
+      at,
+      error: ambiguity.error
+    });
   }
 
   if (!compensation && reconciliation.outcome === 'prior-fields') {
@@ -869,6 +1071,7 @@ function priorReplay(checkpoint, callId, response) {
       operation.compare,
       operation.write,
       operation.verification,
+      operation.contentVerification,
       operation.compensation,
       operation.compensationVerification,
       ...operation.reconciliations.map((item) => item.phase)
@@ -952,7 +1155,34 @@ export async function completeConnectedTransactionCall({ root, lock, checkpoint,
   }
 
   if (stage === 'compare') {
-    const record = recordFor(completed.output, source);
+    const records = completed.output?.records;
+    if (isCreate(source)) {
+      if (!Array.isArray(records) || records.length !== source.precondition.expectedCount) {
+        runtimeOperation.state = 'failed';
+        runtimeOperation.error = {
+          kind: 'conflict',
+          message: 'Create precondition did not prove the deduplication key was absent.'
+        };
+        await beginRollback({
+          root: resolvedRoot,
+          lock,
+          checkpoint: next,
+          at,
+          error: runtimeOperation.error
+        });
+      } else {
+        await requestStage({
+          root: resolvedRoot,
+          lock,
+          checkpoint: next,
+          runtimeOperation,
+          stage: 'write',
+          at
+        });
+      }
+      return { checkpoint: seal(next), idempotent: false };
+    }
+    const record = recordFor(completed.output, source, runtimeOperation);
     if (!record || record.version !== source.precondition.expectedVersion) {
       runtimeOperation.state = 'failed';
       runtimeOperation.error = {
@@ -971,16 +1201,35 @@ export async function completeConnectedTransactionCall({ root, lock, checkpoint,
       await requestStage({ root: resolvedRoot, lock, checkpoint: next, runtimeOperation, stage: 'write', at });
     }
   } else if (stage === 'write') {
+    if (isCreate(source)) {
+      const record = createdRecordFor(completed.output, source);
+      if (!record) {
+        runtimeOperation.error = {
+          kind: 'conflict',
+          message: 'Create result did not prove one newly created record identity.'
+        };
+        markNeedsAttention({
+          checkpoint: next,
+          runtimeOperation,
+          stage,
+          callId: completed.call.id,
+          at,
+          error: runtimeOperation.error
+        });
+        return { checkpoint: seal(next), idempotent: false };
+      }
+      runtimeOperation.createdRecordId = record.id;
+    }
     await requestStage({ root: resolvedRoot, lock, checkpoint: next, runtimeOperation, stage: 'verify', at });
   } else if (stage === 'verify') {
-    const record = recordFor(completed.output, source);
+    const record = recordFor(completed.output, source, runtimeOperation);
     runtimeOperation.appliedVersion = record?.version || null;
-    if (!record || !fieldsMatch(record, source.input.patch)) {
+    if (!record || !fieldsMatch(record, expectedFields(source))) {
       runtimeOperation.error = {
         kind: 'conflict',
         message: 'Read-after-write did not observe the exact approved field patch.'
       };
-      if (!runtimeOperation.appliedVersion) {
+      if (isCreate(source) || !runtimeOperation.appliedVersion) {
         markNeedsAttention({
           checkpoint: next,
           runtimeOperation,
@@ -994,6 +1243,35 @@ export async function completeConnectedTransactionCall({ root, lock, checkpoint,
         await beginRollback({ root: resolvedRoot, lock, checkpoint: next, at, error: runtimeOperation.error });
       }
     } else {
+      if (isCreate(source) && source.contentVerification) {
+        await requestStage({
+          root: resolvedRoot,
+          lock,
+          checkpoint: next,
+          runtimeOperation,
+          stage: 'content-verify',
+          at
+        });
+      } else {
+        runtimeOperation.state = 'applied';
+        await continueAfterApplied({ root: resolvedRoot, lock, checkpoint: next, at });
+      }
+    }
+  } else if (stage === 'content-verify') {
+    if (!contentMatches(completed.output, source, runtimeOperation)) {
+      runtimeOperation.error = {
+        kind: 'conflict',
+        message: 'Post-create content verification did not observe the exact approved title and body.'
+      };
+      markNeedsAttention({
+        checkpoint: next,
+        runtimeOperation,
+        stage,
+        callId: completed.call.id,
+        at,
+        error: runtimeOperation.error
+      });
+    } else {
       runtimeOperation.state = 'applied';
       await continueAfterApplied({ root: resolvedRoot, lock, checkpoint: next, at });
     }
@@ -1006,8 +1284,8 @@ export async function completeConnectedTransactionCall({ root, lock, checkpoint,
       stage: 'compensation-verify',
       at
     });
-  } else {
-    const record = recordFor(completed.output, source);
+  } else if (stage === 'compensation-verify') {
+    const record = recordFor(completed.output, source, runtimeOperation);
     if (!record || !fieldsMatch(record, runtimeOperation.priorFields)) {
       runtimeOperation.error = {
         kind: 'conflict',
@@ -1038,6 +1316,7 @@ export async function failConnectedTransactionCall({ root, lock, checkpoint, cal
       operation.compare,
       operation.write,
       operation.verification,
+      operation.contentVerification,
       operation.compensation,
       operation.compensationVerification,
       ...operation.reconciliations.map((item) => item.phase)

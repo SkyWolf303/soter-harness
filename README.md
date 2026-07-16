@@ -190,9 +190,12 @@ The main remaining gaps are structural and behavioral:
   Connected Notion create and update translation is declared for mapped fields,
   but generic calls still block writes. A separate compiler now binds mapped
   operations, preconditions, verification, recovery, and an expiring v2
-  approval. The current meeting-intake change set now uses Context-owned mapped
-  fields and compiles into a representable batch; the batch remains blocked
-  because its create has no automatic compensation route.
+  approval. The current meeting-intake change set uses Context-owned mapped
+  fields and compiles into an executable external saga: reversible task updates
+  run first and one deduplicated summary create may run only as the final effect.
+  Core captures the created identity, reads its mapped fields back, and separately
+  reads the exact page title and body. This terminal-create rule is intentionally
+  narrower than pretending an uncompensated create can be rolled back.
   Meeting-intake Automation—not Core—now owns construction and acceptance of
   that outcome. Its versioned grounded-decision contract binds the exact lock,
   run, context snapshot, meeting, transcript segments, every bounded task
@@ -203,13 +206,17 @@ The main remaining gaps are structural and behavioral:
   decision and snapshot. The contained fixture and MCP selftests prove contract
   mechanics, explicit multiple-candidate disposition, abstention, tamper
   rejection, and Codex projection—not the quality of live host judgment.
-  Executable mapped updates now run through a private durable checkpoint with
+  Executable mapped updates and the terminal create now run through a private
+  durable checkpoint with
   compare-before-write, exact approval validation, read-after-write
   verification, reverse compensation of verified prior updates, restart-safe
   call identity, and an honest `needs-attention` state for ambiguous external
-  effects. Exact read-only reconciliation can prove approved or prior state and
-  resume safely, while missing, divergent, failed-read, or unproven
-  compensation state stays paused without replaying a write. The CLI can
+  effects. Exact read-only reconciliation can prove approved, prior, absent, or
+  exact-content state and resume safely, while missing, divergent, failed-read,
+  or unproven compensation state stays paused without replaying a write. A
+  create proved absent causes earlier verified updates to be compensated; a
+  create found after an ambiguous response must still pass record and content
+  verification. The CLI can
   originate the exact approval-bound checkpoint; MCP can only recover, advance,
   or request its checkpoint-bound reconciliation read. This is proven with
   synthetic host results, not live provider write evidence.
@@ -315,9 +322,11 @@ Inspect connected readiness separately:
 The connected Notion declaration covers mapped reads, creates, and updates, but
 safe probes in this target establish only read compatibility. Private Notion
 and Otter probes are not repository artifacts, so that command alone does not
-report ready. Even after read readiness, the meeting-intake write set is
-non-executable until its fields match the connected mapping and every effect
-has an approved recovery route. A connected integration must emit a short-lived
+report ready. The meeting-intake batch is mechanically executable after an exact
+approval because its mapped updates are compensatable and its one deduplicated
+create is terminal and read-back verified; this local property is not evidence
+that a live provider will authorize or conform to the writes. A connected
+integration must emit a short-lived
 provider probe for the exact lock; Core will reject missing, expired, malformed,
 ambiguous, or wrong-lock probes. Probe documents contain secret-reference
 identifiers and safe observations, never secret values, row values, or policy
@@ -444,8 +453,8 @@ call ID. It stores normalized private outputs and fingerprints, never the raw
 host response. Version 2 offers only `unique-string-list` bindings;
 arbitrary transforms, branching, fan-out, parallelism, plan-level retry or
 compensation, approval-bound write batches, and rollback remain outside the
-general plan contract; exact mapped updates use the separate connected
-transaction checkpoint.
+general plan contract; exact mapped updates and the constrained terminal create
+use the separate connected transaction checkpoint.
 Because the plan interface accepts no approval, v1 blocks a confirmation-gated
 write step without provider arguments, while v2 rejects a plan containing that
 unavailable effect before earlier work begins.
@@ -563,10 +572,9 @@ runtime is connected or ready.
    resolution without equating provider People IDs with CRM contact URIs;
    validate Otter transcript normalization with an explicitly authorized private
    meeting fixture; and prove host-started Codex and Claude dispatch and
-   checkpoint recovery through the configured Core service. Reconcile the
-   current Automation write fields with the connected mapping, define a governed
-   compensation route or explicit prohibition for creates, and add the
-   separately authorized canary doctor level.
+   checkpoint recovery through the configured Core service. Validate the
+   terminal-create consistency assumptions against a separately authorized live
+   canary, and add the separately authorized canary doctor level.
 4. Prove the full judgment and orchestration slice through both Claude and
    Codex host adapters with repeatable decision-quality evaluations rather than
    treating the now-enforced decision mechanics as agent behavior evidence.

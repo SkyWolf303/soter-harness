@@ -46,9 +46,9 @@
     {
       "capability": "documents.content.read",
       "providerPack": "integration.notion",
-      "authorities": ["authority.crm.definition"],
+      "authorities": ["authority.crm.definition", "authority.crm.instance"],
       "secretRef": "secret-ref.notion",
-      "reason": "Notion supplies the exact external policy document bodies selected by meeting intake."
+      "reason": "Notion supplies exact configured policy bodies under definition authority and exact post-create summary bodies under instance authority."
     },
     {
       "capability": "crm.records.create",

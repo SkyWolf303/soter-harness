@@ -13,9 +13,9 @@
   },
   "configurationLock": {
     "path": "soter/fixtures/meeting-intake/meeting-intake.lock.json",
-    "fingerprint": "sha256:7bd80295d6cbdf765bd07318889cb6c7467ffaa8e476ffc4f9190372ce7584a2"
+    "fingerprint": "sha256:9b6e8a9125f02f9c580d18b9720b0f63f1cbf464938e71cfe2cb45e4392c2da6"
   },
-  "graphFingerprint": "sha256:4a1b1357e868dba761a79674075bb2f3793266385557131cbd3bd644398f41cd",
+  "graphFingerprint": "sha256:3a7f29b19d6dfbf96d48d3d0cc9cb162591e621581d56193f5b49138725da9ad",
   "context": [
     {
       "subject": "crm.records",
@@ -44,7 +44,7 @@
       "uri": "notion://configured-user",
       "declarationFingerprint": "sha256:0567ff10843e26a53e85ffa7d609867226b00615288193983c4e6f9384050032",
       "status": "declared",
-      "provenance": "configuration-lock:sha256:7bd80295d6cbdf765bd07318889cb6c7467ffaa8e476ffc4f9190372ce7584a2",
+      "provenance": "configuration-lock:sha256:9b6e8a9125f02f9c580d18b9720b0f63f1cbf464938e71cfe2cb45e4392c2da6",
       "freshness": "unknown"
     },
     {
@@ -64,7 +64,7 @@
       "uri": "soter-state://runs",
       "declarationFingerprint": "sha256:6f39e99f1ebc86fe11ee09cc7170824ac4c11a6fc88371edb673bd2379dacdc8",
       "status": "declared",
-      "provenance": "configuration-lock:sha256:7bd80295d6cbdf765bd07318889cb6c7467ffaa8e476ffc4f9190372ce7584a2",
+      "provenance": "configuration-lock:sha256:9b6e8a9125f02f9c580d18b9720b0f63f1cbf464938e71cfe2cb45e4392c2da6",
       "freshness": "unknown"
     }
   ],
@@ -116,13 +116,14 @@
       "providerPack": "integration.notion",
       "providerVersion": "0.1.0",
       "authorities": [
-        "authority.crm.definition"
+        "authority.crm.definition",
+        "authority.crm.instance"
       ],
       "effects": [
         "disclosure",
         "read"
       ],
-      "reason": "Notion supplies the exact external policy document bodies selected by meeting intake."
+      "reason": "Notion supplies exact configured policy bodies under definition authority and exact post-create summary bodies under instance authority."
     },
     {
       "capability": "meeting.transcript.read",
@@ -189,7 +190,7 @@
     {
       "id": "context.meeting-intake.contained-fixture",
       "type": "context-snapshot",
-      "fingerprint": "sha256:a767a7bc8d339ce83d2906b9e0808db30c864b9aae77033d01c17de410fd8dfd"
+      "fingerprint": "sha256:c25394a2d48e2af593da4b16e30d737f6d4ec1066c08bcde3ffd209f2c1b48bd"
     }
   ],
   "effects": [

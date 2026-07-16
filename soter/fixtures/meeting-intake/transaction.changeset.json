@@ -4,17 +4,36 @@
   "id": "changeset.meeting-intake.transaction-fixture",
   "runId": "run.meeting-intake.transaction-fixture",
   "createdAt": "2026-07-15T12:00:00.000Z",
-  "configurationLockFingerprint": "sha256:7bd80295d6cbdf765bd07318889cb6c7467ffaa8e476ffc4f9190372ce7584a2",
+  "configurationLockFingerprint": "sha256:9b6e8a9125f02f9c580d18b9720b0f63f1cbf464938e71cfe2cb45e4392c2da6",
   "basis": {
     "kind": "automation-decision",
     "id": "decision.meeting-intake.transaction-fixture",
-    "fingerprint": "sha256:4b7ded4f21de53ecbfd716dd3d00f41a73e91b242965663457f839cae71d7cb7",
+    "fingerprint": "sha256:afb12bfa296c71b11628e43eb73be6f8af1bc8e81be083c0e057b23410894ceb",
     "contextSnapshotId": "context.meeting-intake.transaction-fixture",
-    "contextSnapshotFingerprint": "sha256:20b63ced15f12504c152de5797ed7c4559d4f3a14645313cd4d2574298a59e11"
+    "contextSnapshotFingerprint": "sha256:acccacad79a03b7d88176e86165af7e7180f91cc19669d997af3b79e1f5a89fc"
   },
   "state": "committed",
-  "scopeFingerprint": "sha256:5b87707d66a5037db836837b5d6fec41c3a83d06b253ccc7ee3c36986a25dcdc",
+  "scopeFingerprint": "sha256:990e919cc59e3723a35e20860f87de28a4016fbcf1c1d32087588bde7fdf514d",
   "operations": [
+    {
+      "id": "operation.task.update",
+      "capability": "crm.records.update",
+      "authority": "authority.crm.instance",
+      "reason": "The bounded fixture transcript explicitly requests the existing launch-deck work.",
+      "input": {
+        "recordType": "task",
+        "id": "soter-fixture://crm/task/existing-deck",
+        "expectedVersion": "1",
+        "patch": {
+          "context": "Meeting"
+        }
+      },
+      "inputFingerprint": "sha256:b63d7115d37ee8dca7af5e1883b4a54ef8adfc3b41fc31accda1ee8b59f8a0c1",
+      "state": "passed",
+      "effectId": "effect.meeting-intake.transaction-fixture.task.update",
+      "outputFingerprint": "sha256:1830079dbd8108a6507edb60f610ddeb2fa9e7b5c386ca2cb0be92c5740cb84c",
+      "error": null
+    },
     {
       "id": "operation.summary.create",
       "capability": "crm.records.create",
@@ -39,25 +58,6 @@
       "state": "passed",
       "effectId": "effect.meeting-intake.transaction-fixture.summary.create",
       "outputFingerprint": "sha256:516c48fd733016bb8931f41fc1c8ed0f0f751ef7fd7342008c1373e72ccc9010",
-      "error": null
-    },
-    {
-      "id": "operation.task.update",
-      "capability": "crm.records.update",
-      "authority": "authority.crm.instance",
-      "reason": "The bounded fixture transcript explicitly requests the existing launch-deck work.",
-      "input": {
-        "recordType": "task",
-        "id": "soter-fixture://crm/task/existing-deck",
-        "expectedVersion": "1",
-        "patch": {
-          "context": "Meeting"
-        }
-      },
-      "inputFingerprint": "sha256:b63d7115d37ee8dca7af5e1883b4a54ef8adfc3b41fc31accda1ee8b59f8a0c1",
-      "state": "passed",
-      "effectId": "effect.meeting-intake.transaction-fixture.task.update",
-      "outputFingerprint": "sha256:1830079dbd8108a6507edb60f610ddeb2fa9e7b5c386ca2cb0be92c5740cb84c",
       "error": null
     }
   ],

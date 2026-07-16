@@ -148,6 +148,22 @@ function notionTaskReadResponse(id, fields, privateMarker = null) {
   };
 }
 
+function notionSummaryReadResponse(id, fields, privateMarker = null) {
+  return {
+    structuredContent: {
+      result: {
+        results: [{
+          __soterType: 'meeting-summary',
+          __soterId: id,
+          __soterFields: JSON.stringify(fields)
+        }],
+        has_more: false
+      }
+    },
+    ...(privateMarker ? { privateMarker } : {})
+  };
+}
+
 function notionTaskVersion(id, fields) {
   return fingerprintJson({ type: 'task', id, fields });
 }
@@ -155,6 +171,13 @@ function notionTaskVersion(id, fields) {
 function notionUpdateResponse(id, privateMarker = null) {
   return {
     structuredContent: { result: { id } },
+    ...(privateMarker ? { privateMarker } : {})
+  };
+}
+
+function notionCreateResponse(id, privateMarker = null) {
+  return {
+    structuredContent: { result: { url: id } },
     ...(privateMarker ? { privateMarker } : {})
   };
 }
@@ -983,7 +1006,7 @@ export async function selftest(root) {
     }
     if (!tamperedDecisionRejected
       || ambiguousProposal.operations.length !== 2
-      || ambiguousProposal.operations[1].input.id
+      || ambiguousProposal.operations[0].input.id
         !== transaction.decision.payload.tasks[0].recordId
       || ambiguousProposal.basis.fingerprint !== ambiguousDecision.decisionFingerprint
       || !abstentionProposalRejected) {
@@ -1005,13 +1028,15 @@ export async function selftest(root) {
       id: 'batch.meeting-intake.connected-compile-selftest',
       createdAt: FIXTURE_TIME
     });
-    if (connectedMeetingIntakeBatch.state !== 'blocked'
-      || connectedMeetingIntakeBatch.executable
-      || !connectedMeetingIntakeBatch.blockers.some((item) => {
-        return item.includes('operation.summary.create')
-          && item.includes('no automatic compensation');
-      })) {
-      failures.push('connected compiler did not represent the portable meeting-intake batch and isolate its create compensation blocker');
+    if (connectedMeetingIntakeBatch.state !== 'proposed'
+      || !connectedMeetingIntakeBatch.executable
+      || connectedMeetingIntakeBatch.blockers.length
+      || connectedMeetingIntakeBatch.operations.at(-1).id !== 'operation.summary.create'
+      || connectedMeetingIntakeBatch.operations.at(-1).recovery.mode
+        !== 'terminal-idempotent-create'
+      || connectedMeetingIntakeBatch.operations.at(-1).contentVerification?.capability
+        !== 'documents.content.read') {
+      failures.push('connected compiler did not make the deduplicated, content-verifiable create an executable terminal effect');
     }
     const updateProposal = structuredClone(connectedProposal);
     updateProposal.runId = 'run.meeting-intake.connected-update-selftest';
@@ -1025,7 +1050,7 @@ export async function selftest(root) {
     };
     updateProposal.id = 'changeset.meeting-intake.connected-update-selftest';
     updateProposal.operations = [{
-      ...structuredClone(connectedProposal.operations[1]),
+      ...structuredClone(connectedProposal.operations[0]),
       id: 'operation.task.status-update',
       input: {
         recordType: 'task',
@@ -1767,7 +1792,7 @@ export async function selftest(root) {
     const createProposal = structuredClone(connectedProposal);
     createProposal.id = 'changeset.meeting-intake.connected-create-selftest';
     createProposal.operations = [{
-      ...structuredClone(connectedProposal.operations[0]),
+      ...structuredClone(connectedProposal.operations[1]),
       id: 'operation.summary.mapped-create',
       input: {
         recordType: 'meeting-summary',
@@ -1797,26 +1822,394 @@ export async function selftest(root) {
     if (!updateBatch.executable || updateBatch.state !== 'proposed'
       || connectedApproval.scope.operationBatchFingerprint !== updateBatch.batchFingerprint
       || connectedApproval.scope.changeSetFingerprint !== updateProposal.scopeFingerprint
-      || createBatch.executable || createBatch.state !== 'blocked'
-      || !createBatch.blockers.some((item) => item.includes('no automatic compensation'))) {
-      failures.push('connected operation-batch compilation did not bind exact approval or block uncompensated creates');
+      || !createBatch.executable || createBatch.state !== 'proposed'
+      || createBatch.operations[0].recovery.mode !== 'terminal-idempotent-create'
+      || createBatch.operations[0].contentVerification?.expectedBodyFingerprint
+        !== fingerprintJson(createProposal.operations[0].input.body)) {
+      failures.push('connected operation-batch compilation did not bind exact approval or terminal create verification');
     }
+    const createApproval = approveConnectedOperationBatch({
+      root: temp,
+      batch: createBatch,
+      changeSet: createProposal,
+      id: 'approval.meeting-intake.connected-create-selftest',
+      actor: 'fixture.user',
+      reason: 'Approve one exact deduplicated terminal create with record and content verification.',
+      createdAt: FIXTURE_TIME,
+      expiresAt: '2026-07-15T12:05:00.000Z'
+    });
+    if (createApproval.scope.operationBatchFingerprint !== createBatch.batchFingerprint) {
+      failures.push('connected approval did not bind the exact executable terminal create');
+    }
+
+    const mixedProposal = structuredClone(updateProposal);
+    mixedProposal.id = 'changeset.meeting-intake.connected-terminal-create-selftest';
+    mixedProposal.runId = 'run.meeting-intake.connected-terminal-create-selftest';
+    mixedProposal.operations = [
+      structuredClone(updateProposal.operations[0]),
+      structuredClone(createProposal.operations[0])
+    ];
+    mixedProposal.scopeFingerprint = changeSetScopeFingerprint(mixedProposal);
+    const mixedBatch = compileConnectedOperationBatch({
+      root: temp,
+      lock,
+      changeSet: mixedProposal,
+      id: 'batch.meeting-intake.connected-terminal-create-selftest',
+      createdAt: FIXTURE_TIME
+    });
+    const nonterminalCreateProposal = structuredClone(mixedProposal);
+    nonterminalCreateProposal.id = 'changeset.meeting-intake.connected-nonterminal-create-selftest';
+    nonterminalCreateProposal.operations.reverse();
+    nonterminalCreateProposal.scopeFingerprint = changeSetScopeFingerprint(
+      nonterminalCreateProposal
+    );
+    const nonterminalCreateBatch = compileConnectedOperationBatch({
+      root: temp,
+      lock,
+      changeSet: nonterminalCreateProposal,
+      id: 'batch.meeting-intake.connected-nonterminal-create-selftest',
+      createdAt: FIXTURE_TIME
+    });
+    if (nonterminalCreateBatch.executable
+      || nonterminalCreateBatch.state !== 'blocked'
+      || !nonterminalCreateBatch.blockers.some((item) => item.includes('final operation'))) {
+      failures.push('connected compiler did not prohibit effects after an uncompensated create');
+    }
+    const mixedApproval = approveConnectedOperationBatch({
+      root: temp,
+      batch: mixedBatch,
+      changeSet: mixedProposal,
+      id: 'approval.meeting-intake.connected-terminal-create-selftest',
+      actor: 'fixture.user',
+      reason: 'Approve one reversible task update followed by one exact deduplicated terminal summary create.',
+      createdAt: FIXTURE_TIME,
+      expiresAt: '2026-07-15T12:05:00.000Z'
+    });
+    const mismatchedSourceBatch = structuredClone(mixedBatch);
+    mismatchedSourceBatch.operations[0].input.patch.status = 'Different approved value';
+    mismatchedSourceBatch.operations[0].inputFingerprint = fingerprintJson(
+      mismatchedSourceBatch.operations[0].input
+    );
+    delete mismatchedSourceBatch.batchFingerprint;
+    mismatchedSourceBatch.batchFingerprint = fingerprintJson(mismatchedSourceBatch);
+    let mismatchedSourceBatchRejected = false;
     try {
       approveConnectedOperationBatch({
         root: temp,
-        batch: createBatch,
-        changeSet: createProposal,
-        id: 'approval.meeting-intake.connected-create-selftest',
+        batch: mismatchedSourceBatch,
+        changeSet: mixedProposal,
+        id: 'approval.meeting-intake.connected-source-mismatch-selftest',
         actor: 'fixture.user',
-        reason: 'This blocked create must not become authorized.',
+        reason: 'This batch no longer corresponds to its claimed source change set.',
         createdAt: FIXTURE_TIME,
         expiresAt: '2026-07-15T12:05:00.000Z'
       });
-      failures.push('connected approval authorized a batch with no create compensation route');
     } catch (error) {
-      if (!error.message.includes('cannot be approved')) {
-        failures.push('connected approval did not explain its compensation gate');
+      mismatchedSourceBatchRejected = error.message.includes('does not match');
+    }
+    if (!mismatchedSourceBatchRejected) {
+      failures.push('connected approval did not mechanically link compiled operations to the exact source change set');
+    }
+    const staleDerivedBatch = structuredClone(mixedBatch);
+    staleDerivedBatch.operations[1].precondition.readInput.filters.link = 'different-key';
+    delete staleDerivedBatch.batchFingerprint;
+    staleDerivedBatch.batchFingerprint = fingerprintJson(staleDerivedBatch);
+    let staleDerivedBatchRejected = false;
+    try {
+      approveConnectedOperationBatch({
+        root: temp,
+        batch: staleDerivedBatch,
+        changeSet: mixedProposal,
+        id: 'approval.meeting-intake.connected-derived-mismatch-selftest',
+        actor: 'fixture.user',
+        reason: 'This batch no longer derives its precondition from its approved input.',
+        createdAt: FIXTURE_TIME,
+        expiresAt: '2026-07-15T12:05:00.000Z'
+      });
+    } catch (error) {
+      staleDerivedBatchRejected = error.message.includes('does not match');
+    }
+    if (!staleDerivedBatchRejected) {
+      failures.push('connected approval accepted a stale derived precondition');
+    }
+    const mixedRun = { id: mixedProposal.runId };
+    const summaryRecordId = 'https://www.notion.so/cccccccccccccccccccccccccccccccc';
+    const summaryFields = mixedProposal.operations[1].input.fields;
+    const summaryBody = mixedProposal.operations[1].input.body;
+    const emptyReadResponse = {
+      structuredContent: { result: { results: [], has_more: false } }
+    };
+    let mixedCheckpoint = await createConnectedTransactionCheckpoint({
+      root: temp,
+      lock,
+      lockPath,
+      run: mixedRun,
+      runSourcePath: 'soter/fixtures/meeting-intake/connected-terminal-create-selftest.run.json',
+      runStatePath: '.soter/state/runs/' + mixedRun.id + '.json',
+      batch: mixedBatch,
+      changeSet: mixedProposal,
+      approval: mixedApproval,
+      at: FIXTURE_TIME
+    });
+    const mixedResponses = [
+      notionTaskReadResponse(updateRecordId, updatePriorFields),
+      notionUpdateResponse(updateRecordId),
+      notionTaskReadResponse(updateRecordId, { ...updatePriorFields, status: 'Open' }),
+      emptyReadResponse,
+      notionCreateResponse(summaryRecordId, 'private-terminal-create-write-marker'),
+      notionSummaryReadResponse(summaryRecordId, summaryFields),
+      notionPageResponse({
+        uri: summaryRecordId,
+        title: summaryFields.title,
+        body: summaryBody,
+        privateMarker: 'private-terminal-create-content-marker'
+      })
+    ];
+    const expectedMixedStages = [
+      'compare', 'write', 'verify', 'compare', 'write', 'verify', 'content-verify'
+    ];
+    const observedMixedStages = [];
+    let terminalContentCall;
+    let terminalContentResponse;
+    for (const [index, response] of mixedResponses.entries()) {
+      observedMixedStages.push(mixedCheckpoint.current?.stage);
+      const call = connectedTransactionCurrentCall(mixedCheckpoint);
+      if (mixedCheckpoint.current?.stage === 'content-verify') {
+        terminalContentCall = call;
+        terminalContentResponse = response;
       }
+      mixedCheckpoint = (await completeConnectedTransactionCall({
+        root: temp,
+        lock,
+        checkpoint: mixedCheckpoint,
+        callId: call.id,
+        response,
+        at: '2026-07-15T12:00:0' + (index + 1) + '.000Z'
+      })).checkpoint;
+    }
+    const replayedTerminalContent = await completeConnectedTransactionCall({
+      root: temp,
+      lock,
+      checkpoint: mixedCheckpoint,
+      callId: terminalContentCall.id,
+      response: terminalContentResponse,
+      at: '2026-07-15T12:00:08.000Z'
+    });
+    const mixedCreateRuntime = mixedCheckpoint.operations[1];
+    if (fingerprintJson(observedMixedStages) !== fingerprintJson(expectedMixedStages)
+      || mixedCheckpoint.state !== 'completed'
+      || mixedCheckpoint.operations.some((operation) => operation.state !== 'applied')
+      || mixedCreateRuntime.createdRecordId !== summaryRecordId
+      || mixedCreateRuntime.contentVerification?.output?.document?.bodyFingerprint
+        !== fingerprintJson(summaryBody)
+      || replayedTerminalContent.idempotent !== true
+      || JSON.stringify(mixedCheckpoint).includes('private-terminal-create')) {
+      failures.push('connected terminal create did not execute and verify exact record fields and page content after reversible updates');
+    }
+
+    let absentCreateCheckpoint = await createConnectedTransactionCheckpoint({
+      root: temp,
+      lock,
+      lockPath,
+      run: mixedRun,
+      runSourcePath: 'soter/fixtures/meeting-intake/connected-terminal-create-absent-selftest.run.json',
+      runStatePath: '.soter/state/runs/' + mixedRun.id + '.json',
+      batch: mixedBatch,
+      changeSet: mixedProposal,
+      approval: mixedApproval,
+      at: FIXTURE_TIME
+    });
+    for (const [index, response] of mixedResponses.slice(0, 4).entries()) {
+      const call = connectedTransactionCurrentCall(absentCreateCheckpoint);
+      absentCreateCheckpoint = (await completeConnectedTransactionCall({
+        root: temp,
+        lock,
+        checkpoint: absentCreateCheckpoint,
+        callId: call.id,
+        response,
+        at: '2026-07-15T12:01:0' + (index + 1) + '.000Z'
+      })).checkpoint;
+    }
+    const ambiguousCreateCall = connectedTransactionCurrentCall(absentCreateCheckpoint);
+    absentCreateCheckpoint = await failConnectedTransactionCall({
+      root: temp,
+      lock,
+      checkpoint: absentCreateCheckpoint,
+      callId: ambiguousCreateCall.id,
+      error: { kind: 'unavailable', message: 'Injected terminal create transport ambiguity.' },
+      at: '2026-07-15T12:01:05.000Z'
+    });
+    absentCreateCheckpoint = await prepareConnectedTransactionReconciliation({
+      root: temp,
+      lock,
+      checkpoint: absentCreateCheckpoint,
+      at: '2026-07-15T12:01:06.000Z'
+    });
+    absentCreateCheckpoint = (await completeConnectedTransactionCall({
+      root: temp,
+      lock,
+      checkpoint: absentCreateCheckpoint,
+      callId: connectedTransactionCurrentCall(absentCreateCheckpoint).id,
+      response: emptyReadResponse,
+      at: '2026-07-15T12:01:07.000Z'
+    })).checkpoint;
+    const rollbackAfterAbsentCreate = connectedTransactionCurrentCall(absentCreateCheckpoint);
+    absentCreateCheckpoint = (await completeConnectedTransactionCall({
+      root: temp,
+      lock,
+      checkpoint: absentCreateCheckpoint,
+      callId: rollbackAfterAbsentCreate.id,
+      response: notionUpdateResponse(updateRecordId),
+      at: '2026-07-15T12:01:08.000Z'
+    })).checkpoint;
+    absentCreateCheckpoint = (await completeConnectedTransactionCall({
+      root: temp,
+      lock,
+      checkpoint: absentCreateCheckpoint,
+      callId: connectedTransactionCurrentCall(absentCreateCheckpoint).id,
+      response: notionTaskReadResponse(updateRecordId, updatePriorFields),
+      at: '2026-07-15T12:01:09.000Z'
+    })).checkpoint;
+    if (ambiguousCreateCall.capability.id !== 'crm.records.create'
+      || absentCreateCheckpoint.state !== 'rolled-back'
+      || absentCreateCheckpoint.operations[0].state !== 'compensated'
+      || absentCreateCheckpoint.operations[1].state !== 'failed'
+      || absentCreateCheckpoint.operations[1].ambiguities[0].resolution !== 'absent'
+      || absentCreateCheckpoint.operations[1].reconciliations[0].outcome !== 'absent'
+      || rollbackAfterAbsentCreate.capability.id !== 'crm.records.update') {
+      failures.push('ambiguous terminal create did not reconcile absence and compensate prior updates without replay or deletion');
+    }
+
+    let foundCreateCheckpoint = await createConnectedTransactionCheckpoint({
+      root: temp,
+      lock,
+      lockPath,
+      run: mixedRun,
+      runSourcePath: 'soter/fixtures/meeting-intake/connected-terminal-create-found-selftest.run.json',
+      runStatePath: '.soter/state/runs/' + mixedRun.id + '.json',
+      batch: mixedBatch,
+      changeSet: mixedProposal,
+      approval: mixedApproval,
+      at: FIXTURE_TIME
+    });
+    for (const [index, response] of mixedResponses.slice(0, 4).entries()) {
+      const call = connectedTransactionCurrentCall(foundCreateCheckpoint);
+      foundCreateCheckpoint = (await completeConnectedTransactionCall({
+        root: temp,
+        lock,
+        checkpoint: foundCreateCheckpoint,
+        callId: call.id,
+        response,
+        at: '2026-07-15T12:02:0' + (index + 1) + '.000Z'
+      })).checkpoint;
+    }
+    const foundAmbiguousCreateCall = connectedTransactionCurrentCall(foundCreateCheckpoint);
+    foundCreateCheckpoint = await failConnectedTransactionCall({
+      root: temp,
+      lock,
+      checkpoint: foundCreateCheckpoint,
+      callId: foundAmbiguousCreateCall.id,
+      error: { kind: 'unavailable', message: 'Injected terminal create result loss.' },
+      at: '2026-07-15T12:02:05.000Z'
+    });
+    foundCreateCheckpoint = await prepareConnectedTransactionReconciliation({
+      root: temp,
+      lock,
+      checkpoint: foundCreateCheckpoint,
+      at: '2026-07-15T12:02:06.000Z'
+    });
+    foundCreateCheckpoint = (await completeConnectedTransactionCall({
+      root: temp,
+      lock,
+      checkpoint: foundCreateCheckpoint,
+      callId: connectedTransactionCurrentCall(foundCreateCheckpoint).id,
+      response: notionSummaryReadResponse(summaryRecordId, summaryFields),
+      at: '2026-07-15T12:02:07.000Z'
+    })).checkpoint;
+    const foundCreateContentCall = connectedTransactionCurrentCall(foundCreateCheckpoint);
+    foundCreateCheckpoint = (await completeConnectedTransactionCall({
+      root: temp,
+      lock,
+      checkpoint: foundCreateCheckpoint,
+      callId: foundCreateContentCall.id,
+      response: notionPageResponse({
+        uri: summaryRecordId,
+        title: summaryFields.title,
+        body: summaryBody
+      }),
+      at: '2026-07-15T12:02:08.000Z'
+    })).checkpoint;
+    if (foundCreateCheckpoint.state !== 'completed'
+      || foundCreateCheckpoint.operations[1].ambiguities[0].resolution !== 'approved-fields'
+      || foundCreateCheckpoint.operations[1].createdRecordId !== summaryRecordId
+      || foundCreateContentCall.capability.id !== 'documents.content.read'
+      || foundCreateCheckpoint.operations[1].write.call.id !== foundAmbiguousCreateCall.id) {
+      failures.push('ambiguous terminal create did not resume from exact record and content proof without retrying the write');
+    }
+
+    let contentMismatchCheckpoint = await createConnectedTransactionCheckpoint({
+      root: temp,
+      lock,
+      lockPath,
+      run: mixedRun,
+      runSourcePath: 'soter/fixtures/meeting-intake/connected-terminal-create-content-selftest.run.json',
+      runStatePath: '.soter/state/runs/' + mixedRun.id + '.json',
+      batch: mixedBatch,
+      changeSet: mixedProposal,
+      approval: mixedApproval,
+      at: FIXTURE_TIME
+    });
+    for (const [index, response] of mixedResponses.slice(0, 6).entries()) {
+      const call = connectedTransactionCurrentCall(contentMismatchCheckpoint);
+      contentMismatchCheckpoint = (await completeConnectedTransactionCall({
+        root: temp,
+        lock,
+        checkpoint: contentMismatchCheckpoint,
+        callId: call.id,
+        response,
+        at: '2026-07-15T12:03:0' + (index + 1) + '.000Z'
+      })).checkpoint;
+    }
+    const mismatchedContentCall = connectedTransactionCurrentCall(contentMismatchCheckpoint);
+    contentMismatchCheckpoint = (await completeConnectedTransactionCall({
+      root: temp,
+      lock,
+      checkpoint: contentMismatchCheckpoint,
+      callId: mismatchedContentCall.id,
+      response: notionPageResponse({
+        uri: summaryRecordId,
+        title: summaryFields.title,
+        body: 'Unexpected provider body.'
+      }),
+      at: '2026-07-15T12:03:07.000Z'
+    })).checkpoint;
+    contentMismatchCheckpoint = await prepareConnectedTransactionReconciliation({
+      root: temp,
+      lock,
+      checkpoint: contentMismatchCheckpoint,
+      at: '2026-07-15T12:03:08.000Z'
+    });
+    const contentReconciliationCall = connectedTransactionCurrentCall(contentMismatchCheckpoint);
+    contentMismatchCheckpoint = (await completeConnectedTransactionCall({
+      root: temp,
+      lock,
+      checkpoint: contentMismatchCheckpoint,
+      callId: contentReconciliationCall.id,
+      response: notionPageResponse({
+        uri: summaryRecordId,
+        title: summaryFields.title,
+        body: summaryBody
+      }),
+      at: '2026-07-15T12:03:09.000Z'
+    })).checkpoint;
+    if (mismatchedContentCall.capability.id !== 'documents.content.read'
+      || contentReconciliationCall.capability.id !== 'documents.content.read'
+      || contentMismatchCheckpoint.state !== 'completed'
+      || contentMismatchCheckpoint.operations[1].ambiguities[0].resolution
+        !== 'approved-content'
+      || contentMismatchCheckpoint.operations[1].reconciliations[0].outcome
+        !== 'approved-content') {
+      failures.push('terminal create content mismatch did not stay ambiguous until exact body reconciliation succeeded');
     }
 
     writeJson(path.join(temp, 'soter/fixtures/meeting-intake/preflight.run.json'), envelope);
@@ -2903,8 +3296,8 @@ export async function selftest(root) {
       runId: transaction.envelope.id,
       createdAt: FIXTURE_TIME
     });
-    conflicting.operations[1].input.expectedVersion = '999';
-    conflicting.operations[1].inputFingerprint = fingerprintJson(conflicting.operations[1].input);
+    conflicting.operations[0].input.expectedVersion = '999';
+    conflicting.operations[0].inputFingerprint = fingerprintJson(conflicting.operations[0].input);
     conflicting.scopeFingerprint = changeSetScopeFingerprint(conflicting);
     const rollbackApproval = approveChangeSet({
       changeSet: conflicting,
@@ -3384,7 +3777,7 @@ export async function selftest(root) {
     return false;
   }
   process.stdout.write(
-    'CORE SELFTEST PASS: deterministic source-bound lock, typed fixture reads/writes, grounded Automation decisions with explicit ambiguity and abstention, exact-scope approval, deduplication, expected-version conflicts, rollback, read-after-write verification, resumable fixed and bound sequential operation plans, approval-bound connected update transactions with reverse compensation and read-only ambiguity reconciliation, bounded connected context finalization with exact applicable policy bodies, resumable MCP host dispatch, exact-lock single and multi-step provider probes including minimized document reads, schema and identity drift rejection, connected readiness, expiry, honest states, and stale-lock detection.\n'
+    'CORE SELFTEST PASS: deterministic source-bound lock, typed fixture reads/writes, grounded Automation decisions with explicit ambiguity and abstention, exact-scope approval, deduplication, expected-version conflicts, rollback, read-after-write verification, resumable fixed and bound sequential operation plans, approval-bound connected update transactions and terminal creates with exact record/content verification, reverse compensation, and read-only ambiguity reconciliation, bounded connected context finalization with exact applicable policy bodies, resumable MCP host dispatch, exact-lock single and multi-step provider probes including minimized document reads, schema and identity drift rejection, connected readiness, expiry, honest states, and stale-lock detection.\n'
   );
   return true;
 }

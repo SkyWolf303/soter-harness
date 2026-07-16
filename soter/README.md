@@ -115,17 +115,18 @@ conformance, automation verification, or health. Otter's
 identity-only probe still leaves transcript compatibility unknown. Notion
 create and update translators now accept only explicitly mapped fields, but the
 ordinary capability and operation-plan interfaces still block them. Core can
-compile an exact connected operation-batch preview with deduplication or
-expected-version preconditions, verification expectations, recovery modes, and
-an expiring approval bound to both the change set and batch. The current
-meeting-intake write set is Context-valid and mapped, so compilation isolates
-the remaining blocker: the connector declares no automatic compensation route
-for its summary create. No connected
-create is executable yet. Mapped updates now run through a private durable
-transaction checkpoint that consumes the exact approval, compares and retains
-prior mapped values, verifies each effect, compensates verified earlier updates
-in reverse after a later conflict, and surfaces ambiguous effects as
-`needs-attention` without overstating rollback.
+  compile an exact connected operation-batch preview with deduplication or
+  expected-version preconditions, verification expectations, recovery modes, and
+  an expiring approval bound to both the change set and batch. The current
+  meeting-intake write set is Context-valid, mapped, and executable under a
+  constrained saga contract: compensatable task updates run first and one
+  deduplicated summary create runs last. Core captures the created identity,
+  reads the exact mapped fields back, and separately reads and fingerprints the
+  page title and body. The private durable transaction checkpoint consumes the
+  exact approval, compares and retains prior mapped values, verifies each effect,
+  compensates verified earlier updates after a later conflict or a create proved
+  absent, and surfaces ambiguous effects as `needs-attention` without
+  overstating rollback or inventing delete compensation.
 Meeting-intake Automation owns its proposal and post-write acceptance checks;
 Core owns only the generic approval, dispatch, checkpoint, rollback, and
 verifier-invocation mechanics. Before proposal, the Automation now creates a
@@ -139,7 +140,8 @@ that mechanism, including multiple-candidate disposition and a Codex-produced
 decision, but not live judgment quality.
 Host-started end-to-end dispatch is unproven, and
 the checked-in connected doctor therefore reports `ready=unknown`; the separate
-operation-batch compiler reports the concrete write blockers. This
+operation-batch compiler proves local representability without claiming live
+write readiness. This
 increment does not fetch a user's meeting, prove provider transcript or Notion
 target conformance, prove host-level agent judgment, or replace the existing
 processing-a-meeting guide.
@@ -235,7 +237,7 @@ approval-bound write execution, and rollback remain outside the general plan
 contracts. Those responsibilities belong to the separate connected transaction
 checkpoint.
 
-The connected update workflow is:
+The connected transaction workflow is:
 
     node soter/core/cli.mjs connected-batch-preview --lock LOCK --change-set CHANGE_SET --batch-id BATCH_ID --json > /private/batch.json
     node soter/core/cli.mjs connected-batch-approve --batch /private/batch.json --change-set CHANGE_SET --approval-id APPROVAL_ID --actor ACTOR --reason REASON --expires-at TIME --at TIME --json > /private/approval.json
@@ -245,7 +247,7 @@ Preparation writes private state under `.soter/state` and returns one exact
 compare call. Execute only its resolved native host tool, then advance with
 `connected-transaction-complete --checkpoint ID --call CALL_ID --response
 ABSOLUTE_PRIVATE_PATH`; each completion returns at most the next write, verify,
-compare, or compensation call. The MCP equivalent is
+content-verify, compare, or compensation call. The MCP equivalent is
 `soter_advance_connected_transaction`, which accepts only an existing
 checkpoint ID, exact call ID, and native response—never an approval document.
 The first write must start before the approval expires (at most fifteen minutes
@@ -261,18 +263,22 @@ Execute the returned exact read and pass its response to
 `soter_advance_connected_transaction`. Reconciliation never accepts approval or
 retries a write. Approved fields resume an ambiguous update, prior fields close
 that update and recover earlier verified effects, and only prior fields prove
-ambiguous compensation. Missing, divergent, or failed reads remain paused and
-can be observed again later through another bounded attempt.
+ambiguous compensation. For a terminal create, approved fields lead to exact
+content verification, absence recovers earlier verified updates, and approved
+content completes a content ambiguity. Missing, divergent, diverged-content, or
+failed reads remain paused and can be observed again later through another
+bounded attempt.
 
 This is an external saga, not an ACID transaction. `completed` means every
-approved update was read back. `rolled-back` means verified earlier updates were
-restored after a later deterministic failure. `failed` means no ambiguous write
+approved update and required terminal-create read-back passed. `rolled-back`
+means verified earlier updates were restored after a later deterministic failure
+or a terminal create was read as absent. `failed` means no ambiguous write
 remains. `needs-attention` means Core cannot prove whether an external effect or
-its compensation occurred. It will not guess or retry it automatically; its
-reconciliation history records exact minimized observations instead. Mapped
-creates remain blocked until their selected provider has a governed automatic
-compensation route. Local self-tests use synthetic host results and do not prove
-connected credentials, write permission, response conformance, or live health.
+its compensation occurred. It will not guess, retry the create, or issue an
+undeclared delete; its reconciliation history records exact minimized
+observations instead. Local self-tests use synthetic host results and do not
+prove connected credentials, write permission, consistency, response
+conformance, or live health.
 
 Meeting intake also exposes `soter_prepare_meeting_intake_context` and
 `soter_finalize_meeting_intake_context`; the CLI equivalents are

@@ -13,9 +13,9 @@
   },
   "configurationLock": {
     "path": "soter/fixtures/meeting-intake/meeting-intake.lock.json",
-    "fingerprint": "sha256:7bd80295d6cbdf765bd07318889cb6c7467ffaa8e476ffc4f9190372ce7584a2"
+    "fingerprint": "sha256:9b6e8a9125f02f9c580d18b9720b0f63f1cbf464938e71cfe2cb45e4392c2da6"
   },
-  "graphFingerprint": "sha256:4a1b1357e868dba761a79674075bb2f3793266385557131cbd3bd644398f41cd",
+  "graphFingerprint": "sha256:3a7f29b19d6dfbf96d48d3d0cc9cb162591e621581d56193f5b49138725da9ad",
   "context": [
     {
       "subject": "crm.records",
@@ -44,7 +44,7 @@
       "uri": "notion://configured-user",
       "declarationFingerprint": "sha256:0567ff10843e26a53e85ffa7d609867226b00615288193983c4e6f9384050032",
       "status": "declared",
-      "provenance": "configuration-lock:sha256:7bd80295d6cbdf765bd07318889cb6c7467ffaa8e476ffc4f9190372ce7584a2",
+      "provenance": "configuration-lock:sha256:9b6e8a9125f02f9c580d18b9720b0f63f1cbf464938e71cfe2cb45e4392c2da6",
       "freshness": "unknown"
     },
     {
@@ -64,7 +64,7 @@
       "uri": "soter-state://runs",
       "declarationFingerprint": "sha256:6f39e99f1ebc86fe11ee09cc7170824ac4c11a6fc88371edb673bd2379dacdc8",
       "status": "declared",
-      "provenance": "configuration-lock:sha256:7bd80295d6cbdf765bd07318889cb6c7467ffaa8e476ffc4f9190372ce7584a2",
+      "provenance": "configuration-lock:sha256:9b6e8a9125f02f9c580d18b9720b0f63f1cbf464938e71cfe2cb45e4392c2da6",
       "freshness": "unknown"
     }
   ],
@@ -116,13 +116,14 @@
       "providerPack": "integration.notion",
       "providerVersion": "0.1.0",
       "authorities": [
-        "authority.crm.definition"
+        "authority.crm.definition",
+        "authority.crm.instance"
       ],
       "effects": [
         "disclosure",
         "read"
       ],
-      "reason": "Notion supplies the exact external policy document bodies selected by meeting intake."
+      "reason": "Notion supplies exact configured policy bodies under definition authority and exact post-create summary bodies under instance authority."
     },
     {
       "capability": "meeting.transcript.read",
@@ -178,7 +179,7 @@
       "decision": "approved",
       "scope": {
         "changeSetId": "changeset.meeting-intake.transaction-fixture",
-        "fingerprint": "sha256:5b87707d66a5037db836837b5d6fec41c3a83d06b253ccc7ee3c36986a25dcdc",
+        "fingerprint": "sha256:990e919cc59e3723a35e20860f87de28a4016fbcf1c1d32087588bde7fdf514d",
         "effects": [
           "write"
         ]
@@ -207,9 +208,9 @@
       "kind": "automation-decision",
       "state": "passed",
       "snapshotId": "context.meeting-intake.transaction-fixture",
-      "snapshotFingerprint": "sha256:20b63ced15f12504c152de5797ed7c4559d4f3a14645313cd4d2574298a59e11",
+      "snapshotFingerprint": "sha256:acccacad79a03b7d88176e86165af7e7180f91cc19669d997af3b79e1f5a89fc",
       "decisionId": "decision.meeting-intake.transaction-fixture",
-      "decisionFingerprint": "sha256:4b7ded4f21de53ecbfd716dd3d00f41a73e91b242965663457f839cae71d7cb7",
+      "decisionFingerprint": "sha256:afb12bfa296c71b11628e43eb73be6f8af1bc8e81be083c0e057b23410894ceb",
       "updatedAt": "2026-07-15T12:00:00.000Z",
       "details": "The contained Automation decision covers its exact meeting, transcript segments, and sole task candidate without claiming connected policy interpretation."
     },
@@ -233,17 +234,17 @@
     {
       "id": "context.meeting-intake.transaction-fixture",
       "type": "context-snapshot",
-      "fingerprint": "sha256:20b63ced15f12504c152de5797ed7c4559d4f3a14645313cd4d2574298a59e11"
+      "fingerprint": "sha256:acccacad79a03b7d88176e86165af7e7180f91cc19669d997af3b79e1f5a89fc"
     },
     {
       "id": "decision.meeting-intake.transaction-fixture",
       "type": "automation-decision",
-      "fingerprint": "sha256:4b7ded4f21de53ecbfd716dd3d00f41a73e91b242965663457f839cae71d7cb7"
+      "fingerprint": "sha256:afb12bfa296c71b11628e43eb73be6f8af1bc8e81be083c0e057b23410894ceb"
     },
     {
       "id": "changeset.meeting-intake.transaction-fixture",
       "type": "change-set",
-      "fingerprint": "sha256:6aface41317dfabec0b9f55da7912b8634d9ca51e13596e943f5dbe4e89f5bba"
+      "fingerprint": "sha256:8db094f9cda3f90a4ea57351a30ad43c35ace3734fe3e2552a6abf3d245f4396"
     }
   ],
   "effects": [
@@ -350,33 +351,6 @@
       "error": null
     },
     {
-      "id": "effect.meeting-intake.transaction-fixture.summary.create",
-      "capability": "crm.records.create",
-      "capabilityVersion": "1.0.0",
-      "providerPack": "integration.notion",
-      "providerImplementation": "provider.integration.notion.fixture",
-      "providerVersion": "0.1.0",
-      "containment": "fixture",
-      "authority": "authority.crm.instance",
-      "startedAt": "2026-07-15T12:00:00.000Z",
-      "completedAt": "2026-07-15T12:00:00.000Z",
-      "declaredEffects": [
-        "write"
-      ],
-      "policyDecisions": [
-        {
-          "effect": "write",
-          "mode": "confirm",
-          "decision": "confirmed",
-          "reason": "The complete external record batch requires one explicit user confirmation."
-        }
-      ],
-      "inputFingerprint": "sha256:b559a7c5cd430d811b988b1f4c7ade9dfdb43185da9cded57841a6f66766a087",
-      "state": "passed",
-      "outputFingerprint": "sha256:516c48fd733016bb8931f41fc1c8ed0f0f751ef7fd7342008c1373e72ccc9010",
-      "error": null
-    },
-    {
       "id": "effect.meeting-intake.transaction-fixture.task.update",
       "capability": "crm.records.update",
       "capabilityVersion": "1.0.0",
@@ -401,6 +375,33 @@
       "inputFingerprint": "sha256:b63d7115d37ee8dca7af5e1883b4a54ef8adfc3b41fc31accda1ee8b59f8a0c1",
       "state": "passed",
       "outputFingerprint": "sha256:1830079dbd8108a6507edb60f610ddeb2fa9e7b5c386ca2cb0be92c5740cb84c",
+      "error": null
+    },
+    {
+      "id": "effect.meeting-intake.transaction-fixture.summary.create",
+      "capability": "crm.records.create",
+      "capabilityVersion": "1.0.0",
+      "providerPack": "integration.notion",
+      "providerImplementation": "provider.integration.notion.fixture",
+      "providerVersion": "0.1.0",
+      "containment": "fixture",
+      "authority": "authority.crm.instance",
+      "startedAt": "2026-07-15T12:00:00.000Z",
+      "completedAt": "2026-07-15T12:00:00.000Z",
+      "declaredEffects": [
+        "write"
+      ],
+      "policyDecisions": [
+        {
+          "effect": "write",
+          "mode": "confirm",
+          "decision": "confirmed",
+          "reason": "The complete external record batch requires one explicit user confirmation."
+        }
+      ],
+      "inputFingerprint": "sha256:b559a7c5cd430d811b988b1f4c7ade9dfdb43185da9cded57841a6f66766a087",
+      "state": "passed",
+      "outputFingerprint": "sha256:516c48fd733016bb8931f41fc1c8ed0f0f751ef7fd7342008c1373e72ccc9010",
       "error": null
     },
     {
@@ -432,7 +433,7 @@
           "reason": "Selected records may enter the configured private run envelope."
         }
       ],
-      "inputFingerprint": "sha256:03c58b473fdfaa2e4372b32f007802270b1aa96bb3e1282235cd64c339d82037",
+      "inputFingerprint": "sha256:1bb712847664ebdd77e56f3a5bf352ecc11ac00b4d87a26e4d9bfa120f2e0f54",
       "state": "passed",
       "outputFingerprint": "sha256:7434a1497fa42a5613e1e06bf8911f1159710cdfbc4449e0c7ed5a19e3d1ca31",
       "error": null

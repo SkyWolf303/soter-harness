@@ -92,6 +92,22 @@ function notionTaskResponse(id, fields, marker = null) {
   };
 }
 
+function notionSummaryResponse(id, fields, marker = null) {
+  return {
+    structuredContent: {
+      result: {
+        results: [{
+          __soterType: 'meeting-summary',
+          __soterId: id,
+          __soterFields: JSON.stringify(fields)
+        }],
+        has_more: false
+      }
+    },
+    ...(marker ? { privateMarker: marker } : {})
+  };
+}
+
 function notionPageResponse({ uri, title, body, marker = null }) {
   return {
     content: [{
@@ -369,6 +385,22 @@ async function selftest(root) {
       }),
       patch: { status: 'Open' }
     };
+    const connectedSummaryId = 'https://www.notion.so/eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
+    const connectedSummaryInput = {
+      recordType: 'meeting-summary',
+      deduplicationKey: 'https://otter.ai/u/mcp-connected-transaction',
+      deduplicationFilter: {
+        field: 'link',
+        value: 'https://otter.ai/u/mcp-connected-transaction'
+      },
+      fields: {
+        title: 'MCP connected transaction summary',
+        documentType: 'Meeting Summary',
+        description: 'Exact terminal create projection proof.',
+        link: 'https://otter.ai/u/mcp-connected-transaction'
+      },
+      body: '# MCP connected transaction summary\n\nExact terminal create projection proof.'
+    };
     const connectedChangeSet = {
       $contract: 'soter://contracts/change-set/v1',
       contractVersion: '1.0.0',
@@ -378,18 +410,32 @@ async function selftest(root) {
       configurationLockFingerprint: connectedRun.configurationLock.fingerprint,
       state: 'proposed',
       scopeFingerprint: 'sha256:' + '0'.repeat(64),
-      operations: [{
-        id: 'operation.task.mcp-connected-status-update',
-        capability: 'crm.records.update',
-        authority: 'authority.crm.instance',
-        reason: 'Prove the CLI authorization and MCP resume trust boundary.',
-        input: connectedInput,
-        inputFingerprint: fingerprintJson(connectedInput),
-        state: 'pending',
-        effectId: null,
-        outputFingerprint: null,
-        error: null
-      }],
+      operations: [
+        {
+          id: 'operation.task.mcp-connected-status-update',
+          capability: 'crm.records.update',
+          authority: 'authority.crm.instance',
+          reason: 'Prove the CLI authorization and MCP resume trust boundary.',
+          input: connectedInput,
+          inputFingerprint: fingerprintJson(connectedInput),
+          state: 'pending',
+          effectId: null,
+          outputFingerprint: null,
+          error: null
+        },
+        {
+          id: 'operation.summary.mcp-connected-create',
+          capability: 'crm.records.create',
+          authority: 'authority.crm.instance',
+          reason: 'Prove the terminal create and exact content verification boundary.',
+          input: connectedSummaryInput,
+          inputFingerprint: fingerprintJson(connectedSummaryInput),
+          state: 'pending',
+          effectId: null,
+          outputFingerprint: null,
+          error: null
+        }
+      ],
       approvalId: null,
       transaction: {
         checkpointFingerprint: 'sha256:' + '0'.repeat(64),
@@ -425,7 +471,7 @@ async function selftest(root) {
       '--change-set', connectedChangeSetPath,
       '--approval-id', 'approval.meeting-intake.mcp-connected-transaction',
       '--actor', 'mcp-selftest-user',
-      '--reason', 'Authorize only this exact mapped status update for the MCP resume selftest.',
+      '--reason', 'Authorize this exact mapped update and terminal summary create for the MCP resume selftest.',
       '--expires-at', '2026-07-15T12:05:00.000Z',
       '--at', fixtureTime
     ]);
@@ -475,14 +521,68 @@ async function selftest(root) {
       }, connectedVerifyMarker),
       at: '2026-07-15T12:00:03.000Z'
     });
+    const connectedCreateCompareMarker = 'private-mcp-connected-create-compare-marker';
+    connectedTransaction = await call(client, 'soter_advance_connected_transaction', {
+      checkpoint_id: connectedTransaction.checkpoint.id,
+      call_id: connectedTransaction.currentCall.id,
+      response: {
+        structuredContent: { result: { results: [], has_more: false } },
+        privateMarker: connectedCreateCompareMarker
+      },
+      at: '2026-07-15T12:00:04.000Z'
+    });
+    const connectedCreateWriteMarker = 'private-mcp-connected-create-write-marker';
+    connectedTransaction = await call(client, 'soter_advance_connected_transaction', {
+      checkpoint_id: connectedTransaction.checkpoint.id,
+      call_id: connectedTransaction.currentCall.id,
+      response: {
+        structuredContent: { result: { url: connectedSummaryId } },
+        privateMarker: connectedCreateWriteMarker
+      },
+      at: '2026-07-15T12:00:05.000Z'
+    });
+    const connectedCreateVerifyMarker = 'private-mcp-connected-create-verify-marker';
+    connectedTransaction = await call(client, 'soter_advance_connected_transaction', {
+      checkpoint_id: connectedTransaction.checkpoint.id,
+      call_id: connectedTransaction.currentCall.id,
+      response: notionSummaryResponse(
+        connectedSummaryId,
+        connectedSummaryInput.fields,
+        connectedCreateVerifyMarker
+      ),
+      at: '2026-07-15T12:00:06.000Z'
+    });
+    const connectedContentCall = connectedTransaction.currentCall;
+    const connectedCreateContentMarker = 'private-mcp-connected-create-content-marker';
+    connectedTransaction = await call(client, 'soter_advance_connected_transaction', {
+      checkpoint_id: connectedTransaction.checkpoint.id,
+      call_id: connectedContentCall.id,
+      response: notionPageResponse({
+        uri: connectedSummaryId,
+        title: connectedSummaryInput.fields.title,
+        body: connectedSummaryInput.body,
+        marker: connectedCreateContentMarker
+      }),
+      at: '2026-07-15T12:00:07.000Z'
+    });
     const connectedDurableText = [
       connectedTransaction.checkpointPath,
       connectedTransaction.runPath
     ].map((file) => fs.readFileSync(path.join(root, file), 'utf8')).join('\n');
     if (connectedTransaction.checkpoint.state !== 'completed'
       || connectedTransaction.run.approvals[0]?.id !== connectedApproval.id
-      || connectedTransaction.run.effects.length !== 3
-      || [connectedCompareMarker, connectedWriteMarker, connectedVerifyMarker].some((marker) => {
+      || connectedTransaction.run.effects.length !== 7
+      || connectedTransaction.checkpoint.operations[1].createdRecordId !== connectedSummaryId
+      || connectedContentCall.capability.id !== 'documents.content.read'
+      || [
+        connectedCompareMarker,
+        connectedWriteMarker,
+        connectedVerifyMarker,
+        connectedCreateCompareMarker,
+        connectedCreateWriteMarker,
+        connectedCreateVerifyMarker,
+        connectedCreateContentMarker
+      ].some((marker) => {
         return JSON.stringify(connectedTransaction).includes(marker)
           || connectedDurableText.includes(marker);
       })) {
@@ -1449,7 +1549,7 @@ async function selftest(root) {
       || projectedChangeSet.basis?.fingerprint
         !== committedDecision.decision.decisionFingerprint
       || projectedChangeSet.operations?.length !== 2
-      || projectedChangeSet.operations?.[1]?.input?.id !== mcpTaskUri) {
+      || projectedChangeSet.operations?.[0]?.input?.id !== mcpTaskUri) {
       throw new Error('MCP grounded decision or read-only change-set projection drifted.');
     }
     const cliContextRunPath = 'soter/fixtures/meeting-intake/cli-connected-context.run.json';
