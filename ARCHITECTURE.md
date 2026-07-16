@@ -297,10 +297,20 @@ approval. Reads and probes can cross the seam when their resolved policy allows
 them; confirmation-gated writes remain blocked until a durable run checkpoint
 can bind a user's approval to the exact operation-batch fingerprint.
 
-The current MCP projection returns exact call records to its caller but does not
-yet checkpoint them in shared durable run state. Its stdio self-test therefore
-proves the protocol boundary, host binding, and normalization behavior—not
-compaction-safe resume or a completed host automation run.
+Before returning a requested call, the current MCP projection atomically writes
+a private, self-fingerprinted checkpoint and updates a private durable copy of
+the run envelope under `.soter/state`. A restarted host can list pending calls,
+rehydrate one by checkpoint ID, and complete or fail it without reconstructing
+the request from conversational memory. Completion stores the normalized
+result in private state, records only fingerprints in the run envelope, and
+never persists the native provider response. One outstanding capability call
+per run prevents ambiguous concurrent resume.
+
+The stdio self-test terminates and restarts the server between preparation and
+completion, repairs planted partial cross-file updates, rejects stale and
+tampered state, and proves response minimization. This establishes local Core
+recovery behavior, not that Codex or Claude actually selected and executed the
+provider tool in a real task.
 
 ### Verification
 
@@ -455,14 +465,15 @@ meeting-intake graph. Step 4 is partially implemented through deterministic
 resolution, artifact-fingerprinted locks, effect-free preflight, typed fixture
 capability dispatch, authority-aware context snapshots, exact-scope approvals,
 transactional fixture writes, rollback proof, read-after-write verification,
-claim-scoped evidence, an offline doctor, and contract-enforced aggregation of
-short-lived connected provider probes. The current target includes the first
-connected Otter provider mapping, exact transcript-fetch request translation,
-and identity-only probe producer. That probe deliberately leaves transcript
+claim-scoped evidence, an offline doctor, contract-enforced aggregation of
+short-lived connected provider probes, and private durable checkpoints for
+host-dispatched calls and their run envelopes. The current target includes the
+first connected Otter provider mapping, exact transcript-fetch request
+translation, and identity-only probe producer. That probe deliberately leaves transcript
 compatibility unknown, and unobserved response shapes fail closed. Connected
 readiness still fails because Notion has no connected implementation and no
 current private probes are checked in. Observed Otter transcript conformance,
-automatic host dispatch, authority loading, provider-grade checkpoints, live
+actual host dispatch, authority loading, approval-bound connected writes, live
 health, host judgment, and host conformance remain future proof boundaries.
 
 ### Change unit and completion gate

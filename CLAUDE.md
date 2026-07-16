@@ -29,6 +29,8 @@ historical archive, not mandatory ceremony for target development.
   operation for portable runtime behavior.
 - Generic pieces (kernel · core) stay generic; domain meaning belongs to context,
   outcomes belong to automation, and provider behavior belongs to integration.
+- `.soter/state` is private ignored runtime state. Resume pending provider work
+  from its exact checkpoint ID; never stage or reconstruct it from chat memory.
 - NEVER exceed the budgets: this file < 200 lines; a guide body < 500 lines;
   a description ≤ 1024 chars.
 - NEVER let a failing eval or checker merge; fix the piece or fix the mold.

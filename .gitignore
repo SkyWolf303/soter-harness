@@ -5,6 +5,9 @@
 node_modules/
 *.log
 
+# Soter private runtime checkpoints (never portable configuration)
+.soter/state/
+
 # Claude Code — personal / runtime (never shared)
 .claude/settings.local.json
 .claude/evals/logs/*.jsonl

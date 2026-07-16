@@ -40,6 +40,9 @@ changing the harness.
 - Treat provider probes as expiring private runtime state. They must bind the
   exact lock and implementation, contain references rather than secret values,
   and cannot establish write behavior or end-to-end health.
+- Treat `.soter/state` as private, ignored runtime state. Rehydrate pending
+  provider work by checkpoint ID; never stage, distribute, or reconstruct it
+  from conversational memory.
 - A declared MCP route is not proof of authentication, tool availability,
   provider authority, readiness, or behavior. Keep OAuth values out of repo
   configuration and require exact-lock connected evidence for those claims.

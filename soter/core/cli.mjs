@@ -16,11 +16,14 @@ import { readJson, resolveRepoPath, writeJson } from './lib/canonical-json.mjs';
 import { fingerprintLock, resolveConfiguration } from './resolve.mjs';
 import { prepareRunEnvelope } from './run.mjs';
 import {
-  completeCapabilityExecution,
-  completeProviderProbeExecution,
-  failHostExecution,
-  prepareCapabilityExecution,
-  prepareProviderProbeExecution
+  completeDurableCapabilityExecution,
+  completeDurableProviderProbeExecution,
+  failDurableHostExecution,
+  getDurableHostExecution,
+  getDurableProviderProbe,
+  listDurableHostExecutions,
+  prepareDurableCapabilityExecution,
+  prepareDurableProviderProbeExecution
 } from './service.mjs';
 import { runContainedMeetingIntakeTransaction } from './transaction.mjs';
 
@@ -167,9 +170,14 @@ async function main() {
     const result = level === 'connected'
       ? runConnectedDoctor({
         ...doctorOptions,
-        providerProbes: options(args, '--probe').map((probePath) => {
-          return readJson(resolveRepoPath(root, probePath));
-        })
+        providerProbes: [
+          ...options(args, '--probe').map((probePath) => {
+            return readJson(resolveRepoPath(root, probePath));
+          }),
+          ...options(args, '--probe-checkpoint').map((checkpointId) => {
+            return getDurableProviderProbe({ root, checkpointId });
+          })
+        ]
       })
       : runOfflineDoctor(doctorOptions);
     const output = option(args, '--output');
@@ -193,7 +201,7 @@ async function main() {
   if (command === 'probe-prepare') {
     const lockPath = requiredOption(args, '--lock');
     const providerImplementation = requiredOption(args, '--provider');
-    const prepared = await prepareProviderProbeExecution({
+    const prepared = await prepareDurableProviderProbeExecution({
       root,
       lockPath,
       providerImplementation,
@@ -203,59 +211,60 @@ async function main() {
       validForSeconds: Number(option(args, '--valid-for-seconds', '300'))
     });
     const output = option(args, '--output');
-    if (output) writeJson(resolveRepoPath(root, output), prepared.call);
+    if (output) writeJson(resolveRepoPath(root, output), prepared.checkpoint);
     if (json) {
-      print(prepared.call);
+      print(prepared);
     } else {
       process.stdout.write(
-        'Prepared ' + prepared.call.id + ' in state ' + prepared.call.state + '.\n'
-          + 'Host request: ' + prepared.call.transport.server + '/'
-          + (prepared.call.transport.tool || 'none') + '\n'
+        'Prepared ' + prepared.checkpoint.id + ' in state ' + prepared.checkpoint.state + '.\n'
+          + 'Host request: ' + prepared.checkpoint.call.transport.server + '/'
+          + (prepared.checkpoint.call.transport.tool || 'none') + '\n'
+          + 'Durable checkpoint: ' + prepared.checkpointPath + '\n'
           + 'Raw provider response persistence: disabled by Core\n'
           + (output ? 'Wrote: ' + output + '\n' : '')
       );
     }
-    if (prepared.call.state !== 'requested') process.exitCode = 1;
+    if (prepared.checkpoint.state !== 'requested') process.exitCode = 1;
     return;
   }
 
   if (command === 'probe-complete') {
-    const lockPath = requiredOption(args, '--lock');
-    const call = readJson(resolveRepoPath(root, requiredOption(args, '--call')));
     const response = readJson(resolveRepoPath(root, requiredOption(args, '--response')));
-    const completed = await completeProviderProbeExecution({
+    const completed = await completeDurableProviderProbeExecution({
       root,
-      lockPath,
-      call,
+      checkpointId: requiredOption(args, '--checkpoint'),
       response,
       at: createdAt
     });
-    const callOutput = option(args, '--call-output');
+    const checkpointOutput = option(args, '--checkpoint-output');
     const probeOutput = option(args, '--probe-output');
-    if (callOutput) writeJson(resolveRepoPath(root, callOutput), completed.call);
-    if (probeOutput && completed.probe) {
-      writeJson(resolveRepoPath(root, probeOutput), completed.probe);
+    if (checkpointOutput) {
+      writeJson(resolveRepoPath(root, checkpointOutput), completed.checkpoint);
+    }
+    if (probeOutput && completed.checkpoint.result) {
+      writeJson(resolveRepoPath(root, probeOutput), completed.checkpoint.result);
     }
     if (json) {
       print(completed);
     } else {
       process.stdout.write(
-        'Completed ' + completed.call.id + ' in state ' + completed.call.state + '.\n'
+        'Completed ' + completed.checkpoint.id + ' in state '
+          + completed.checkpoint.state + '.\n'
           + 'Raw provider response persisted by Core: no\n'
-          + (completed.probe
-            ? 'Probe: ' + completed.probe.id + '; capability compatibility remains '
-              + completed.probe.capabilities.map((item) => item.state).join(', ') + '.\n'
+          + (completed.checkpoint.result
+            ? 'Probe: ' + completed.checkpoint.result.id + '; capability compatibility remains '
+              + completed.checkpoint.result.capabilities.map((item) => item.state).join(', ') + '.\n'
             : '')
-          + (callOutput ? 'Wrote call: ' + callOutput + '\n' : '')
-          + (probeOutput && completed.probe ? 'Wrote probe: ' + probeOutput + '\n' : '')
+          + (checkpointOutput ? 'Wrote checkpoint: ' + checkpointOutput + '\n' : '')
+          + (probeOutput && completed.checkpoint.result ? 'Wrote probe: ' + probeOutput + '\n' : '')
       );
     }
-    if (completed.call.state !== 'completed') process.exitCode = 1;
+    if (completed.checkpoint.state !== 'completed') process.exitCode = 1;
     return;
   }
 
   if (command === 'capability-prepare') {
-    const prepared = await prepareCapabilityExecution({
+    const prepared = await prepareDurableCapabilityExecution({
       root,
       lockPath: requiredOption(args, '--lock'),
       runPath: requiredOption(args, '--run'),
@@ -267,72 +276,93 @@ async function main() {
       at: createdAt
     });
     const output = option(args, '--output');
-    if (output) writeJson(resolveRepoPath(root, output), prepared.call);
+    if (output) writeJson(resolveRepoPath(root, output), prepared.checkpoint);
     if (json) {
       print(prepared);
     } else {
       process.stdout.write(
-        'Prepared ' + prepared.call.id + ' in state ' + prepared.call.state + '.\n'
-          + (prepared.call.state === 'requested'
-            ? 'Host request: ' + prepared.call.transport.server + '/'
-              + prepared.call.transport.tool + '\n'
+        'Prepared ' + prepared.checkpoint.id + ' in state ' + prepared.checkpoint.state + '.\n'
+          + (prepared.checkpoint.state === 'requested'
+            ? 'Host request: ' + prepared.checkpoint.call.transport.server + '/'
+              + prepared.checkpoint.call.transport.tool + '\n'
             : 'Host request emitted: no\n')
+          + 'Durable checkpoint: ' + prepared.checkpointPath + '\n'
+          + 'Durable run: ' + prepared.runPath + '\n'
           + 'Connected write approval accepted by this command: no\n'
           + (output ? 'Wrote: ' + output + '\n' : '')
       );
     }
-    if (prepared.call.state !== 'requested') process.exitCode = 1;
+    if (prepared.checkpoint.state !== 'requested') process.exitCode = 1;
     return;
   }
 
   if (command === 'capability-complete') {
-    const completed = await completeCapabilityExecution({
+    const completed = await completeDurableCapabilityExecution({
       root,
-      lockPath: requiredOption(args, '--lock'),
-      runPath: requiredOption(args, '--run'),
-      call: readJson(resolveRepoPath(root, requiredOption(args, '--call'))),
-      input: readJson(resolveRepoPath(root, requiredOption(args, '--input'))),
+      checkpointId: requiredOption(args, '--checkpoint'),
       response: readJson(resolveRepoPath(root, requiredOption(args, '--response'))),
       at: createdAt
     });
-    const callOutput = option(args, '--call-output');
+    const checkpointOutput = option(args, '--checkpoint-output');
     const output = option(args, '--output');
-    if (callOutput) writeJson(resolveRepoPath(root, callOutput), completed.call);
-    if (output && completed.output) writeJson(resolveRepoPath(root, output), completed.output);
+    if (checkpointOutput) {
+      writeJson(resolveRepoPath(root, checkpointOutput), completed.checkpoint);
+    }
+    if (output && completed.checkpoint.result) {
+      writeJson(resolveRepoPath(root, output), completed.checkpoint.result);
+    }
     if (json) {
       print(completed);
     } else {
       process.stdout.write(
-        'Completed ' + completed.call.id + ' in state ' + completed.call.state + '.\n'
+        'Completed ' + completed.checkpoint.id + ' in state '
+          + completed.checkpoint.state + '.\n'
           + 'Raw provider response persisted by Core: no\n'
-          + (callOutput ? 'Wrote call: ' + callOutput + '\n' : '')
-          + (output && completed.output ? 'Wrote output: ' + output + '\n' : '')
+          + (checkpointOutput ? 'Wrote checkpoint: ' + checkpointOutput + '\n' : '')
+          + (output && completed.checkpoint.result ? 'Wrote output: ' + output + '\n' : '')
       );
     }
-    if (completed.call.state !== 'completed') process.exitCode = 1;
+    if (completed.checkpoint.state !== 'completed') process.exitCode = 1;
     return;
   }
 
   if (command === 'host-fail') {
-    const failed = failHostExecution({
+    const failed = failDurableHostExecution({
       root,
-      lockPath: requiredOption(args, '--lock'),
-      runPath: option(args, '--run'),
-      call: readJson(resolveRepoPath(root, requiredOption(args, '--call'))),
+      checkpointId: requiredOption(args, '--checkpoint'),
       errorKind: requiredOption(args, '--kind'),
       message: requiredOption(args, '--message'),
       at: createdAt
     });
     const output = option(args, '--output');
-    if (output) writeJson(resolveRepoPath(root, output), failed.call);
+    if (output) writeJson(resolveRepoPath(root, output), failed.checkpoint);
     if (json) {
       print(failed);
     } else {
       process.stdout.write(
-        'Recorded ' + failed.call.id + ' in state ' + failed.call.state + '.\n'
+        'Recorded ' + failed.checkpoint.id + ' in state '
+          + failed.checkpoint.state + '.\n'
           + (output ? 'Wrote: ' + output + '\n' : '')
       );
     }
+    return;
+  }
+
+  if (command === 'host-get') {
+    const checkpoint = getDurableHostExecution({
+      root,
+      checkpointId: requiredOption(args, '--checkpoint')
+    });
+    print(checkpoint);
+    return;
+  }
+
+  if (command === 'host-list') {
+    const checkpoints = listDurableHostExecutions({
+      root,
+      state: option(args, '--state')
+    });
+    print(checkpoints);
     return;
   }
 
@@ -484,17 +514,19 @@ async function main() {
   }
 
   throw new Error(
-    'Usage: node soter/core/cli.mjs <resolve|prepare|context|transaction|doctor|probe-prepare|probe-complete|capability-prepare|capability-complete|host-fail|fixtures|selftest> [options]\n'
+    'Usage: node soter/core/cli.mjs <resolve|prepare|context|transaction|doctor|probe-prepare|probe-complete|capability-prepare|capability-complete|host-fail|host-get|host-list|fixtures|selftest> [options]\n'
       + '  resolve [--config PATH] [--output PATH] [--json]\n'
       + '  prepare --lock PATH [--scenario PATH] [--output PATH] [--evidence-dir PATH] [--json]\n'
       + '  context --lock PATH --meeting-id ID --recording-uri URI [--scenario PATH] [--json]\n'
       + '  transaction --lock PATH [--scenario PATH] [--approve] [--json]\n'
-      + '  doctor --lock PATH [--level offline|connected] [--probe PATH ...] [--config PATH] [--json]\n'
+      + '  doctor --lock PATH [--level offline|connected] [--probe PATH ...] [--probe-checkpoint ID ...] [--config PATH] [--json]\n'
       + '  probe-prepare --lock PATH --provider ID [--output PATH] [--json]\n'
-      + '  probe-complete --lock PATH --call PATH --response PATH [--probe-output PATH] [--json]\n'
+      + '  probe-complete --checkpoint ID --response PATH [--probe-output PATH] [--json]\n'
       + '  capability-prepare --lock PATH --run PATH --capability ID --authority ID --provider ID --input PATH [--output PATH] [--json]\n'
-      + '  capability-complete --lock PATH --run PATH --call PATH --input PATH --response PATH [--output PATH] [--json]\n'
-      + '  host-fail --lock PATH [--run PATH] --call PATH --kind KIND --message TEXT [--output PATH] [--json]\n'
+      + '  capability-complete --checkpoint ID --response PATH [--output PATH] [--json]\n'
+      + '  host-fail --checkpoint ID --kind KIND --message TEXT [--output PATH] [--json]\n'
+      + '  host-get --checkpoint ID\n'
+      + '  host-list [--state requested|completed|failed|blocked]\n'
       + '  fixtures <--check|--update> [--json]'
   );
 }

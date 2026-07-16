@@ -419,6 +419,7 @@ The normative Core state shapes are the
 [change set](./soter/contracts/change-set.schema.json),
 [host tool call](./soter/contracts/host-tool-call.schema.json),
 [provider probe call](./soter/contracts/provider-probe-call.schema.json),
+[durable host call checkpoint](./soter/contracts/host-call-checkpoint.schema.json),
 [evidence record](./soter/contracts/evidence.schema.json), and
 [doctor result](./soter/contracts/doctor-result.schema.json). Connected
 integrations produce short-lived, secret-safe
@@ -714,6 +715,30 @@ advances to completed or failed. The durable call record stores response and
 output fingerprints rather than the raw provider body. A retry, resume, or
 handoff therefore cannot substitute a different lock, provider, input, tool,
 or response without detection.
+
+Before a host receives a requested tool call, Core writes a
+`host-call-checkpoint/v1` document to private runtime state. It binds the exact
+call to its lock, graph, host, original portable input, and—where applicable—a
+private durable run-envelope path and fingerprint. The checkpoint is
+self-fingerprinted, written through an atomic private-file replacement, and
+excluded from version control. Host credential values and native provider
+response bodies are never written to it. A normalized portable result may be
+stored because it is required to resume the run; the checkpoint remains private
+operational state rather than shareable configuration or evidence.
+
+Capability preparation also updates the durable run envelope to `executing`
+and records the exact pending-call fingerprint. Completion or failure updates
+the same checkpoint and adds one typed capability invocation to the run. The
+run stores output fingerprints rather than normalized result bodies. Core
+allows only one requested capability checkpoint per run, preventing a restarted
+host from guessing which concurrent response belongs to the run.
+
+After restart or compaction, an interface lists checkpoint summaries and loads
+the exact checkpoint by ID. Completion takes only that ID and the native result;
+Core reloads the original lock, run, call, and input from durable state. A stale
+lock, wrong host, changed provider implementation, altered checkpoint, closed
+run, or conflicting run checkpoint fails closed. Reading a stale checkpoint for
+diagnosis remains possible, but it cannot authorize completion.
 
 All interactive projections must use the same Core execution service. The
 reference CLI and local Soter MCP server are transports over that service; they

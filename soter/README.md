@@ -52,7 +52,10 @@ It also validates and aggregates short-lived provider probes into an honest
 connected-readiness result and proves the state machine for policy-bound MCP
 dispatch with synthetic host results. A local stdio MCP projection exposes that
 same Core service to both Codex and Claude without becoming a provider proxy or
-accepting generic connected-write approvals. The connected Otter provider now
+accepting generic connected-write approvals. It atomically checkpoints each
+call and its private run state before returning a provider request, and can
+rehydrate pending work by checkpoint ID after a server restart. The connected
+Otter provider now
 translates a canonical meeting URL into exact `fetch({id})` arguments and
 produces an identity-only `get_user_info({})` probe. That probe can pass
 authentication and reachability while leaving transcript compatibility
@@ -98,22 +101,34 @@ Inspect the structured Otter probe request without calling the provider:
 
     node soter/core/cli.mjs probe-prepare --lock soter/fixtures/meeting-intake/meeting-intake.lock.json --provider provider.integration.otter.mcp --json
 
-The emitted request is `otter/get_user_info` with empty arguments. A host can
-resume it through `probe-complete` using private transient response input. Core
-persists only fingerprints and the normalized probe, and the probe leaves
+The emitted request is `otter/get_user_info` with empty arguments. Core stores
+it as private runtime state before returning it. A host can resume through
+`probe-complete --checkpoint ID --response PRIVATE_PATH`; the response path is
+transient input, not durable state. Core persists only fingerprints and the
+normalized probe, and the probe leaves
 `meeting.transcript.read` unknown until a specifically authorized transcript
 response proves the adapter shape.
 
+Connected doctor accepts a completed durable probe through
+`--probe-checkpoint ID` and revalidates it against the current exact lock. A
+stale or incomplete checkpoint cannot contribute readiness observations.
+
 After `npm install`, both host projections can start the same local
 `soter-core` stdio server, bound to the launching host identity. Its prepare
-tools return logical provider requests;
-the host must execute exactly the requested provider tool through its separate
+tools durably checkpoint and return logical provider requests; the host must
+execute exactly the requested provider tool through its separate
 authenticated MCP route and return the native result to the matching complete
 tool. The server does not call providers, persist raw responses, or authorize
 confirmation-gated writes. Its stdio subprocess self-test establishes only the
-shared Core projection, not live host or provider conformance. Exact call
-records are returned to the caller but are not yet checkpointed into shared
-durable run state.
+shared Core recovery projection, not live host or provider conformance. The
+self-test restarts the server with a call pending, rehydrates it, repairs planted
+partial state, and rejects stale or tampered checkpoints.
+
+Private run and call state lives under `.soter/state`, uses atomic restricted
+files, and is ignored by Git. `soter_list_host_calls` and
+`soter_get_host_call` are the recovery interface after compaction or restart.
+This state may contain portable inputs and normalized outputs; it must not be
+distributed as pack content, fixtures, configuration, or evidence.
 
 The Codex projection registers Otter in `.codex/config.toml`. After trusting
 the project, authenticate once with `codex mcp login otter` or through Codex

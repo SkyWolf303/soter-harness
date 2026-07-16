@@ -47,6 +47,6 @@
     "scenarios": []
   },
   "limitations": [
-    "The local Core MCP service and Otter route are configured, but Codex startup, connector authentication, provider tool dispatch, durable call checkpointing, lifecycle judgment, and end-to-end behavior conformance are not proven."
+    "The local Core MCP service durably checkpoints calls and Otter is configured, but Codex startup, connector authentication, real provider dispatch, checkpoint recovery by the host, lifecycle judgment, and end-to-end behavior conformance are not proven."
   ]
 }

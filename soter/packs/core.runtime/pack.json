@@ -6,7 +6,7 @@
   "layer": "core",
   "releaseStage": "experimental",
   "evidenceMaturity": "declared",
-  "summary": "Provides configuration resolution, context assembly, capability binding, effect policy, host execution services, evidence, and health.",
+  "summary": "Provides configuration resolution, context assembly, capability binding, effect policy, durable host execution services, evidence, and health.",
   "dependencies": [
     {
       "pack": "kernel.soter",
@@ -36,6 +36,7 @@
     { "path": "soter/core/host-tools.mjs", "role": "implementation" },
     { "path": "soter/core/provider-probes.mjs", "role": "implementation" },
     { "path": "soter/core/service.mjs", "role": "implementation" },
+    { "path": "soter/core/runtime-state.mjs", "role": "implementation" },
     { "path": "soter/core/mcp/tools.mjs", "role": "implementation" },
     { "path": "soter/core/mcp/server.mjs", "role": "implementation" },
     { "path": "soter/core/mcp/selftest.mjs", "role": "evaluation" },

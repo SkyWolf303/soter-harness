@@ -52,6 +52,6 @@
     "scenarios": []
   },
   "limitations": [
-    "Prototype mechanisms and the local Core MCP service are configured, but provider dispatch, durable call checkpointing, and clean installation have not passed target host conformance scenarios."
+    "Prototype mechanisms and durable Core checkpoints are configured, but real provider dispatch, checkpoint recovery by Claude, and clean installation have not passed target host conformance scenarios."
   ]
 }

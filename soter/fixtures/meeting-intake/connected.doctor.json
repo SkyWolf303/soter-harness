@@ -6,7 +6,7 @@
   "level": "connected",
   "configuration": {
     "name": "meeting-intake",
-    "lockFingerprint": "sha256:08b7e070a088ac018cfa283734bf2e64f763447ea530f8f62111ea62d2499c90"
+    "lockFingerprint": "sha256:345a985fea75b4d6edd9b68db591c255033336e313705e45a64f8e87846d5e98"
   },
   "states": {
     "valid": "passed",
@@ -140,7 +140,7 @@
         "providerProbes",
         "provider.integration.otter.mcp"
       ],
-      "expected": "One current probe bound to sha256:08b7e070a088ac018cfa283734bf2e64f763447ea530f8f62111ea62d2499c90.",
+      "expected": "One current probe bound to sha256:345a985fea75b4d6edd9b68db591c255033336e313705e45a64f8e87846d5e98.",
       "observed": "Found 0 matching probes.",
       "evidenceIds": [],
       "remediation": "Run the provider adapter read-only probe and pass its structured result to the connected doctor."

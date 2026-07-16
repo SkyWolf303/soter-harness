@@ -28,6 +28,7 @@ const RUNTIME_ARTIFACT_CONTRACTS = new Set([
   'soter://contracts/provider-probe/v1',
   'soter://contracts/provider-probe-call/v1',
   'soter://contracts/host-tool-call/v1',
+  'soter://contracts/host-call-checkpoint/v1',
   'soter://contracts/context-snapshot/v1',
   'soter://contracts/approval/v1',
   'soter://contracts/change-set/v1'

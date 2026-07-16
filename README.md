@@ -259,14 +259,31 @@ Core also exposes the host-neutral probe handshake for adapters and debugging:
     node soter/core/cli.mjs probe-prepare \
       --lock soter/fixtures/meeting-intake/meeting-intake.lock.json \
       --provider provider.integration.otter.mcp \
-      --output /private/path/otter-probe-call.json
+      --json
 
-The host executes only the emitted logical MCP request. It can then return the
-native result through `probe-complete --call ... --response ...`; Core writes
-only the typed probe and response fingerprint, never the response body. The
-current Otter producer intentionally reports `meeting.transcript.read=unknown`
-because `get_user_info` does not read a transcript. Treat response files as
-private transient runtime state and keep them outside the repository.
+Core atomically stores the exact request under `.soter/state/host-calls` before
+returning it. The host executes only `checkpoint.call.transport` with
+`checkpoint.call.arguments`, then resumes by checkpoint ID:
+
+    node soter/core/cli.mjs probe-complete \
+      --checkpoint checkpoint.probecall.example \
+      --response /private/transient/otter-response.json
+
+The response file is private transient input and must remain outside the
+repository. Core never copies its native body into durable state; it stores the
+typed probe plus response fingerprint. The current Otter producer intentionally
+reports `meeting.transcript.read=unknown` because `get_user_info` does not read a
+transcript.
+
+A connected doctor can consume the completed private checkpoint directly:
+
+    node soter/core/cli.mjs doctor \
+      --lock soter/fixtures/meeting-intake/meeting-intake.lock.json \
+      --level connected \
+      --probe-checkpoint checkpoint.probecall.example
+
+Core revalidates the checkpoint against the current exact lock before using its
+normalized probe; no export or raw response file becomes evidence by accident.
 
 Install the pinned local MCP runtime and verify the stdio protocol path:
 
@@ -279,21 +296,29 @@ another host. Its tools follow one explicit sequence:
 
 1. Call `soter_prepare_provider_probe` or
    `soter_prepare_capability_call`.
-2. Continue only when the returned call state is `requested`.
-3. Invoke exactly the returned logical provider server/tool with the returned
-   arguments through the host's separately authenticated provider MCP route.
-4. Pass the native response unchanged to the matching Soter completion tool,
-   or close the request with `soter_fail_host_call`.
+2. Continue only when `checkpoint.call.state` is `requested`.
+3. Invoke exactly `checkpoint.call.transport.server/tool` with
+   `checkpoint.call.arguments` through the separately authenticated provider
+   route.
+4. Pass the native response unchanged with `checkpoint.id` to the matching
+   completion tool, or close it with `soter_fail_host_call`.
+5. After restart or compaction, use `soter_list_host_calls` and
+   `soter_get_host_call` instead of reconstructing the request from memory.
 
 The local server never calls Otter, Notion, or another provider itself. Its MCP
 self-test launches the stdio server and supplies synthetic provider results,
-proving the shared projection and minimization behavior only. It does not prove that Codex
-or Claude started the server, authenticated a provider, selected the right tool,
-or completed a real run. The server returns exact call records but does not yet
-checkpoint them to durable run state, so compaction-safe resume remains a
-separate required slice. The equivalent file-oriented CLI commands are
-`capability-prepare`, `capability-complete`, and `host-fail`; response files are
-a debugging fallback and remain private transient runtime state.
+terminates it with a request pending, reconnects, rehydrates the checkpoint,
+and completes the durable run. It also rejects wrong-host, stale, conflicting,
+and tampered state and verifies that the native provider body did not reach
+disk. This proves the local Core recovery boundary, not that Codex or Claude
+started the server, authenticated a provider, selected the right provider tool,
+or completed a real external run. The equivalent CLI commands are
+`capability-prepare`, `capability-complete`, `host-list`, `host-get`, and
+`host-fail`.
+
+`.soter/state` is private user runtime state and is ignored by Git. It may
+contain portable inputs and normalized provider outputs needed to resume work;
+do not copy it into packs, fixtures, commits, or shared configurations.
 
 For Codex, trust the project and authenticate the declared Otter server once:
 
@@ -331,9 +356,9 @@ runtime is connected or ready.
 3. Finish the connected integration slice: add the Notion MCP translator and
    safe probe producer, validate Otter transcript response normalization with
    an explicitly authorized private meeting fixture, and prove actual Codex and
-   Claude dispatch through the configured resumable Core service. Then add
-   durable provider checkpoints and the separately authorized canary doctor
-   level.
+   Claude dispatch and checkpoint recovery through the configured Core service.
+   Then add approval-bound connected writes and the separately authorized
+   canary doctor level.
 4. Prove the full judgment and orchestration slice through both Claude and
    Codex host adapters rather than treating deterministic fixture mechanics as
    agent behavior evidence.
