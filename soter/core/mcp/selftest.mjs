@@ -112,11 +112,13 @@ async function selftest(root) {
     const names = listed.tools.map((tool) => tool.name).sort();
     const expectedNames = [
       'soter_complete_capability_call',
+      'soter_complete_operation_plan',
       'soter_complete_provider_probe',
       'soter_fail_host_call',
       'soter_get_host_call',
       'soter_list_host_calls',
       'soter_prepare_capability_call',
+      'soter_prepare_operation_plan',
       'soter_prepare_provider_probe'
     ];
     if (JSON.stringify(names) !== JSON.stringify(expectedNames)) {
@@ -332,6 +334,231 @@ async function selftest(root) {
     const remaining = await call(client, 'soter_list_host_calls', { state: 'requested' });
     if (remaining.checkpoints.some((item) => item.id === preparedCapability.checkpoint.id)) {
       throw new Error('Completed capability remained in the pending recovery list.');
+    }
+
+    const preparedPlan = await call(client, 'soter_prepare_operation_plan', {
+      lock_path: lockPath,
+      run_path: runPath,
+      plan: {
+        $contract: 'soter://contracts/operation-plan/v1',
+        contractVersion: '1.0.0',
+        id: 'plan.mcp-selftest.multi-target-read',
+        runId: completed.run.id,
+        createdAt: '2026-07-15T12:00:04.000Z',
+        mode: 'sequential',
+        failurePolicy: 'stop',
+        reason: 'Prove sequential multi-target reads through the shared MCP projection and durable Core service.',
+        steps: [
+          {
+            id: 'step.read-meeting',
+            capability: 'crm.records.read',
+            authority: 'authority.crm.instance',
+            providerImplementation: 'provider.integration.notion.mcp',
+            input: { recordTypes: ['meeting'], limit: 1 },
+            reason: 'Read one mapped meeting target through the Notion provider.'
+          },
+          {
+            id: 'step.read-task',
+            capability: 'crm.records.read',
+            authority: 'authority.crm.instance',
+            providerImplementation: 'provider.integration.notion.mcp',
+            input: { recordTypes: ['task'], limit: 1 },
+            reason: 'Read one mapped task target after the first call completes.'
+          }
+        ]
+      },
+      at: '2026-07-15T12:00:04.000Z'
+    });
+    const firstPlanCall = preparedPlan.currentCall;
+    if (preparedPlan.checkpoint?.state !== 'requested'
+      || preparedPlan.checkpoint?.currentStepId !== 'step.read-meeting'
+      || firstPlanCall?.transport?.operation !== 'query_data_sources'
+      || firstPlanCall?.transport?.tool
+        !== 'mcp__codex_apps__notion_notion_query_data_sources') {
+      throw new Error('MCP operation plan did not emit the exact first native host call.');
+    }
+    const firstPlanMarker = 'private-first-plan-response-marker';
+    const firstPlanResponse = {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          results: [{
+            __soterType: 'meeting',
+            __soterId: 'https://app.notion.com/mcp-plan-meeting',
+            __soterFields: JSON.stringify({
+              title: 'MCP plan meeting',
+              meetingType: 'Project Sync',
+              recordingUri: null,
+              organizationUris: '[]',
+              participantIds: '[]'
+            })
+          }],
+          has_more: false
+        })
+      }],
+      privateMarker: firstPlanMarker
+    };
+    const advancedPlan = await call(client, 'soter_complete_operation_plan', {
+      checkpoint_id: preparedPlan.checkpoint.id,
+      call_id: firstPlanCall.id,
+      response: firstPlanResponse,
+      at: '2026-07-15T12:00:05.000Z'
+    });
+    const secondPlanCall = advancedPlan.currentCall;
+    if (advancedPlan.checkpoint?.state !== 'requested'
+      || advancedPlan.checkpoint?.currentStepId !== 'step.read-task'
+      || advancedPlan.checkpoint?.steps?.[0]?.state !== 'completed'
+      || secondPlanCall?.id === firstPlanCall.id
+      || JSON.stringify(advancedPlan).includes(firstPlanMarker)) {
+      throw new Error('MCP operation plan did not atomically advance and minimize the first response.');
+    }
+    const replayedPlanStep = await call(client, 'soter_complete_operation_plan', {
+      checkpoint_id: preparedPlan.checkpoint.id,
+      call_id: firstPlanCall.id,
+      response: firstPlanResponse,
+      at: '2026-07-15T12:00:05.500Z'
+    });
+    if (replayedPlanStep.checkpoint.checkpointFingerprint
+      !== advancedPlan.checkpoint.checkpointFingerprint
+      || replayedPlanStep.currentCall?.id !== secondPlanCall.id) {
+      throw new Error('MCP operation plan replay was not idempotent after advancing steps.');
+    }
+    const pendingPlan = await call(client, 'soter_list_host_calls', { state: 'requested' });
+    if (!pendingPlan.checkpoints.some((item) => {
+      return item.id === preparedPlan.checkpoint.id
+        && item.kind === 'operation-plan'
+        && item.currentStepId === 'step.read-task';
+    })) {
+      throw new Error('Pending host call listing omitted the active operation plan step.');
+    }
+    await client.close();
+    client = await connectClient(root);
+    const recoveredPlan = await call(client, 'soter_get_host_call', {
+      checkpoint_id: preparedPlan.checkpoint.id
+    });
+    if (recoveredPlan.checkpoint?.state !== 'requested'
+      || recoveredPlan.currentCall?.id !== secondPlanCall.id) {
+      throw new Error('Restarted MCP server did not recover the exact current operation plan call.');
+    }
+    await expectToolError(client, 'soter_complete_operation_plan', {
+      checkpoint_id: preparedPlan.checkpoint.id,
+      call_id: firstPlanCall.id,
+      response: { structuredContent: { result: { results: [], has_more: false } } },
+      at: '2026-07-15T12:00:05.750Z'
+    }, 'exact completed step call');
+    const secondPlanMarker = 'private-second-plan-response-marker';
+    const completedPlan = await call(client, 'soter_complete_operation_plan', {
+      checkpoint_id: preparedPlan.checkpoint.id,
+      call_id: secondPlanCall.id,
+      response: {
+        structuredContent: {
+          result: {
+            results: [{
+              __soterType: 'task',
+              __soterId: 'https://app.notion.com/mcp-plan-task',
+              __soterFields: JSON.stringify({
+                title: 'MCP plan task',
+                status: 'Open',
+                context: null,
+                projectUris: '[]'
+              })
+            }],
+            has_more: false
+          }
+        },
+        privateMarker: secondPlanMarker
+      },
+      at: '2026-07-15T12:00:06.000Z'
+    });
+    if (completedPlan.checkpoint?.state !== 'completed'
+      || completedPlan.currentCall !== null
+      || completedPlan.checkpoint?.steps?.some((step) => step.state !== 'completed')
+      || completedPlan.checkpoint?.result?.outputFingerprints?.length !== 2
+      || JSON.stringify(completedPlan).includes(secondPlanMarker)
+      || fs.readFileSync(checkpointFile(root, completedPlan), 'utf8').includes('private-')) {
+      throw new Error('Recovered MCP operation plan did not complete with minimized durable state.');
+    }
+    const completedPlanFile = checkpointFile(root, completedPlan);
+    const completedPlanContents = fs.readFileSync(completedPlanFile, 'utf8');
+    const tamperedPlan = JSON.parse(completedPlanContents);
+    tamperedPlan.steps[0].output.records[0].fields.title = 'Tampered plan output';
+    fs.writeFileSync(completedPlanFile, JSON.stringify(tamperedPlan, null, 2) + '\n');
+    await expectToolError(client, 'soter_get_host_call', {
+      checkpoint_id: completedPlan.checkpoint.id
+    }, 'fingerprint does not match');
+    fs.writeFileSync(completedPlanFile, completedPlanContents, { mode: 0o600 });
+
+    const cliPlanPath = path.join(privateInputRoot, 'cli-operation-plan.json');
+    fs.writeFileSync(cliPlanPath, JSON.stringify({
+      $contract: 'soter://contracts/operation-plan/v1',
+      contractVersion: '1.0.0',
+      id: 'plan.cli-selftest.single-target-read',
+      runId: completed.run.id,
+      createdAt: '2026-07-15T12:00:07.000Z',
+      mode: 'sequential',
+      failurePolicy: 'stop',
+      reason: 'Prove the CLI consumes the same durable sequential operation-plan service.',
+      steps: [{
+        id: 'step.read-meeting',
+        capability: 'crm.records.read',
+        authority: 'authority.crm.instance',
+        providerImplementation: 'provider.integration.notion.mcp',
+        input: { recordTypes: ['meeting'], limit: 1 },
+        reason: 'Read one mapped meeting target through the CLI projection.'
+      }]
+    }, null, 2) + '\n', { mode: 0o600 });
+    const cliPlan = runCli(root, [
+      'plan-prepare',
+      '--lock', lockPath,
+      '--run', runPath,
+      '--plan', cliPlanPath,
+      '--at', '2026-07-15T12:00:07.000Z'
+    ]);
+    const rejectedPlanExport = invokeCli(root, [
+      'plan-prepare',
+      '--lock', lockPath,
+      '--run', runPath,
+      '--plan', cliPlanPath,
+      '--output', 'soter/fixtures/meeting-intake/private-plan-checkpoint.json',
+      '--at', '2026-07-15T12:00:07.000Z'
+    ]);
+    if (rejectedPlanExport.status === 0
+      || !rejectedPlanExport.stderr.includes('private runtime state')) {
+      throw new Error('CLI allowed a private operation-plan checkpoint export into the repository.');
+    }
+    const cliPlanMarker = 'private-cli-plan-response-marker';
+    const cliPlanResponsePath = path.join(privateInputRoot, 'cli-operation-plan-response.json');
+    fs.writeFileSync(cliPlanResponsePath, JSON.stringify({
+      structuredContent: {
+        result: {
+          results: [{
+            __soterType: 'meeting',
+            __soterId: 'https://app.notion.com/cli-plan-meeting',
+            __soterFields: JSON.stringify({
+              title: 'CLI plan meeting',
+              meetingType: 'Project Sync',
+              recordingUri: null,
+              organizationUris: '[]',
+              participantIds: '[]'
+            })
+          }],
+          has_more: false
+        }
+      },
+      privateMarker: cliPlanMarker
+    }, null, 2) + '\n', { mode: 0o600 });
+    const cliCompletedPlan = runCli(root, [
+      'plan-complete',
+      '--checkpoint', cliPlan.checkpoint.id,
+      '--call', cliPlan.currentCall.id,
+      '--response', cliPlanResponsePath,
+      '--at', '2026-07-15T12:00:08.000Z'
+    ]);
+    if (cliPlan.checkpoint.state !== 'requested'
+      || cliCompletedPlan.checkpoint.state !== 'completed'
+      || cliCompletedPlan.currentCall !== null
+      || JSON.stringify(cliCompletedPlan).includes(cliPlanMarker)) {
+      throw new Error('CLI operation-plan projection drifted from the durable Core service.');
     }
 
     await assertWrongHostRejected(root);

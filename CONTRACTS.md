@@ -420,6 +420,8 @@ The normative Core state shapes are the
 [host tool call](./soter/contracts/host-tool-call.schema.json),
 [provider probe call](./soter/contracts/provider-probe-call.schema.json),
 [durable host call checkpoint](./soter/contracts/host-call-checkpoint.schema.json),
+[sequential operation plan](./soter/contracts/operation-plan.schema.json),
+[durable operation-plan checkpoint](./soter/contracts/operation-plan-checkpoint.schema.json),
 [evidence record](./soter/contracts/evidence.schema.json), and
 [doctor result](./soter/contracts/doctor-result.schema.json). Connected
 integrations produce short-lived, secret-safe
@@ -773,13 +775,49 @@ only after Core validates an approval bound to the exact generated operation
 batch and change-set fingerprint; host approval prompts alone are not reusable
 Soter authorization.
 
-The initial host-call checkpoint represents one native request. A provider
-feature that needs several requests—multi-target reads, deduplication followed
-by creation, compare-before-write, or read-after-write verification—must not
-hide that sequence inside a translator or rely on provider plan features to
-collapse it. Core must expose an explicit resumable operation plan whose steps,
-intermediate fingerprints, approval scope, and completion conditions are bound
-to the exact run.
+The host-call checkpoint represents one native request. A provider feature that
+needs several requests—multi-target reads, deduplication followed by creation,
+compare-before-write, or read-after-write verification—must not hide that
+sequence inside a translator or rely on provider plan features to collapse it.
+
+Core's initial `operation-plan/v1` is the explicit multi-call boundary. It binds
+one to fifty fixed-input capability steps to an exact run. Every step names its
+capability, authority, provider implementation, portable input, and reason.
+Steps execute sequentially under `failurePolicy=stop`; at most one native call
+is requested, and all later steps remain pending. Each step travels through the
+ordinary capability validation, binding, host-tool resolution, and effect-policy
+path. A plan therefore cannot invent a provider route or widen authority.
+Because every v1 input is fixed, Core preflights every step's binding, input,
+provider translator, and host route before it emits the first call. An invalid
+tail rejects the plan without creating a checkpoint or performing earlier
+provider work. An effect-policy block remains an explicit blocked step rather
+than becoming implied approval.
+
+Before emitting the first call, Core writes one private
+`operation-plan-checkpoint/v1` bound to the exact lock, graph, host, run, source
+plan fingerprint, ordered runtime steps, and current call. Completion requires
+both the checkpoint ID and exact current call ID. Core validates and normalizes
+the response, fingerprints the portable output, atomically advances the private
+plan checkpoint, and emits at most the next exact call. Core then synchronizes
+the durable run and repairs it from the newer checkpoint if a process stops
+between those writes. An exact replay of a completed call and response is
+idempotent; a different, late, or guessed call or response fails closed.
+Restart and compaction recovery load the same current call from private state
+rather than reconstructing it from conversation.
+
+The operation-plan checkpoint may retain normalized portable outputs because
+later orchestration needs them, but it never retains the native provider body
+or credential values. The run records each typed invocation plus output
+fingerprints and the plan's current state. Plan state is private runtime state,
+not configuration, pack content, or distributable evidence.
+
+This first plan contract intentionally has no output-to-input binding,
+branching, parallelism, plan-level retry policy, compensation, approval-bound
+operation batch, or rollback. The current prepare interface passes no approval
+set, so a confirmation-gated write step becomes blocked with no provider
+arguments. Connected writes require later contracts that bind generated
+operations to an exact change-set fingerprint and approval, then verify or
+compensate every applied effect.
 
 Provider readiness uses a separate `provider-probe-call/v1` state machine. Core
 derives its probe plan from the exact lock and desired configuration, including

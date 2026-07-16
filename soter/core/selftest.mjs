@@ -17,6 +17,12 @@ import {
 } from './evidence.mjs';
 import { fingerprintLock, resolveConfiguration } from './resolve.mjs';
 import { prepareRunEnvelope } from './run.mjs';
+import { assertOperationPlanDocument } from './operation-plans.mjs';
+import {
+  completeDurableOperationPlanExecution,
+  getDurableHostExecution,
+  prepareDurableOperationPlanExecution
+} from './service.mjs';
 import {
   completeHostToolCall,
   failHostToolCall,
@@ -594,6 +600,209 @@ export async function selftest(root) {
       || transaction.changeSet.operations.some((item) => item.state !== 'passed')) {
       failures.push('approved contained transaction did not commit and verify every operation');
     }
+    const operationPlan = {
+      $contract: 'soter://contracts/operation-plan/v1',
+      contractVersion: '1.0.0',
+      id: 'plan.meeting-intake.multi-target-selftest',
+      runId: envelope.id,
+      createdAt: FIXTURE_TIME,
+      mode: 'sequential',
+      failurePolicy: 'stop',
+      reason: 'Prove that Core can resume two portable Notion reads without using cross-data-source SQL.',
+      steps: [
+        {
+          id: 'step.read-meeting',
+          capability: 'crm.records.read',
+          authority: 'authority.crm.instance',
+          providerImplementation: connectedProviders.notion.id,
+          input: { recordTypes: ['meeting'], limit: 1 },
+          reason: 'Read one meeting target through its portable capability.'
+        },
+        {
+          id: 'step.read-task',
+          capability: 'crm.records.read',
+          authority: 'authority.crm.instance',
+          providerImplementation: connectedProviders.notion.id,
+          input: { recordTypes: ['task'], limit: 1 },
+          reason: 'Read one task target after the meeting step completes.'
+        }
+      ]
+    };
+    const duplicateStepPlan = structuredClone(operationPlan);
+    duplicateStepPlan.steps[1].id = duplicateStepPlan.steps[0].id;
+    let duplicatePlanStepRejected = false;
+    try {
+      assertOperationPlanDocument(temp, duplicateStepPlan);
+    } catch (error) {
+      duplicatePlanStepRejected = error.message.includes('identifiers must be unique');
+    }
+    const invalidTailPlan = structuredClone(operationPlan);
+    invalidTailPlan.id = 'plan.meeting-intake.invalid-tail-selftest';
+    invalidTailPlan.steps[1].providerImplementation = 'provider.missing.connected';
+    let invalidTailRejectedBeforeDispatch = false;
+    try {
+      await prepareDurableOperationPlanExecution({
+        root: temp,
+        lockPath,
+        runPath: 'soter/fixtures/meeting-intake/preflight.run.json',
+        plan: invalidTailPlan,
+        at: FIXTURE_TIME,
+        expectedHost: 'codex'
+      });
+    } catch (error) {
+      invalidTailRejectedBeforeDispatch = error.message.includes(
+        'step.read-task cannot be prepared'
+      );
+    }
+    const invalidTailCheckpoint = path.join(
+      temp,
+      '.soter/state/host-calls/checkpoint.plan.meeting-intake.invalid-tail-selftest.json'
+    );
+    const preparedPlan = await prepareDurableOperationPlanExecution({
+      root: temp,
+      lockPath,
+      runPath: 'soter/fixtures/meeting-intake/preflight.run.json',
+      plan: operationPlan,
+      at: FIXTURE_TIME,
+      expectedHost: 'codex'
+    });
+    const firstPlanCall = preparedPlan.currentCall;
+    const firstPlanResponse = {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          results: [{
+            __soterType: 'meeting',
+            __soterId: 'https://app.notion.com/plan-meeting-selftest',
+            __soterFields: JSON.stringify({
+              title: 'Plan selftest meeting',
+              meetingType: 'Project Sync',
+              recordingUri: null,
+              organizationUris: '[]',
+              participantIds: '[]'
+            })
+          }],
+          has_more: false
+        })
+      }],
+      privateMarker: 'raw-plan-meeting-response-marker'
+    };
+    const advancedPlan = await completeDurableOperationPlanExecution({
+      root: temp,
+      checkpointId: preparedPlan.checkpoint.id,
+      callId: firstPlanCall.id,
+      response: firstPlanResponse,
+      at: '2026-07-15T12:00:01.000Z',
+      expectedHost: 'codex'
+    });
+    const secondPlanCall = advancedPlan.currentCall;
+    const rehydratedPlan = getDurableHostExecution({
+      root: temp,
+      checkpointId: preparedPlan.checkpoint.id,
+      expectedHost: 'codex'
+    });
+    let wrongPlanCallRejected = false;
+    try {
+      await completeDurableOperationPlanExecution({
+        root: temp,
+        checkpointId: preparedPlan.checkpoint.id,
+        callId: 'toolcall.wrong-plan-step',
+        response: firstPlanResponse,
+        at: '2026-07-15T12:00:01.500Z',
+        expectedHost: 'codex'
+      });
+    } catch (error) {
+      wrongPlanCallRejected = error.message.includes('exact current step call');
+    }
+    const secondPlanResponse = {
+      structuredContent: {
+        result: {
+          results: [{
+            __soterType: 'task',
+            __soterId: 'https://app.notion.com/plan-task-selftest',
+            __soterFields: JSON.stringify({
+              title: 'Plan selftest task',
+              status: 'Open',
+              context: null,
+              projectUris: '[]'
+            })
+          }],
+          has_more: false
+        }
+      },
+      privateMarker: 'raw-plan-task-response-marker'
+    };
+    const completedPlan = await completeDurableOperationPlanExecution({
+      root: temp,
+      checkpointId: preparedPlan.checkpoint.id,
+      callId: secondPlanCall.id,
+      response: secondPlanResponse,
+      at: '2026-07-15T12:00:02.000Z',
+      expectedHost: 'codex'
+    });
+    const replayedFirstPlanStep = await completeDurableOperationPlanExecution({
+      root: temp,
+      checkpointId: preparedPlan.checkpoint.id,
+      callId: firstPlanCall.id,
+      response: firstPlanResponse,
+      at: '2026-07-15T12:00:03.000Z',
+      expectedHost: 'codex'
+    });
+    if (!duplicatePlanStepRejected
+      || !invalidTailRejectedBeforeDispatch
+      || fs.existsSync(invalidTailCheckpoint)
+      || preparedPlan.checkpoint.state !== 'requested'
+      || firstPlanCall?.capability.id !== 'crm.records.read'
+      || firstPlanCall?.arguments?.data?.data_source_urls?.length !== 1
+      || advancedPlan.checkpoint.state !== 'requested'
+      || advancedPlan.checkpoint.currentStepId !== 'step.read-task'
+      || advancedPlan.checkpoint.steps[0]?.state !== 'completed'
+      || secondPlanCall?.id === firstPlanCall?.id
+      || rehydratedPlan.checkpoint.currentStepId !== 'step.read-task'
+      || !wrongPlanCallRejected
+      || completedPlan.checkpoint.state !== 'completed'
+      || completedPlan.checkpoint.currentStepId !== null
+      || completedPlan.checkpoint.steps.some((step) => step.state !== 'completed')
+      || completedPlan.checkpoint.result?.outputFingerprints.length !== 2
+      || replayedFirstPlanStep.checkpoint.checkpointFingerprint
+        !== completedPlan.checkpoint.checkpointFingerprint
+      || JSON.stringify(completedPlan).includes('raw-plan-')) {
+      failures.push('durable operation plan did not preserve exact sequential dispatch, recovery, idempotency, and response minimization');
+    }
+    const blockedWritePlan = await prepareDurableOperationPlanExecution({
+      root: temp,
+      lockPath,
+      runPath: 'soter/fixtures/meeting-intake/preflight.run.json',
+      plan: {
+        $contract: 'soter://contracts/operation-plan/v1',
+        contractVersion: '1.0.0',
+        id: 'plan.meeting-intake.blocked-write-selftest',
+        runId: envelope.id,
+        createdAt: '2026-07-15T12:00:04.000Z',
+        mode: 'sequential',
+        failurePolicy: 'stop',
+        reason: 'Prove that a sequential plan cannot grant itself confirmation-gated write authority.',
+        steps: [{
+          id: 'step.create-summary',
+          capability: 'crm.records.create',
+          authority: 'authority.crm.instance',
+          providerImplementation: connectedProviders.notionWrites.id,
+          input: {
+            recordType: 'meeting-summary',
+            deduplicationKey: 'selftest:operation-plan-blocked',
+            fields: { title: 'Blocked plan summary' }
+          },
+          reason: 'Attempt one confirmation-gated write without an approval binding.'
+        }]
+      },
+      at: '2026-07-15T12:00:04.000Z',
+      expectedHost: 'codex'
+    });
+    if (blockedWritePlan.checkpoint.state !== 'blocked'
+      || blockedWritePlan.currentCall !== null
+      || blockedWritePlan.checkpoint.steps[0]?.call?.arguments !== null) {
+      failures.push('operation plan widened authorization or emitted a blocked write request');
+    }
     const conflicting = proposeMeetingIntakeChangeSet({
       lock,
       snapshot: transaction.snapshot,
@@ -909,7 +1118,7 @@ export async function selftest(root) {
     return false;
   }
   process.stdout.write(
-    'CORE SELFTEST PASS: deterministic lock, typed fixture reads/writes, exact-scope approval, deduplication, expected-version conflicts, rollback, read-after-write verification, resumable MCP host dispatch, connected probe readiness, expiry, exact-lock binding, honest states, and stale-lock detection.\n'
+    'CORE SELFTEST PASS: deterministic lock, typed fixture reads/writes, exact-scope approval, deduplication, expected-version conflicts, rollback, read-after-write verification, resumable sequential operation plans, resumable MCP host dispatch, connected probe readiness, expiry, exact-lock binding, honest states, and stale-lock detection.\n'
   );
   return true;
 }

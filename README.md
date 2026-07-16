@@ -140,22 +140,26 @@ The main remaining gaps are structural and behavioral:
   effect-free preflight, typed fixture capability dispatch, authority-aware
   context assembly, exact-scope approvals, transactional fixture writes,
   rollback, read-after-write verification, scoped evidence, and offline
-  diagnosis, and the policy-bound request/result state machine for resumable
-  host-dispatched MCP calls. A shared Core service now projects that resumable
-  handshake through both the CLI and a local stdio MCP server configured for
-  Codex and Claude. The first connected Otter declaration now emits an
-  exact `fetch({id})` request and an identity-only `get_user_info({})` probe
+  diagnosis, the policy-bound request/result state machine for resumable
+  host-dispatched MCP calls, and fixed-input sequential operation plans that
+  durably emit one exact call at a time. A shared Core service projects those
+  resumable handshakes through both the CLI and a local stdio MCP server
+  configured for Codex and Claude. The first connected Otter declaration emits
+  an exact `fetch({id})` request and an identity-only `get_user_info({})` probe
   request through separate resumable contracts. The connected Notion read
   declaration now translates bounded portable CRM record requests through a
   pack-owned field mapping and user-configured target identities. Each call is
   limited to one target so cross-data-source SQL never becomes a hidden Notion
-  plan requirement. Its
-  identity-only probe can establish authentication and reachability while
-  leaving target authority and schema compatibility unknown. Connected Notion
-  writes remain intentionally undeclared until multi-call deduplication,
-  compare-before-write, exact approval binding, and read-after-write
-  verification exist. Observed provider response-shape conformance, actual
-  dispatch through either host, and host-level agent behavior remain unproven.
+  plan requirement; several targets can now be expressed as explicit ordered
+  capability steps, although connected context assembly does not consume that
+  plan yet. Its identity-only probe can establish authentication and
+  reachability while leaving target authority and schema compatibility unknown.
+  Connected Notion
+  writes remain intentionally undeclared until plans support output bindings,
+  multi-call deduplication, compare-before-write, exact change-set approval,
+  read-after-write verification, and compensation. Checked-in connected
+  response-shape evidence, host-started end-to-end dispatch, and host-level
+  agent behavior remain unproven.
 - Legacy provider behavior remains mixed into automations. The target now
   separates fixture reads and writes behind typed capabilities, but connected
   implementations and legacy migration remain.
@@ -306,14 +310,18 @@ server bound to that host's identity. A host cannot consume a lock resolved for
 another host. Its tools follow one explicit sequence:
 
 1. Call `soter_prepare_provider_probe` or
-   `soter_prepare_capability_call`.
-2. Continue only when `checkpoint.call.state` is `requested`.
-3. Inspect `checkpoint.call.transport.operation` for the provider-neutral
-   operation, then invoke exactly the host-native
-   `checkpoint.call.transport.tool` with `checkpoint.call.arguments` through
-   `checkpoint.call.transport.server` and its separately authenticated route.
-4. Pass the native response unchanged with `checkpoint.id` to the matching
-   completion tool, or close it with `soter_fail_host_call`.
+   `soter_prepare_capability_call` for one request, or
+   `soter_prepare_operation_plan` for an ordered sequence.
+2. Continue only when the checkpoint is `requested`. A one-call checkpoint
+   exposes `checkpoint.call`; a plan exposes exactly one `currentCall`.
+3. Inspect that call's `transport.operation` for the provider-neutral
+   operation, then invoke exactly its host-native `transport.tool` with its
+   `arguments` through `transport.server` and the separately authenticated
+   route.
+4. Pass the native response unchanged to the matching completion tool. Plan
+   completion also requires the exact current call ID and may return the next
+   call. Close a failed request with `soter_fail_host_call`, including the call
+   ID for a plan.
 5. After restart or compaction, use `soter_list_host_calls` and
    `soter_get_host_call` instead of reconstructing the request from memory.
 
@@ -325,8 +333,35 @@ and tampered state and verifies that the native provider body did not reach
 disk. This proves the local Core recovery boundary, not that Codex or Claude
 started the server, authenticated a provider, selected the right provider tool,
 or completed a real external run. The equivalent CLI commands are
-`capability-prepare`, `capability-complete`, `host-list`, `host-get`, and
-`host-fail`.
+`capability-prepare`, `capability-complete`, `plan-prepare`, `plan-complete`,
+`host-list`, `host-get`, and `host-fail`.
+
+The initial
+[operation-plan contract](./soter/contracts/operation-plan.schema.json) is
+intentionally small: one to fifty fixed-input capability steps execute in
+order, one call may be outstanding, and any blocked or failed step stops the
+plan. Core preflights every fixed step's binding, input, translator, and host
+route before emitting the first call, so an invalid tail cannot strand earlier
+provider work. The source plan and native response files supplied to the CLI
+use absolute private paths outside the repository:
+
+    node soter/core/cli.mjs plan-prepare \
+      --lock soter/fixtures/meeting-intake/meeting-intake.lock.json \
+      --run soter/fixtures/meeting-intake/preflight.run.json \
+      --plan /private/transient/operation-plan.json
+
+    node soter/core/cli.mjs plan-complete \
+      --checkpoint checkpoint.plan.example \
+      --call toolcall.plan-example.step-read \
+      --response /private/transient/provider-response.json
+
+Core binds the plan, every step, and every response to the exact lock, graph,
+host, run, provider, capability, authority, input, and call ID. It stores
+normalized private outputs and fingerprints, never the raw host response. This
+version has no output-to-input binding, branching, parallelism, plan-level
+retry or compensation, approval-bound write batch, or rollback. Because the
+plan interface accepts no approval, a confirmation-gated write step blocks
+without emitting provider arguments.
 
 `.soter/state` is private user runtime state and is ignored by Git. It may
 contain portable inputs and normalized provider outputs needed to resume work;
@@ -366,12 +401,13 @@ runtime is connected or ready.
    outcomes, scenarios, capability needs, authorities, effects, and migration
    mapping.
 3. Finish the connected integration slice: add an exact-lock Notion target
-   schema/read probe, use the connected read capability in context assembly,
-   validate Otter transcript response normalization with an explicitly
-   authorized private meeting fixture, and prove actual Codex and Claude
-   dispatch and checkpoint recovery through the configured Core service. Then
-   model multi-call operation batches and add approval-bound connected Notion
-   writes plus the separately authorized canary doctor level.
+   schema/read probe, drive connected context assembly through the sequential
+   read plan, validate Otter transcript response normalization with an
+   explicitly authorized private meeting fixture, and prove host-started Codex
+   and Claude dispatch and checkpoint recovery through the configured Core
+   service. Then add typed output bindings, an exact change-set approval-bound
+   write plan, compare-before-write, read-after-write verification,
+   compensation, and the separately authorized canary doctor level.
 4. Prove the full judgment and orchestration slice through both Claude and
    Codex host adapters rather than treating deterministic fixture mechanics as
    agent behavior evidence.

@@ -471,21 +471,26 @@ capability dispatch, authority-aware context snapshots, exact-scope approvals,
 transactional fixture writes, rollback proof, read-after-write verification,
 claim-scoped evidence, an offline doctor, contract-enforced aggregation of
 short-lived connected provider probes, and private durable checkpoints for
-host-dispatched calls and their run envelopes. The current target includes the
+host-dispatched calls and their run envelopes. Core now also has a fixed-input,
+sequential operation-plan contract and private checkpoint that emits one exact
+policy-bound call at a time, requires both checkpoint and current-call identity
+on resume, and recovers the next step after restart without retaining native
+provider responses. The current target includes the
 first connected Otter provider mapping, exact transcript-fetch request
 translation, and identity-only probe producer. It also includes a read-only
 connected Notion provider whose pack-owned settings, provider field mapping,
 bounded one-target query translator, normalized record versions, and exact
 per-host native tool mappings are mechanically checked. The one-target boundary
-avoids depending on plan-gated cross-data-source SQL; multi-target context must
-be explicit orchestration. Identity probes deliberately leave
+avoids depending on plan-gated cross-data-source SQL; multi-target reads can be
+explicit ordered capability steps, but context assembly does not drive that
+plan yet. Identity probes deliberately leave
 domain compatibility unknown, and unobserved response shapes fail closed.
 Connected readiness still fails because Notion create and update
 implementations are intentionally absent and no current private probes are
-checked in. Exact-lock Notion schema/read evidence, observed Otter transcript
-conformance, actual host dispatch, authority context loading, approval-bound
-multi-call writes, live health, host judgment, and host conformance remain
-future proof boundaries.
+checked in. Repeatable exact-lock Notion schema/read evidence, observed Otter
+transcript conformance, host-started end-to-end dispatch, authority context
+loading, typed output binding, approval-bound multi-call writes, compensation,
+live health, host judgment, and host conformance remain future proof boundaries.
 
 ### Change unit and completion gate
 

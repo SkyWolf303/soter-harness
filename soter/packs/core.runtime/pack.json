@@ -34,6 +34,7 @@
     { "path": "soter/core/capabilities.mjs", "role": "implementation" },
     { "path": "soter/core/host-runtime.mjs", "role": "implementation" },
     { "path": "soter/core/host-tools.mjs", "role": "implementation" },
+    { "path": "soter/core/operation-plans.mjs", "role": "implementation" },
     { "path": "soter/core/provider-probes.mjs", "role": "implementation" },
     { "path": "soter/core/service.mjs", "role": "implementation" },
     { "path": "soter/core/runtime-state.mjs", "role": "implementation" },

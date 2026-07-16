@@ -22,12 +22,14 @@ import { fingerprintLock, resolveConfiguration } from './resolve.mjs';
 import { prepareRunEnvelope } from './run.mjs';
 import {
   completeDurableCapabilityExecution,
+  completeDurableOperationPlanExecution,
   completeDurableProviderProbeExecution,
   failDurableHostExecution,
   getDurableHostExecution,
   getDurableProviderProbe,
   listDurableHostExecutions,
   prepareDurableCapabilityExecution,
+  prepareDurableOperationPlanExecution,
   prepareDurableProviderProbeExecution
 } from './service.mjs';
 import { runContainedMeetingIntakeTransaction } from './transaction.mjs';
@@ -333,12 +335,82 @@ async function main() {
     return;
   }
 
+  if (command === 'plan-prepare') {
+    if (option(args, '--output')) {
+      throw new Error(
+        'Operation plan checkpoints are private runtime state and cannot be exported into the repository.'
+      );
+    }
+    const prepared = await prepareDurableOperationPlanExecution({
+      root,
+      lockPath: requiredOption(args, '--lock'),
+      runPath: requiredOption(args, '--run'),
+      plan: readPrivateJsonInput(root, requiredOption(args, '--plan')),
+      at: createdAt
+    });
+    if (json) {
+      print(prepared);
+    } else {
+      const call = prepared.currentCall;
+      process.stdout.write(
+        'Prepared operation plan ' + prepared.checkpoint.plan.id + ' in state '
+          + prepared.checkpoint.state + '.\n'
+          + 'Current step: ' + (prepared.checkpoint.currentStepId || 'none') + '\n'
+          + (call
+            ? 'Provider operation: ' + call.transport.server + '/'
+              + call.transport.operation + '\n'
+              + 'Native host tool: ' + call.transport.tool + '\n'
+          + 'Exact call ID: ' + call.id + '\n'
+            : 'Host request emitted: no\n')
+          + 'Durable checkpoint: ' + prepared.checkpointPath + '\n'
+          + 'Connected write approval accepted by this command: no\n'
+      );
+    }
+    if (!['requested', 'completed'].includes(prepared.checkpoint.state)) process.exitCode = 1;
+    return;
+  }
+
+  if (command === 'plan-complete') {
+    if (option(args, '--output')) {
+      throw new Error(
+        'Operation plan checkpoints are private runtime state and cannot be exported into the repository.'
+      );
+    }
+    const completed = await completeDurableOperationPlanExecution({
+      root,
+      checkpointId: requiredOption(args, '--checkpoint'),
+      callId: requiredOption(args, '--call'),
+      response: readPrivateJsonInput(root, requiredOption(args, '--response')),
+      at: createdAt
+    });
+    if (json) {
+      print(completed);
+    } else {
+      const call = completed.currentCall;
+      process.stdout.write(
+        'Advanced operation plan ' + completed.checkpoint.plan.id + ' to state '
+          + completed.checkpoint.state + '.\n'
+          + 'Current step: ' + (completed.checkpoint.currentStepId || 'none') + '\n'
+          + (call
+            ? 'Next provider operation: ' + call.transport.server + '/'
+              + call.transport.operation + '\n'
+              + 'Next native host tool: ' + call.transport.tool + '\n'
+              + 'Next exact call ID: ' + call.id + '\n'
+            : 'Next host request emitted: no\n')
+          + 'Raw provider response persisted by Core: no\n'
+      );
+    }
+    if (!['requested', 'completed'].includes(completed.checkpoint.state)) process.exitCode = 1;
+    return;
+  }
+
   if (command === 'host-fail') {
     const failed = failDurableHostExecution({
       root,
       checkpointId: requiredOption(args, '--checkpoint'),
       errorKind: requiredOption(args, '--kind'),
       message: requiredOption(args, '--message'),
+      callId: option(args, '--call'),
       at: createdAt
     });
     const output = option(args, '--output');
@@ -521,7 +593,7 @@ async function main() {
   }
 
   throw new Error(
-    'Usage: node soter/core/cli.mjs <resolve|prepare|context|transaction|doctor|probe-prepare|probe-complete|capability-prepare|capability-complete|host-fail|host-get|host-list|fixtures|selftest> [options]\n'
+    'Usage: node soter/core/cli.mjs <resolve|prepare|context|transaction|doctor|probe-prepare|probe-complete|capability-prepare|capability-complete|plan-prepare|plan-complete|host-fail|host-get|host-list|fixtures|selftest> [options]\n'
       + '  resolve [--config PATH] [--output PATH] [--json]\n'
       + '  prepare --lock PATH [--scenario PATH] [--output PATH] [--evidence-dir PATH] [--json]\n'
       + '  context --lock PATH --meeting-id ID --recording-uri URI [--scenario PATH] [--json]\n'
@@ -531,7 +603,9 @@ async function main() {
       + '  probe-complete --checkpoint ID --response ABSOLUTE_PRIVATE_PATH [--probe-output PATH] [--json]\n'
       + '  capability-prepare --lock PATH --run PATH --capability ID --authority ID --provider ID --input PATH [--output PATH] [--json]\n'
       + '  capability-complete --checkpoint ID --response ABSOLUTE_PRIVATE_PATH [--output PATH] [--json]\n'
-      + '  host-fail --checkpoint ID --kind KIND --message TEXT [--output PATH] [--json]\n'
+      + '  plan-prepare --lock PATH --run PATH --plan ABSOLUTE_PRIVATE_PATH [--json]\n'
+      + '  plan-complete --checkpoint ID --call ID --response ABSOLUTE_PRIVATE_PATH [--json]\n'
+      + '  host-fail --checkpoint ID [--call ID] --kind KIND --message TEXT [--output PATH] [--json]\n'
       + '  host-get --checkpoint ID\n'
       + '  host-list [--state requested|completed|failed|blocked]\n'
       + '  fixtures <--check|--update> [--json]'

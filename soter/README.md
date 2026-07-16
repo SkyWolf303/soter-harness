@@ -26,9 +26,9 @@ fields make that distinction mechanical.
 - kernel contains the target verifier shared by every future host projection.
 - core contains provider-neutral resolution, preflight, evidence, offline and
   connected doctor operations, a shared execution service, and separate
-  resumable capability-call and provider-probe bridges. The CLI and local Soter
-  MCP server are thin interfaces over that service; future graphical interfaces
-  must consume the same boundary.
+  resumable capability-call, fixed-input sequential operation-plan, and
+  provider-probe bridges. The CLI and local Soter MCP server are thin interfaces
+  over that service; future graphical interfaces must consume the same boundary.
 - fixtures contains generated, cross-linked examples of exact locks, run
   envelopes, evidence, and doctor results. These are runtime-state examples,
   not pack source artifacts.
@@ -66,12 +66,16 @@ Notion provider now implements bounded CRM record reads using a pack-owned
 settings schema, a provider-owned field mapping, and exact native tool mappings
 for each host adapter. A connected read is limited to one record type and data
 source per host call, avoiding a hidden dependency on plan-gated
-cross-data-source SQL. It returns deterministic versions for normalized
-records. Its identity probe proves only authentication and reachability;
+cross-data-source SQL. Core can now orchestrate several such reads through one
+private sequential operation-plan checkpoint, emitting one exact call at a
+time and resuming by checkpoint plus call ID. Context assembly does not consume
+that plan yet. It returns deterministic versions for normalized records. Its
+identity probe proves only authentication and reachability;
 configured target access and schema/read compatibility remain unknown. Notion
-create and update implementations are intentionally absent until Soter models
-their multi-call deduplication, compare-before-write, exact approval, and
-read-after-write verification boundary. Actual host dispatch is unproven, and
+create and update implementations are intentionally absent until Soter adds
+typed output binding, multi-call deduplication, compare-before-write, exact
+change-set approval, read-after-write verification, and compensation.
+Host-started end-to-end dispatch is unproven, and
 the checked-in connected doctor therefore still reports `ready=failed`. This
 increment does not fetch a user's meeting, prove provider transcript or Notion
 target conformance, prove host-level agent judgment, or replace the existing
@@ -139,6 +143,16 @@ confirmation-gated writes. Its stdio subprocess self-test establishes only the
 shared Core recovery projection, not live host or provider conformance. The
 self-test restarts the server with a call pending, rehydrates it, repairs planted
 partial state, and rejects stale or tampered checkpoints.
+
+The same service exposes `soter_prepare_operation_plan` and
+`soter_complete_operation_plan`; the CLI equivalents are `plan-prepare` and
+`plan-complete`. The initial plan contract executes fixed portable inputs in
+order with one outstanding call and stop-on-failure behavior. Every completion
+must include the exact checkpoint and current call IDs. Normalized outputs stay
+in private state while raw host responses do not. The interface supplies no
+write approval, so confirmation-gated steps block without arguments. Output
+bindings, branching, parallelism, plan-level retries, compensation,
+approval-bound write batches, and rollback remain future contracts.
 
 Private run and call state lives under `.soter/state`, uses atomic restricted
 files, and is ignored by Git. `soter_list_host_calls` and

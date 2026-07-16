@@ -3,11 +3,13 @@ import * as z from 'zod/v4';
 
 import {
   completeDurableCapabilityExecution,
+  completeDurableOperationPlanExecution,
   completeDurableProviderProbeExecution,
   failDurableHostExecution,
   getDurableHostExecution,
   listDurableHostExecutions,
   prepareDurableCapabilityExecution,
+  prepareDurableOperationPlanExecution,
   prepareDurableProviderProbeExecution
 } from '../service.mjs';
 
@@ -43,7 +45,7 @@ export function createSoterMcpServer({ root, host }) {
   const server = new McpServer(
     { name: 'soter-core', version: '0.1.0' },
     {
-      instructions: 'Soter Core validates exact locks and runs for the active ' + host + ' host projection, then saves a private durable checkpoint before emitting a provider-neutral operation resolved to an exact native host tool. After compaction or restart, use soter_list_host_calls and soter_get_host_call to recover pending work. Only when checkpoint.call.state is requested, use checkpoint.call.transport.operation for explanation and invoke exactly checkpoint.call.transport.tool with checkpoint.call.arguments through checkpoint.call.transport.server and its separately configured provider MCP route. Pass the native result unchanged with checkpoint.id to the matching complete tool. Never fabricate a provider response. Soter does not invoke providers, persist raw responses, or authorize connected writes.'
+      instructions: 'Soter Core validates exact locks and runs for the active ' + host + ' host projection, then saves a private durable checkpoint before emitting a provider-neutral operation resolved to an exact native host tool. After compaction or restart, use soter_list_host_calls and soter_get_host_call to recover pending work. For a one-call checkpoint, invoke exactly checkpoint.call.transport.tool. For an operation plan, invoke exactly currentCall.transport.tool and return both checkpoint.id and currentCall.id; a successful completion may emit the next exact call. Always pass the requested arguments through the separately configured provider MCP route and return the native result unchanged. Never fabricate a provider response. Soter does not invoke providers, persist raw responses, or authorize connected writes.'
     }
   );
 
@@ -147,6 +149,52 @@ export function createSoterMcpServer({ root, host }) {
     return result(completed, 'Validated and normalized the provider capability result.');
   });
 
+  server.registerTool('soter_prepare_operation_plan', {
+    title: 'Prepare Soter operation plan',
+    description: 'Validate and durably checkpoint an exact sequential capability plan, then emit only its first policy-bound native host call. This interface supplies no connected-write approval.',
+    inputSchema: {
+      lock_path: z.string().min(1),
+      run_path: z.string().min(1),
+      plan: jsonObject,
+      at: z.string().min(20).optional()
+    },
+    outputSchema: resultSchema,
+    annotations: statefulAnnotations
+  }, async (input) => {
+    const prepared = await prepareDurableOperationPlanExecution({
+      root,
+      lockPath: input.lock_path,
+      runPath: input.run_path,
+      plan: input.plan,
+      at: input.at,
+      expectedHost: host
+    });
+    return result(prepared, 'Durably checkpointed an exact sequential operation plan and emitted at most one native host call.');
+  });
+
+  server.registerTool('soter_complete_operation_plan', {
+    title: 'Advance Soter operation plan',
+    description: 'Complete the exact current plan call, persist only normalized output, and atomically emit the next policy-bound call or close the plan.',
+    inputSchema: {
+      checkpoint_id: z.string().min(1),
+      call_id: z.string().min(1),
+      response: jsonObject,
+      at: z.string().min(20).optional()
+    },
+    outputSchema: resultSchema,
+    annotations: completionAnnotations
+  }, async (input) => {
+    const completed = await completeDurableOperationPlanExecution({
+      root,
+      checkpointId: input.checkpoint_id,
+      callId: input.call_id,
+      response: input.response,
+      at: input.at,
+      expectedHost: host
+    });
+    return result(completed, 'Advanced the exact operation plan without persisting the native provider response.');
+  });
+
   server.registerTool('soter_fail_host_call', {
     title: 'Record Soter host call failure',
     description: 'Close an exact durable probe or capability checkpoint as failed when the host could not obtain a native provider result.',
@@ -164,6 +212,7 @@ export function createSoterMcpServer({ root, host }) {
         'unknown'
       ]),
       message: z.string().min(1),
+      call_id: z.string().min(1).optional(),
       at: z.string().min(20).optional()
     },
     outputSchema: resultSchema,
@@ -174,6 +223,7 @@ export function createSoterMcpServer({ root, host }) {
       checkpointId: input.checkpoint_id,
       errorKind: input.error_kind,
       message: input.message,
+      callId: input.call_id,
       at: input.at,
       expectedHost: host
     });

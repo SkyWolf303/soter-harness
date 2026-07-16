@@ -9,6 +9,16 @@ import {
 import { containsCredentialMaterial } from './host-runtime.mjs';
 import { fingerprintJson, readJson, repoRelativePath, resolveRepoPath } from './lib/canonical-json.mjs';
 import {
+  assertOperationPlanCheckpoint,
+  assertOperationPlanDocument,
+  completeOperationPlanStep,
+  createOperationPlanCheckpoint,
+  failOperationPlanStep,
+  operationPlanCurrentCall,
+  preflightOperationPlanSteps,
+  requestNextOperationPlanStep
+} from './operation-plans.mjs';
+import {
   completeProviderProbeCall,
   failProviderProbeCall,
   prepareProviderProbeCall
@@ -111,6 +121,9 @@ function sealCheckpoint(checkpoint) {
 }
 
 function assertCheckpoint(root, checkpoint) {
+  if (checkpoint?.$contract === 'soter://contracts/operation-plan-checkpoint/v1') {
+    return assertOperationPlanCheckpoint(root, checkpoint);
+  }
   contractFailures(
     root,
     checkpoint,
@@ -239,6 +252,39 @@ function syncRunWithCheckpoint(run, checkpoint) {
   } else {
     next.lifecycleState = 'paused';
   }
+  return next;
+}
+
+function operationPlanRunEntry(checkpoint) {
+  const currentCall = operationPlanCurrentCall(checkpoint);
+  return {
+    id: 'operation-plan.' + checkpoint.plan.id,
+    kind: 'operation-plan',
+    planId: checkpoint.plan.id,
+    state: checkpoint.state,
+    planFingerprint: checkpoint.planFingerprint,
+    currentStepId: checkpoint.currentStepId,
+    currentCallId: currentCall?.id || null,
+    updatedAt: checkpoint.updatedAt,
+    details: checkpoint.state === 'requested'
+      ? 'Core is waiting for the exact native result for step ' + checkpoint.currentStepId + '.'
+      : 'Core closed the sequential operation plan in state ' + checkpoint.state + '.'
+  };
+}
+
+function syncRunWithOperationPlan(run, checkpoint) {
+  let next = structuredClone(run);
+  for (const step of checkpoint.steps) {
+    if (!step.call) continue;
+    next = syncRunWithCheckpoint(next, { kind: 'capability', call: step.call });
+  }
+  const entry = operationPlanRunEntry(checkpoint);
+  const index = next.checkpoints.findIndex((item) => item.id === entry.id);
+  if (index >= 0) next.checkpoints[index] = entry;
+  else next.checkpoints.push(entry);
+  next.lifecycleState = checkpoint.state === 'requested' || checkpoint.state === 'completed'
+    ? 'executing'
+    : 'paused';
   return next;
 }
 
@@ -406,19 +452,27 @@ function baseDurableCheckpoint({ root, lockFile, lock, kind, call, input, result
 
 function persistDurableCheckpoint(root, checkpoint, run = null) {
   let next = structuredClone(checkpoint);
-  let nextRun = run ? syncRunWithCheckpoint(run, next) : null;
+  let nextRun = run
+    ? (next.kind === 'operation-plan'
+      ? syncRunWithOperationPlan(run, next)
+      : syncRunWithCheckpoint(run, next))
+    : null;
   if (nextRun) {
     next.run.fingerprint = fingerprintJson(nextRun);
   }
   next = sealCheckpoint(next);
   const checkpointState = writeHostCallCheckpoint(root, next);
   const runState = nextRun ? writeRunState(root, nextRun) : null;
-  return {
+  const persisted = {
     checkpoint: next,
     checkpointPath: checkpointState.path,
     run: nextRun,
     runPath: runState?.path || null
   };
+  if (next.kind === 'operation-plan') {
+    persisted.currentCall = operationPlanCurrentCall(next);
+  }
+  return persisted;
 }
 
 function stageDurableRun(root, lockFile, lock, runPath) {
@@ -481,6 +535,22 @@ function durableRunForCheckpoint(root, lockFile, lock, checkpoint) {
     ? EXECUTABLE_RUN_STATES
     : DURABLE_RUN_STATES;
   let run = assertExactRun(root, lockFile, lock, state.run, allowedStates);
+  if (checkpoint.kind === 'operation-plan') {
+    const currentPlanEntry = run.checkpoints.find((item) => {
+      return item.id === 'operation-plan.' + checkpoint.plan.id;
+    });
+    if (currentPlanEntry
+      && (currentPlanEntry.planFingerprint !== checkpoint.planFingerprint
+        || Date.parse(currentPlanEntry.updatedAt) > Date.parse(checkpoint.updatedAt))) {
+      throw new Error('Durable run contains operation-plan state newer than or unrelated to the checkpoint.');
+    }
+    const repaired = syncRunWithOperationPlan(run, checkpoint);
+    if (fingerprintJson(repaired) !== fingerprintJson(run)) {
+      writeRunState(root, repaired);
+      run = repaired;
+    }
+    return run;
+  }
   const expectedEntry = runCheckpointEntry(checkpoint.call);
   const currentEntry = run.checkpoints.find((item) => item.id === expectedEntry.id);
   if (currentEntry && currentEntry.callFingerprint !== expectedEntry.callFingerprint) {
@@ -506,10 +576,60 @@ function pendingCheckpointForRun(root, runId, expectedHost) {
     .map((item) => assertCheckpoint(path.resolve(root), item.checkpoint))
     .find((checkpoint) => {
       return (!expectedHost || checkpoint.host.id === expectedHost)
-        && checkpoint.kind === 'capability'
+        && (checkpoint.kind === 'capability' || checkpoint.kind === 'operation-plan')
         && checkpoint.run?.id === runId
         && checkpoint.state === 'requested';
     }) || null;
+}
+
+export async function prepareDurableOperationPlanExecution({
+  root,
+  lockPath,
+  runPath,
+  plan,
+  at,
+  expectedHost
+}) {
+  const resolvedRoot = path.resolve(root);
+  assertOperationPlanDocument(resolvedRoot, plan);
+  if (containsCredentialMaterial(plan)) {
+    throw new Error('Operation plan contains credential-like material and cannot enter durable state.');
+  }
+  const { file: lockFile, lock } = exactLock(resolvedRoot, lockPath, expectedHost);
+  const createdAt = atOrNow(at || plan.createdAt);
+  await preflightOperationPlanSteps({
+    root: resolvedRoot,
+    lock,
+    plan,
+    at: createdAt
+  });
+  const durable = stageDurableRun(resolvedRoot, lockFile, lock, runPath);
+  const pending = pendingCheckpointForRun(resolvedRoot, durable.run.id, expectedHost);
+  if (pending) {
+    throw new Error(
+      'Run ' + durable.run.id + ' already has pending host checkpoint ' + pending.id + '.'
+    );
+  }
+  let checkpoint = createOperationPlanCheckpoint({
+    root: resolvedRoot,
+    lock,
+    lockPath: repoRelativePath(resolvedRoot, lockFile),
+    run: durable.run,
+    runSourcePath: durable.sourcePath,
+    runStatePath: durable.statePath,
+    plan,
+    at: createdAt
+  });
+  if (hasHostCallCheckpoint(resolvedRoot, checkpoint.id)) {
+    throw new Error('Durable operation plan checkpoint already exists: ' + checkpoint.id + '.');
+  }
+  checkpoint = await requestNextOperationPlanStep({
+    root: resolvedRoot,
+    lock,
+    checkpoint,
+    at: createdAt
+  });
+  return persistDurableCheckpoint(resolvedRoot, checkpoint, durable.run);
 }
 
 export async function prepareDurableProviderProbeExecution(options) {
@@ -592,14 +712,45 @@ export async function prepareDurableCapabilityExecution(options) {
 
 function durableResult(root, state) {
   const run = state.checkpoint.kind === 'capability'
+    || state.checkpoint.kind === 'operation-plan'
     ? durableRunForCheckpoint(root, state.lockFile, state.lock, state.checkpoint)
     : null;
-  return {
+  const result = {
     checkpoint: state.checkpoint,
     checkpointPath: repoRelativePath(root, state.checkpointFile),
     run,
     runPath: run ? repoRelativePath(root, readRunState(root, run.id).file) : null
   };
+  if (state.checkpoint.kind === 'operation-plan') {
+    result.currentCall = operationPlanCurrentCall(state.checkpoint);
+  }
+  return result;
+}
+
+export async function completeDurableOperationPlanExecution({
+  root,
+  checkpointId,
+  callId,
+  response,
+  at,
+  expectedHost
+}) {
+  const state = exactCheckpoint(root, checkpointId, expectedHost);
+  const checkpoint = state.checkpoint;
+  if (checkpoint.kind !== 'operation-plan') {
+    throw new Error('Checkpoint ' + checkpointId + ' is not an operation plan.');
+  }
+  const run = durableRunForCheckpoint(root, state.lockFile, state.lock, checkpoint);
+  const completed = await completeOperationPlanStep({
+    root,
+    lock: state.lock,
+    checkpoint,
+    callId,
+    response,
+    at: atOrNow(at)
+  });
+  if (completed.idempotent) return durableResult(root, state);
+  return persistDurableCheckpoint(root, completed.checkpoint, run);
 }
 
 export async function completeDurableProviderProbeExecution({
@@ -683,16 +834,34 @@ export function failDurableHostExecution({
   checkpointId,
   errorKind,
   message,
+  callId,
   at,
   expectedHost
 }) {
   const state = exactCheckpoint(root, checkpointId, expectedHost);
   const checkpoint = state.checkpoint;
+  if (checkpoint.kind === 'operation-plan') {
+    if (!callId) throw new Error('Operation plan failures require the exact current call ID.');
+    const run = durableRunForCheckpoint(root, state.lockFile, state.lock, checkpoint);
+    const failed = failOperationPlanStep({
+      root,
+      lock: state.lock,
+      checkpoint,
+      callId,
+      error: { kind: errorKind, message },
+      at: atOrNow(at)
+    });
+    if (failed.idempotent) return durableResult(root, state);
+    return persistDurableCheckpoint(root, failed.checkpoint, run);
+  }
   if (checkpoint.state !== 'requested') {
     if (checkpoint.call.error?.kind === errorKind && checkpoint.call.error?.message === message) {
       return durableResult(root, state);
     }
     throw new Error('Only a requested host call checkpoint can record a host failure.');
+  }
+  if (callId && checkpoint.call.id !== callId) {
+    throw new Error('Host failure does not match the exact checkpoint call ID.');
   }
   const completedAt = atOrNow(at);
   const failedCall = checkpoint.kind === 'capability'
@@ -725,10 +894,14 @@ export function failDurableHostExecution({
 
 export function getDurableHostExecution({ root, checkpointId, expectedHost }) {
   const state = loadedCheckpoint(root, checkpointId, expectedHost);
-  return {
+  const result = {
     checkpoint: state.checkpoint,
     checkpointPath: repoRelativePath(root, state.checkpointFile)
   };
+  if (state.checkpoint.kind === 'operation-plan') {
+    result.currentCall = operationPlanCurrentCall(state.checkpoint);
+  }
+  return result;
 }
 
 export function getDurableProviderProbe({ root, checkpointId, expectedHost }) {
@@ -746,16 +919,26 @@ export function listDurableHostExecutions({ root, state, expectedHost }) {
     .map((item) => assertCheckpoint(path.resolve(root), item.checkpoint))
     .filter((checkpoint) => !expectedHost || checkpoint.host.id === expectedHost)
     .filter((checkpoint) => !state || checkpoint.state === state)
-    .map((checkpoint) => ({
-      id: checkpoint.id,
-      kind: checkpoint.kind,
-      state: checkpoint.state,
-      callId: checkpoint.call.id,
-      updatedAt: checkpoint.updatedAt,
-      host: checkpoint.host.id,
-      provider: checkpoint.call.provider.implementation,
-      capability: checkpoint.kind === 'capability' ? checkpoint.call.capability.id : null,
-      runId: checkpoint.run?.id || null
-    }));
+    .map((checkpoint) => {
+      const call = checkpoint.kind === 'operation-plan'
+        ? operationPlanCurrentCall(checkpoint)
+          || checkpoint.steps.findLast((step) => step.call)?.call
+        : checkpoint.call;
+      return {
+        id: checkpoint.id,
+        kind: checkpoint.kind,
+        state: checkpoint.state,
+        callId: call?.id || null,
+        updatedAt: checkpoint.updatedAt,
+        host: checkpoint.host.id,
+        provider: call?.provider.implementation || null,
+        capability: checkpoint.kind === 'provider-probe'
+          ? null
+          : call?.capability.id || null,
+        runId: checkpoint.run?.id || null,
+        planId: checkpoint.kind === 'operation-plan' ? checkpoint.plan.id : null,
+        currentStepId: checkpoint.kind === 'operation-plan' ? checkpoint.currentStepId : null
+      };
+    });
   return { checkpoints };
 }

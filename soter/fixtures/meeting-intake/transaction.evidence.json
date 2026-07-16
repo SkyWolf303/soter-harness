@@ -9,17 +9,17 @@
     "id": "run.meeting-intake.transaction-fixture",
     "version": null
   },
-  "configurationLockFingerprint": "sha256:c5d982b39995cb4465ec7a900cd6a416d892bfc90283f90645b65ab0d3237396",
+  "configurationLockFingerprint": "sha256:6481fee66130064cbfd77dd82a0a404764a9d92ca3d35f05beb713f71b223235",
   "dependencies": [
     {
       "id": "kernel.soter",
       "version": "0.1.0",
-      "fingerprint": "sha256:32f37d1dadd6af90fcdc127473f0bfbf8d5d54455a67e77dd55f9bff78d0d893"
+      "fingerprint": "sha256:40bf6aa591645812897b31f08db3cf7324e9c8871d78dd438af0ca68f28569ea"
     },
     {
       "id": "core.runtime",
       "version": "0.1.0",
-      "fingerprint": "sha256:bf81ba19f17ae341743bad2d42b510e47241cd9c74e92f9a2c38ab712403a62b"
+      "fingerprint": "sha256:b824f391f369fd2a3e20cf042541c03805d1e7d637bc3b294489627e996af8e7"
     },
     {
       "id": "context.crm",
@@ -133,12 +133,12 @@
     {
       "role": "change-set",
       "id": "changeset.meeting-intake.transaction-fixture",
-      "fingerprint": "sha256:a8bf48cd3d855b4629ce322091b983cb84821f6bd01f9d24a45926a3ff310ee5"
+      "fingerprint": "sha256:bce14fae2cf21c41bf13efa8040645c8e15228547c4a7a01d887bab6274c6816"
     },
     {
       "role": "approval",
       "id": "approval.meeting-intake.transaction-fixture",
-      "fingerprint": "sha256:1d482f72657b121dc60fa7d680c035d66a81421ee3fdfa5249c150ac17aa9d43"
+      "fingerprint": "sha256:4f4852f580f0206cd5eff767797e924781161946abcd1f6fc63f822ba0c88ef2"
     }
   ],
   "effects": [

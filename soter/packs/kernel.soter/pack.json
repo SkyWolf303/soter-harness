@@ -32,6 +32,8 @@
     { "path": "soter/contracts/provider-probe-call.schema.json", "role": "definition" },
     { "path": "soter/contracts/host-tool-call.schema.json", "role": "definition" },
     { "path": "soter/contracts/host-call-checkpoint.schema.json", "role": "definition" },
+    { "path": "soter/contracts/operation-plan.schema.json", "role": "definition" },
+    { "path": "soter/contracts/operation-plan-checkpoint.schema.json", "role": "definition" },
     { "path": "soter/contracts/context-snapshot.schema.json", "role": "definition" },
     { "path": "soter/contracts/provider-fixture.schema.json", "role": "definition" },
     { "path": "soter/contracts/approval.schema.json", "role": "definition" },
