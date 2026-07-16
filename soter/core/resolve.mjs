@@ -1,0 +1,205 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import { verifySoter } from '../kernel/verify.mjs';
+import {
+  fingerprintJson,
+  fingerprintPath,
+  readJson,
+  repoRelativePath,
+  resolveRepoPath
+} from './lib/canonical-json.mjs';
+
+export const RESOLVER_ID = 'core.resolver';
+export const RESOLVER_VERSION = '0.1.0';
+
+const layerOrder = new Map([
+  ['kernel', 0],
+  ['core', 1],
+  ['context', 2],
+  ['automation', 3],
+  ['integration', 4]
+]);
+
+function compareText(left, right) {
+  return left.localeCompare(right, 'en');
+}
+
+function findDefaultConfiguration(root) {
+  const directory = path.join(root, 'soter', 'configurations');
+  const candidates = fs.readdirSync(directory)
+    .filter((name) => name.endsWith('.config.json'))
+    .sort()
+    .map((name) => path.join(directory, name));
+  if (candidates.length !== 1) {
+    throw new Error('Expected exactly one default configuration; pass --config explicitly.');
+  }
+  return candidates[0];
+}
+
+function configurationFile(root, requestedPath) {
+  if (!requestedPath) {
+    return findDefaultConfiguration(root);
+  }
+  return resolveRepoPath(root, requestedPath);
+}
+
+function requireCleanGraph(verification) {
+  if (verification.health.valid !== 'passed') {
+    const codes = verification.violations
+      .filter((item) => item.level !== 'warn')
+      .map((item) => item.code)
+      .join(', ');
+    throw new Error('Cannot resolve an invalid Soter graph' + (codes ? ': ' + codes : '.'));
+  }
+}
+
+function selectedResolution(verification, name) {
+  const matches = verification.resolvedConfigurations.filter((item) => item.name === name);
+  if (matches.length !== 1) {
+    throw new Error('Expected one resolved configuration named ' + name + '; found ' + matches.length + '.');
+  }
+  return matches[0];
+}
+
+function packManifestPath(root, id) {
+  return path.join(root, 'soter', 'packs', id, 'pack.json');
+}
+
+function capabilityContractPath(root, id) {
+  return path.join(root, 'soter', 'capabilities', id + '.json');
+}
+
+function hostManifestPath(root, host) {
+  return path.join(root, 'soter', 'hosts', host, 'adapter.json');
+}
+
+function graphFingerprint(lock) {
+  const unsigned = { ...lock };
+  delete unsigned.graphFingerprint;
+  return fingerprintJson(unsigned);
+}
+
+export function fingerprintLock(lock) {
+  return fingerprintJson(lock);
+}
+
+export function resolveConfiguration({ root, configPath } = {}) {
+  const resolvedRoot = path.resolve(root || path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..'));
+  const file = configurationFile(resolvedRoot, configPath);
+  const configuration = readJson(file);
+  if (configuration.$contract !== 'soter://contracts/configuration/v1') {
+    throw new Error('Not a Soter configuration: ' + repoRelativePath(resolvedRoot, file));
+  }
+
+  const verification = verifySoter(resolvedRoot, { includeRuntimeArtifacts: false });
+  requireCleanGraph(verification);
+  const resolution = selectedResolution(verification, configuration.name);
+
+  const manifests = new Map(resolution.selections.map((selection) => {
+    const manifestPath = packManifestPath(resolvedRoot, selection.id);
+    return [selection.id, { path: manifestPath, doc: readJson(manifestPath) }];
+  }));
+
+  const packs = resolution.selections.map((selection) => {
+    const manifest = manifests.get(selection.id);
+    return {
+      id: selection.id,
+      version: manifest.doc.version,
+      layer: manifest.doc.layer,
+      releaseStage: manifest.doc.releaseStage,
+      evidenceMaturity: manifest.doc.evidenceMaturity,
+      source: selection.source,
+      reason: selection.reason,
+      manifestFingerprint: fingerprintJson(manifest.doc),
+      artifacts: manifest.doc.artifacts.map((artifact) => ({
+        path: artifact.path,
+        role: artifact.role,
+        fingerprint: fingerprintPath(resolveRepoPath(resolvedRoot, artifact.path))
+      })).sort((left, right) => compareText(left.path, right.path))
+    };
+  }).sort((left, right) => {
+    return layerOrder.get(left.layer) - layerOrder.get(right.layer) || compareText(left.id, right.id);
+  });
+
+  const dependencies = resolution.dependencies.map((dependency) => ({ ...dependency }))
+    .sort((left, right) => compareText(left.from, right.from) || compareText(left.to, right.to));
+
+  const capabilities = [...new Set(resolution.bindings.map((binding) => binding.capability))]
+    .sort(compareText)
+    .map((id) => {
+      const contract = readJson(capabilityContractPath(resolvedRoot, id));
+      return {
+        id,
+        version: contract.version,
+        contractFingerprint: fingerprintJson(contract)
+      };
+    });
+
+  const bindings = resolution.bindings.map((binding) => ({
+    capability: binding.capability,
+    capabilityVersion: binding.capabilityVersion,
+    providerPack: binding.providerPack,
+    providerVersion: binding.providerVersion,
+    authorities: [...binding.authorities].sort(compareText),
+    effects: [...binding.effects].sort(compareText),
+    reason: binding.reason
+  })).sort((left, right) => compareText(left.capability, right.capability));
+
+  const authorities = resolution.authorities.map((authority) => ({
+    ...authority,
+    declarationFingerprint: fingerprintJson(authority)
+  })).sort((left, right) => compareText(left.id, right.id));
+
+  const hostPath = hostManifestPath(resolvedRoot, configuration.host.id);
+  const hostAdapter = readJson(hostPath);
+  const projections = hostAdapter.projections.map((projection) => {
+    const target = resolveRepoPath(resolvedRoot, projection.path);
+    return {
+      path: projection.path,
+      role: projection.role,
+      fingerprint: fingerprintPath(target)
+    };
+  }).sort((left, right) => compareText(left.path, right.path));
+
+  const lock = {
+    $contract: 'soter://contracts/lock/v1',
+    contractVersion: '1.0.0',
+    configuration: {
+      name: configuration.name,
+      path: repoRelativePath(resolvedRoot, file),
+      fingerprint: fingerprintJson(configuration)
+    },
+    resolver: {
+      id: RESOLVER_ID,
+      version: RESOLVER_VERSION
+    },
+    host: {
+      id: hostAdapter.host,
+      adapter: hostAdapter.id,
+      version: hostAdapter.version,
+      manifestFingerprint: fingerprintJson(hostAdapter)
+    },
+    packs,
+    dependencies,
+    capabilities,
+    bindings,
+    authorities,
+    effectPolicies: configuration.effectPolicies,
+    settings: configuration.settings,
+    projections
+  };
+  lock.graphFingerprint = graphFingerprint(lock);
+  return lock;
+}
+
+export function lockMatchesResolution({ lock, ...options }) {
+  const expected = resolveConfiguration(options);
+  return {
+    matches: fingerprintLock(lock) === fingerprintLock(expected),
+    expected,
+    expectedFingerprint: fingerprintLock(expected),
+    observedFingerprint: fingerprintLock(lock)
+  };
+}

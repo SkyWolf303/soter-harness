@@ -1,0 +1,45 @@
+{
+  "$contract": "soter://contracts/pack/v1",
+  "contractVersion": "1.0.0",
+  "id": "kernel.soter",
+  "version": "0.1.0",
+  "layer": "kernel",
+  "releaseStage": "experimental",
+  "evidenceMaturity": "declared",
+  "summary": "Governs how Soter systems are defined, validated, evaluated, changed, versioned, and packaged.",
+  "dependencies": [],
+  "capabilities": {
+    "requires": [],
+    "provides": []
+  },
+  "authorities": [],
+  "effects": [],
+  "artifacts": [
+    { "path": "soter/contracts/pack.schema.json", "role": "definition" },
+    { "path": "soter/contracts/capability.schema.json", "role": "definition" },
+    { "path": "soter/contracts/configuration.schema.json", "role": "definition" },
+    { "path": "soter/contracts/host-adapter.schema.json", "role": "definition" },
+    { "path": "soter/contracts/scenario.schema.json", "role": "definition" },
+    { "path": "soter/contracts/migration.schema.json", "role": "definition" },
+    { "path": "soter/contracts/lock.schema.json", "role": "definition" },
+    { "path": "soter/contracts/run-envelope.schema.json", "role": "definition" },
+    { "path": "soter/contracts/evidence.schema.json", "role": "definition" },
+    { "path": "soter/contracts/doctor-result.schema.json", "role": "definition" },
+    { "path": "soter/contracts/capability-provider.schema.json", "role": "definition" },
+    { "path": "soter/contracts/provider-probe.schema.json", "role": "definition" },
+    { "path": "soter/contracts/host-tool-call.schema.json", "role": "definition" },
+    { "path": "soter/contracts/context-snapshot.schema.json", "role": "definition" },
+    { "path": "soter/contracts/provider-fixture.schema.json", "role": "definition" },
+    { "path": "soter/contracts/approval.schema.json", "role": "definition" },
+    { "path": "soter/contracts/change-set.schema.json", "role": "definition" },
+    { "path": "soter/kernel/verify.mjs", "role": "implementation" }
+  ],
+  "compatibility": {
+    "baseContract": "^1.0.0",
+    "hosts": ["codex", "claude"]
+  },
+  "verification": {
+    "maxLevel": "static",
+    "scenarios": []
+  }
+}

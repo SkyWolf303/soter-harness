@@ -1,0 +1,489 @@
+# Soter architecture
+
+This document defines the intended architecture of Soter. It describes the
+contracts the implementation must satisfy without making Claude, Codex, or any
+external service part of the architecture itself.
+
+## Purpose and design principles
+
+Soter is a user-owned harness for assembling durable context, reliable
+automations, and external integrations around capable agent hosts. It exists so
+useful behavior can accumulate across sessions and users without becoming an
+unexplained pile of prompts, provider-specific routines, and stale assumptions.
+
+The harness should help a user:
+
+- Understand which systems are present, why they exist, and what they can do.
+- Select or remove capabilities without guessing about hidden dependencies.
+- Give automations the right context and connect them to interchangeable
+  integrations through explicit contracts.
+- Use the same harness through Codex, Claude, and future compatible hosts.
+- Know whether a system is configured, tested, working, degraded, or unknown.
+- Turn observed failures and successful patterns into contained improvements.
+- Share packs and configurations without unintentionally sharing private data,
+  credentials, or runtime state.
+- Let proven, bounded behavior become more autonomous without granting blanket
+  authority to an agent.
+
+Soter is successful when a new user or agent can inspect the configured harness
+and continue its operation or development without needing the original author's
+conversation history. The answer to “why is this here?” should live in the
+system contract; the answer to “is it working?” should point to current
+evidence.
+
+### What Soter is not
+
+Soter is not a model, a replacement for an agent host, or a synonym for the
+model's context window. It is not a database that must copy every source of
+truth, and it is not a workflow engine that requires every step to be
+deterministic. It does not make external providers interchangeable where their
+semantics genuinely differ.
+
+Soter also does not define learning as unrestricted self-modification. It may
+adapt within a run, improve a user's private configuration, and evolve shared
+packs, but each scope has its own authority, evidence, and promotion boundary.
+
+### Design principles
+
+1. **Make the graph explicit.** Systems declare their dependencies,
+   capabilities, authorities, effects, and evidence. Folder placement and
+   conversational memory cannot be the only link between important behavior.
+2. **Keep one canonical authority per fact.** A source may live in the harness
+   or externally. Its role, freshness, edit path, and projection behavior are
+   declared rather than inferred from location.
+3. **Separate responsibility from delivery.** The five layers describe what a
+   system owns. Packs describe how systems are selected and shared. Host
+   adapters describe how the same contracts are delivered through an agent
+   runtime.
+4. **Keep outcomes separate from providers.** Automations express intended
+   outcomes and required capabilities. Integrations implement those
+   capabilities and expose provider-specific constraints honestly.
+5. **Make configuration user-owned.** Required base systems are visible;
+   optional systems never activate invisibly. Recommendations explain their
+   reasoning and expand into inspectable configuration.
+6. **Prefer contracts to repeated prose.** Instructions remain useful where
+   judgment is required, but identity, compatibility, effects, authority,
+   configuration, and verification are machine-readable when possible.
+7. **Use deterministic enforcement for deterministic rules.** Agents should
+   not spend judgment remembering constraints that a resolver, schema, effect
+   gate, or checker can enforce reliably.
+8. **Treat evidence as scoped and perishable.** A pass applies to declared
+   claims, dependencies, environments, and freshness boundaries. Unknown,
+   stale, and skipped evidence remain visible.
+9. **Earn autonomy by change class.** Authority expands through demonstrated
+   reliability, containment, monitoring, and rollback. It is revocable and
+   never inferred from confidence alone.
+10. **Improve by consolidation.** Observations do not write directly to shared
+    behavior. Prefer correcting, simplifying, or retiring existing artifacts
+    before creating another rule or exception.
+11. **Design interfaces as projections.** Agents, CLI commands, graphical
+    interfaces, and generated host files consume the same structured core
+    model; none implements a competing version of the truth.
+12. **Migrate through working vertical slices.** Preserve useful behavior,
+    replace one boundary at a time, compare outcomes, and retire compatibility
+    bridges when their evidence supports removal.
+
+### Architectural promise
+
+For every configured behavior, Soter should be able to answer:
+
+- What system owns it?
+- Which layer is responsible for it?
+- Why was it selected?
+- Which context and authorities does it rely on?
+- Which automation produces the outcome?
+- Which integration capabilities can create effects?
+- Which host realizes the behavior?
+- What may be changed, by whom, and under which policy?
+- Which evidence shows that it works?
+- What becomes stale or unavailable when a dependency changes?
+
+If those questions cannot be answered from current contracts and evidence,
+Soter reports the gap instead of asking the user to trust hidden machinery.
+
+## Conceptual model
+
+Soter is both a provider-neutral architecture and a reference implementation
+of that architecture. The model defines what must remain consistent; the
+implementation proves that the model can work on real agent hosts and external
+services.
+
+### The five layers
+
+Layers classify responsibility and provide a simple order for assembling and
+understanding a harness. They are not a literal execution pipeline: a run may
+read context more than once, call several integrations, or return to an
+automation after an external result arrives.
+
+| Layer | Responsibility | Belongs here | Does not belong here |
+|---|---|---|---|
+| **Kernel** | Govern how Soter is defined, validated, evaluated, changed, and packaged. | Contract schemas, graph checks, evaluation rules, lifecycle governance. | Domain knowledge, user routines, or vendor behavior. |
+| **Core** | Provide the portable runtime capabilities required by every harness. | Context assembly, configuration resolution, capability binding, effect policy, evidence, and health. | User- or domain-specific rules or provider-specific implementations. |
+| **Context** | Define the world the harness works with and where its truth comes from. | Concepts, policies, schemas, relationships, authority declarations, and retrieval rules. | Orchestration, triggers, or vendor API choreography. |
+| **Automation** | Turn context into a defined outcome or repeatable routine. | Triggers, inputs, steps, decisions, outputs, recovery behavior, and required capabilities. | Credentials, provider-specific calls, or hidden domain definitions. |
+| **Integration** | Fulfill capabilities through local tools and external services. | Authentication requirements, provider adapters, data translation, typed errors, and capability implementations. | Business outcomes or automation-specific policy. |
+
+Kernel and core are the required base. Each contains multiple required systems
+rather than acting as one oversized system. Context, automation, and
+integration systems are selectable: a user installs only the capabilities they
+want, subject to declared dependencies.
+
+### Context versus runtime context
+
+The context layer does not mean whatever text happens to be in an agent's
+context window. It defines durable meaning and authority: what a contact is,
+which policy governs a process, which schema describes a record, and where the
+canonical value can be found.
+
+Core assembles a bounded runtime view from those declarations for a particular
+request. That view may include local files, retrieved external records, user
+input, and generated intermediate evidence. Runtime context is temporary;
+context contracts and their authority declarations are durable.
+
+### Systems, packs, artifacts, and bundles
+
+- A **system** or **pack** is one coherent, selectable capability classified in
+  one layer. “System” describes its architectural role; “pack” emphasizes that
+  it can be installed, removed, versioned, and shared.
+- An **artifact** is a component owned by a system, such as a contract, guide,
+  policy, template, evaluator, or adapter implementation. Artifacts are not
+  installed independently unless they are promoted into systems of their own.
+- A **bundle** is a named collection of compatible packs. A bundle recommends a
+  useful configuration and explains why each pack is included; it does not
+  create another architectural unit.
+- A **configuration** records the exact packs a user selected, their settings,
+  integration bindings, and trusted authorities. It must be portable,
+  inspectable, and shareable without silently activating optional systems.
+
+A provider integration may implement several capability contracts, and a user
+may install several integrations at once. Configuration binds an automation's
+required capability to the chosen implementation and authority.
+
+### Agent hosts
+
+Codex, Claude, and future agent runtimes are **hosts**, not layers. A host
+adapter projects Soter into that host's native instruction, skill, tool,
+plugin, hook, approval, and scheduling mechanisms. Host-specific files are
+delivery artifacts; they must not redefine Soter's contracts or semantics.
+
+Supporting a host therefore means passing a conformance suite, not merely
+copying files into a recognized folder. The same configured harness should
+preserve its declared meaning, effects, gates, and evidence even when the host
+uses different native mechanisms.
+
+### Vocabulary discipline
+
+Soter introduces a term only when it names a distinction that matters to users
+or can be enforced mechanically. Existing terms such as mechanism, component,
+and engine are retained only where they express a necessary distinction; they
+are not foundational merely because the current harness uses them. One concept
+must have one canonical term, and retired synonyms must not remain as competing
+instructions.
+
+## Operating architecture
+
+The conceptual model above is implemented through a connected set of contracts.
+[CONTRACTS.md](./CONTRACTS.md) is the normative specification for system
+manifests, graph resolution, runtime behavior, configuration, hosts,
+integrations, interfaces, evidence, and health.
+
+### Connections and health
+
+Every pack declares its purpose, requirements, provided interfaces, authorities,
+effects, configuration, verification, compatibility, and maturity. Core
+resolves those declarations into one graph before a configured behavior runs.
+Required connections fail closed; missing optional connections remain visibly
+degraded.
+
+Soter reports four separate assembly states:
+
+- **Valid:** declarations and graph relationships are internally consistent.
+- **Ready:** required packs, authorities, capabilities, permissions, and
+  policies are resolved for the active configuration.
+- **Verified:** applicable checks and evaluations have current passing evidence.
+- **Healthy:** recent runtime evidence shows the configured systems achieving
+  their promised outcomes within policy.
+
+These states and their causes come from one structured source used by agents,
+CLI commands, graphical interfaces, and generated host projections.
+
+### Runtime and learning
+
+One runtime supports inspect, operate, configure, and develop intents. A run
+resolves the user configuration, assembles authority-aware context, establishes
+effects, executes an automation through integration capabilities, verifies its
+promised outcome, and records a durable run envelope and evidence.
+
+Learning has three scopes: temporary adaptation within a run, private
+user-configuration improvement, and shared pack evolution. An operational run
+may create an improvement candidate, but durable pack changes occur in a
+separate development run with explicit authority, evaluation, trial, promotion,
+monitoring, and rollback. Autonomy is granted per effect or change class and is
+earned through evidence rather than agent confidence.
+
+### Configuration and distribution
+
+The user owns an explicit desired configuration. Core resolves it to an exact
+lock while keeping runtime state and secrets separate. The lock fingerprints
+selected manifests, every declared pack artifact, capability contracts,
+authority declarations, and behavior-relevant host projections. Kernel and the
+minimum core are required; context, automation, integration, and optional core
+packs are selectable subject to declared dependencies.
+
+Bundles are transparent recommendations that expand into ordinary
+configurations. Packs and configurations can be shared without silently
+sharing credentials, private runtime state, or optional evidence. Upgrades
+preview contract, permission, migration, projection, and verification changes
+and preserve a rollback path where the effects allow one.
+
+### Hosts, integrations, and interfaces
+
+Codex, Claude, and future agent runtimes are hosts. Tested host adapters project
+the same resolved Soter configuration into each host's native guidance, skills,
+plugins, hooks, approvals, tools, and scheduling features. Host files are
+delivery projections, not independent authorities.
+
+Automations depend on stable capability contracts. Integration packs implement
+those capabilities for providers such as Notion, Gmail, Slack, or Otter and own
+authentication, transport, translation, typed errors, retry behavior, and
+provider limitations. MCP is a supported transport, not the architecture.
+
+For an MCP-backed integration, Core and the host cooperate through a resumable
+boundary:
+
+1. Core resolves the exact capability, provider, authority, effects, and host.
+2. The integration translator converts the portable input into one logical MCP
+   server and allowlisted tool request.
+3. Core validates policy and input before emitting that request. A blocked
+   effect produces no provider arguments and no tool execution.
+4. The host resolves the logical server/tool through its current connector,
+   plugin, or project MCP configuration and performs authentication and native
+   approval handling.
+5. The host returns the result to Core. The integration translator normalizes
+   it into the portable capability output, and Core validates the output and
+   records only the response and output fingerprints needed for traceability.
+
+This keeps provider credentials and raw host transport outside Core while
+preventing Codex- or Claude-qualified tool names from becoming automation API.
+Host configuration proves only that a route is declared. Connected probes and
+behavior evidence are still required to claim readiness or verification.
+
+Core exposes one versioned structured model to agent tools, CLI commands,
+graphical interfaces, and automation triggers. Business rules, graph
+resolution, effect policy, and health calculations live in core so interfaces
+cannot drift.
+
+### Verification
+
+Verification progresses from static and graph validation through fixtures,
+agent scenario trials, contained integration checks, live canaries, and runtime
+monitoring. Every claim points to evidence tied to the exact relevant
+configuration, host, integration, authority, evaluator, and transitive
+dependency fingerprints.
+
+Passed, failed, stale, unknown, skipped, and not-applicable results remain
+distinct. Dependency changes invalidate only the affected evidence. Doctor
+operations provide offline, connected, and canary levels without representing
+checks that did not run as green.
+
+## Evolution from the current harness
+
+The existing repository is a useful working prototype and a source of observed
+behavior. It is not required to be the final directory structure, vocabulary,
+package format, or runtime. Soter evolves it through contained vertical slices
+rather than discarding working mechanisms or pretending the target architecture
+already exists.
+
+### Starting-point assessment
+
+The repository already demonstrates several strong foundations:
+
+- Systems and artifacts carry explicit classification metadata.
+- Molds, standards, and a shared checker make important shape and safety rules
+  mechanical.
+- Checker self-tests plant failures and prove that diagnostics fire.
+- Human-gated changes, isolated worktrees, and scoped staging reduce unsafe
+  concurrent edits.
+- External writes use deliberate confirmation and fetch-merge-write discipline.
+- Live schemas are treated as authorities rather than inferred from one example.
+- Observed failures can become evaluations and durable corrections.
+
+Those mechanisms remain evidence for the target architecture. They are retained
+until a replacement proves the same or stronger contract.
+
+The repository also exposes the gaps this architecture is meant to close:
+
+| Area | Starting point | Required evolution |
+|---|---|---|
+| **Layers** | Kernel, core, context, and automation classify artifacts, while provider behavior is mixed into guides and configuration. | Add the integration layer and enforce its boundary through capability contracts. |
+| **Kernel** | Strong design-time governance and one checker. | Govern system contracts, graph resolution, evidence, packaging, and migrations without becoming the operational runtime. |
+| **Core** | A small policy capability rather than a complete runtime foundation. | Add configuration resolution, context assembly, effect policy, run envelopes, evidence, health, and interface services. |
+| **Context** | Useful domain systems and external authority knowledge exist, but authority and editing behavior are often encoded in prose. | Declare context, authority roles, freshness, and change contracts mechanically. |
+| **Automation** | Guides orchestrate useful real work, often with direct provider details and mutable template assumptions. | Separate outcomes and capability requirements from provider choreography. |
+| **Integration** | MCP servers, plugins, targets, and service-specific instructions are implicit implementation dependencies. | Promote providers into selectable integration packs with typed capabilities, effects, errors, and health. |
+| **Hosts** | Claude project and plugin structures are the effective delivery model. | Make provider-neutral definitions canonical and realize them through tested Claude and Codex adapters. |
+| **Evaluation** | Static checks are strong; scenario cases and golden freshness are mostly manual and direct-dependency based. | Add executable scenarios, multiple trials, durable evidence, and transitive invalidation. |
+| **Configuration** | Installed behavior is inferred from repository contents and host-specific files. | Add explicit desired configuration, resolution, locks, bindings, and generated projections. |
+| **Distribution** | A Claude-oriented plugin and marketplace attempt exist, but the generic base and private user-specific behavior are not truly separated. | Distribute versioned packs, bundles, and shareable user configurations through a host-neutral contract. |
+
+“Built” or “sealed” is not an architectural status. Existing systems may be
+useful and green under current checks while still lacking target contracts,
+portable delivery, executable evidence, or recent health.
+
+### Migration principles
+
+Migration follows these rules:
+
+- **Keep working behavior available.** A current automation remains usable until
+  its replacement passes equivalent outcome and effect verification.
+- **One authority at a time.** Every migrated definition declares whether the
+  legacy file or the new provider-neutral source is canonical. Two writable
+  authorities are never left to drift.
+- **Bridge explicitly.** Compatibility readers, generated projections, aliases,
+  and temporary mappings have owners, diagnostics, and retirement criteria.
+- **Migrate vertical behavior.** Move one useful outcome through context,
+  automation, integration, host realization, evidence, and health instead of
+  reorganizing every file by layer first.
+- **Compare before switching.** Use fixtures, shadow runs, or contained canaries
+  to compare old and new behavior where the effects allow it.
+- **Preserve rollback.** Record the prior lock, authority mapping, generated
+  projection, and external migration consequences before switching.
+- **Remove proven redundancy.** After a bridge's dependents migrate and its
+  retirement checks pass, delete the duplicate path rather than preserving it
+  indefinitely for comfort.
+
+The current `.claude/` tree may remain a temporary source while contracts are
+mapped. Once a provider-neutral definition becomes canonical, Claude files
+become generated or adapter-owned projections. Codex projections are generated
+from the same resolved lock. A mass directory move before that boundary exists
+would change paths without fixing the architecture.
+
+### Migration manifest
+
+A machine-readable migration manifest tracks each existing system and artifact
+through these states:
+
+- **Current:** still authoritative for the working harness.
+- **Mapped:** assigned a target system, layer, contract, and authority without
+  changing runtime behavior.
+- **Bridged:** usable through both legacy delivery and the new runtime, with one
+  declared canonical source.
+- **Migrated:** realized from the target contracts with applicable evidence and
+  health reporting.
+- **Retired:** no configured behavior depends on the legacy artifact or bridge.
+
+Each entry identifies the old location, target identifier, authority status,
+dependents, compatibility bridge, verification claims, rollback path, and
+retirement criteria. The manifest replaces memory and historical narrative as
+the answer to “has this piece migrated?”
+
+### Delivery sequence
+
+The implementation sequence is:
+
+1. **Accept the architecture and preserve a baseline.** Resolve known written
+   contradictions, record current behavior and checks, and stop describing the
+   kernel as complete or sealed.
+2. **Introduce the minimum contract substrate.** Define stable identifiers,
+   system manifests, dependency and capability edges, authority roles, effect
+   declarations, configuration schema, and the migration manifest. Map current
+   artifacts before moving them.
+3. **Prove one end-to-end vertical slice.** Select a current automation that
+   exercises context, at least two integrations, an external effect, a human or
+   policy gate, and outcome verification. Meeting intake is the selected first
+   slice; its declared pack graph and migration mapping live under
+   [soter/](./soter/). Its contained Core context path is now implemented
+   through typed fixture providers without claiming automation execution or
+   connected provider readiness.
+4. **Build the minimum core runtime around that slice.** Resolve its
+   configuration, assemble its run envelope and context, bind capabilities,
+   apply effect policy, record evidence, and report health.
+5. **Separate provider integrations.** Extract provider choreography from the
+   automation into capability contracts and integration packs while retaining a
+   compatibility binding for the current workflow.
+6. **Realize both initial hosts.** Treat the working Claude behavior as a
+   reference, then prove equivalent declared behavior through a Codex adapter.
+   Test each from an otherwise empty consumer configuration.
+7. **Make verification executable.** Add contract fixtures, headless scenario
+   trials, transitive invalidation, connected smoke checks, doctor operations,
+   and CI evidence for the vertical slice.
+8. **Add user configuration and distribution flows.** Support explainable pack
+   selection, bundles, locks, install and upgrade previews, shareable templates,
+   and one distributable clean-install path.
+9. **Expose the shared interfaces.** Build CLI and graphical experiences over
+   the same core model, beginning with configuration, graph, run, evidence, and
+   health views.
+10. **Migrate remaining systems incrementally.** Prioritize frequently used or
+    drift-prone systems, retire bridges after proof, and use observations to
+    improve the contracts and tools.
+
+The sequence establishes structured APIs for UI and distribution early, but
+does not wait for a polished interface or public registry before proving the
+runtime and contract boundaries.
+
+The current checkpoint has completed the contract substrate and the declared
+meeting-intake graph. Step 4 is partially implemented through deterministic
+resolution, artifact-fingerprinted locks, effect-free preflight, typed fixture
+capability dispatch, authority-aware context snapshots, exact-scope approvals,
+transactional fixture writes, rollback proof, read-after-write verification,
+claim-scoped evidence, an offline doctor, and contract-enforced aggregation of
+short-lived connected provider probes. The current target deliberately fails
+connected readiness because it has no connected Notion or Otter provider
+translator. The host MCP routes and resumable request/result contract now
+exist, but provider target mapping, tool-schema conformance, connected probe
+production, authority loading, provider-grade checkpoints, live health, host
+judgment, and host conformance remain future proof boundaries.
+
+### Change unit and completion gate
+
+Each migration change states:
+
+- The user-visible behavior being preserved or intentionally changed.
+- The current and target authorities.
+- The affected graph and evidence invalidation set.
+- The new or changed contracts and compatibility bridge.
+- The verification ladder levels exercised.
+- The rollout, monitoring, rollback, and retirement conditions.
+
+A migration unit is complete only when the target behavior is valid, ready,
+verified, and—where real use exists—has an explicit health state. Passing the
+legacy checker alone does not complete a target migration, and creating a new
+file without switching authority does not count as progress.
+
+### Decision history
+
+Existing ADRs remain a historical archive. They are not a runtime dependency,
+a required README section, or mandatory ceremony for ordinary development.
+The architecture, contracts, tests, migration manifest, and change history
+should normally contain the rationale needed to continue the work.
+
+A lightweight decision note is reserved for a rare cross-cutting choice that
+changes a public contract, security or authority boundary, compatibility
+promise, or expensive-to-reverse direction and whose rationale cannot live
+clearly beside the affected architecture. Such notes explain constraints; they
+do not substitute for executable contracts or evidence.
+
+### Target migration proof
+
+The migration has established the new foundation when a user can:
+
+- Start from the required kernel and core and understand why each base system
+  is present.
+- Select, remove, and replace context, automation, and integration packs through
+  an explicit configuration with a resolved lock.
+- Inspect the full dependency, authority, capability, effect, and evidence
+  graph without reading implementation history.
+- Run a representative automation through both Claude and Codex with equivalent
+  declared outcomes and honest capability-gap reporting.
+- Replace one integration with another implementation of the same capability
+  without rewriting the automation.
+- Resume a run after compaction or restart from its envelope.
+- Receive precise valid, ready, verified, healthy, degraded, stale, and unknown
+  reporting through the same CLI and graphical data model.
+- Install a shared pack or configuration into an otherwise empty consumer and
+  reproduce its declared verification evidence.
+- Observe a divergence, create a contained improvement candidate, evaluate it,
+  promote it under policy, and roll it back if runtime evidence regresses.
+
+Reaching this proof does not finish Soter. It establishes a sustainable base on
+which new systems can be added without returning to guesswork.

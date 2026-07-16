@@ -1,0 +1,79 @@
+{
+  "$contract": "soter://contracts/capability/v1",
+  "contractVersion": "1.0.0",
+  "id": "crm.records.read",
+  "version": "1.0.0",
+  "purpose": "Reads typed CRM records from the configured instance authority with normalized provenance and freshness.",
+  "portability": "portable",
+  "inputSchema": {
+    "type": "object",
+    "required": ["recordTypes"],
+    "properties": {
+      "recordTypes": {
+        "type": "array",
+        "items": { "type": "string" }
+      },
+      "ids": {
+        "type": "array",
+        "items": { "type": "string" }
+      },
+      "filters": { "type": "object" }
+    }
+  },
+  "outputSchema": {
+    "type": "object",
+    "required": ["records", "provenance", "observedAt"],
+    "properties": {
+      "records": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": ["type", "id", "fields"],
+          "properties": {
+            "type": { "type": "string" },
+            "id": { "type": "string" },
+            "fields": { "type": "object" }
+          }
+        }
+      },
+      "provenance": { "type": "object" },
+      "observedAt": { "type": "string" }
+    }
+  },
+  "authentication": {
+    "required": true,
+    "minimumScopes": ["records:read"]
+  },
+  "effects": ["read", "disclosure"],
+  "idempotency": {
+    "mode": "not-applicable",
+    "key": null
+  },
+  "retry": {
+    "safe": true,
+    "maxAttempts": 3,
+    "checkpoint": null
+  },
+  "errors": [
+    "authentication",
+    "authorization",
+    "validation",
+    "conflict",
+    "rate-limit",
+    "unavailable",
+    "retryable",
+    "not-found",
+    "unknown"
+  ],
+  "freshness": {
+    "returnsProvenance": true,
+    "returnsObservedAt": true,
+    "maxAgeSeconds": 300
+  },
+  "health": {
+    "check": "Read a contained fixture record through the selected provider binding.",
+    "fixture": "soter/scenarios/meeting-intake/happy-path.scenario.json",
+    "containedVerification": "Prove filtering, normalized records, provenance, and not-found behavior."
+  },
+  "providerLimitations": []
+}

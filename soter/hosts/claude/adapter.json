@@ -1,0 +1,50 @@
+{
+  "$contract": "soter://contracts/host-adapter/v1",
+  "contractVersion": "1.0.0",
+  "id": "host.claude",
+  "host": "claude",
+  "version": "0.1.0",
+  "releaseStage": "experimental",
+  "evidenceMaturity": "declared",
+  "summary": "Maps the working Claude-oriented prototype into the target host-adapter boundary for later behavior-level conformance.",
+  "projections": [
+    { "path": "CLAUDE.md", "role": "instructions" },
+    { "path": ".claude/skills", "role": "skills" },
+    { "path": ".claude/.mcp.json", "role": "tools" },
+    { "path": ".claude/settings.json", "role": "lifecycle" },
+    { "path": ".claude/hooks/hooks.json", "role": "lifecycle" },
+    { "path": ".claude/.claude-plugin/plugin.json", "role": "configuration" }
+  ],
+  "mcpServers": [
+    {
+      "id": "notion",
+      "delivery": "plugin",
+      "state": "configured",
+      "configurationPath": ".claude/.claude-plugin/plugin.json",
+      "reason": "The Claude plugin declares the official Notion dependency without bundling provider credentials."
+    },
+    {
+      "id": "otter",
+      "delivery": "project",
+      "state": "configured",
+      "configurationPath": ".claude/.mcp.json",
+      "reason": "The Claude project declares Otter's OAuth-authenticated remote MCP server."
+    }
+  ],
+  "mechanisms": {
+    "instructions": "available",
+    "skills": "available",
+    "tools": "available",
+    "lifecycle": "available",
+    "compactionRehydration": "available",
+    "backgroundRuns": "declared",
+    "structuredOutput": "declared"
+  },
+  "conformance": {
+    "maxLevel": "static",
+    "scenarios": []
+  },
+  "limitations": [
+    "Prototype mechanisms exist, but they have not passed the target host conformance scenarios or clean-install proof."
+  ]
+}

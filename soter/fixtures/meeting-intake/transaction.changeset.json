@@ -1,0 +1,93 @@
+{
+  "$contract": "soter://contracts/change-set/v1",
+  "contractVersion": "1.0.0",
+  "id": "changeset.meeting-intake.transaction-fixture",
+  "runId": "run.meeting-intake.transaction-fixture",
+  "createdAt": "2026-07-15T12:00:00.000Z",
+  "configurationLockFingerprint": "sha256:3ba61127ff8c9a83717d7413f1729bd201f6f23518e12a23c9be3cfc241ea8fa",
+  "state": "committed",
+  "scopeFingerprint": "sha256:74b9e60251a53393aaf1417f0e2b09261acf7be63adfaf428e61fbbcde78d9a2",
+  "operations": [
+    {
+      "id": "operation.summary.create",
+      "capability": "crm.records.create",
+      "authority": "authority.crm.instance",
+      "reason": "Create one transcript-grounded meeting summary with a stable deduplication key.",
+      "input": {
+        "recordType": "meeting-summary",
+        "deduplicationKey": "meeting.fixture-001:summary",
+        "fields": {
+          "title": "Acme launch review summary",
+          "meetingId": "meeting.fixture-001",
+          "projectId": "project.launch",
+          "transcriptGrounded": true,
+          "unsupportedCommitmentDisposition": "rejected"
+        },
+        "body": "Launch direction approved. Update and send the launch deck Friday."
+      },
+      "inputFingerprint": "sha256:ef56cc336c01f442333e563e75816254e17f0f29bc72899603b07d4b088a85f1",
+      "state": "passed",
+      "effectId": "effect.meeting-intake.transaction-fixture.summary.create",
+      "outputFingerprint": "sha256:f27751417c126102092045d609bd72cc5d2c7f3beeecf25829bccc819bd91956",
+      "error": null
+    },
+    {
+      "id": "operation.task.update",
+      "capability": "crm.records.update",
+      "authority": "authority.crm.instance",
+      "reason": "Fold the grounded commitment into the existing overlapping task instead of duplicating it.",
+      "input": {
+        "recordType": "task",
+        "id": "task.existing-deck",
+        "expectedVersion": "1",
+        "patch": {
+          "sourceMeetingId": "meeting.fixture-001",
+          "grounding": "transcript",
+          "deduplicated": true
+        }
+      },
+      "inputFingerprint": "sha256:f94072288382ea75e1b25a98acbc9bce6e22247013c9fa28892b2fcff7cd3a3f",
+      "state": "passed",
+      "effectId": "effect.meeting-intake.transaction-fixture.task.update",
+      "outputFingerprint": "sha256:efaf8eaf38af9c6993ca10788217ea001d14ab7952f57b0dad2b48d5b29dab70",
+      "error": null
+    },
+    {
+      "id": "operation.meeting.update",
+      "capability": "crm.records.update",
+      "authority": "authority.crm.instance",
+      "reason": "Mark the source meeting as landed using the summary deduplication key.",
+      "input": {
+        "recordType": "meeting",
+        "id": "meeting.fixture-001",
+        "expectedVersion": "1",
+        "patch": {
+          "summaryStatus": "landed",
+          "summaryDeduplicationKey": "meeting.fixture-001:summary"
+        }
+      },
+      "inputFingerprint": "sha256:0d76e3c1508fc01dd8ac7799e58578b4aaaea96a34b1f21e283fdba1abe32145",
+      "state": "passed",
+      "effectId": "effect.meeting-intake.transaction-fixture.meeting.update",
+      "outputFingerprint": "sha256:7decf2f281493dc2b309a4d81ceedeebd30313f61ac827dd7290b85803ccf673",
+      "error": null
+    }
+  ],
+  "approvalId": "approval.meeting-intake.transaction-fixture",
+  "transaction": {
+    "checkpointFingerprint": "sha256:c5b681fbbd4e26fe81e84ef6d4f8123f7ca597e4f6a3eca30bed01ca70ea7e74",
+    "state": "committed",
+    "rollbackState": "not-required",
+    "restoredFingerprint": null
+  },
+  "verification": {
+    "state": "passed",
+    "effectId": "effect.meeting-intake.transaction-fixture.verify",
+    "criteria": [
+      "Exactly one meeting summary exists for the deduplication key.",
+      "The existing task is grounded in the source meeting without duplication.",
+      "The meeting records the landed summary state."
+    ],
+    "observedFingerprint": "sha256:33edf0ad970a7ab8961c5b06bd79b5eab08edb84da6e456340e982b1dc9535c5"
+  }
+}

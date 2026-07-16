@@ -1,0 +1,447 @@
+{
+  "$contract": "soter://contracts/run-envelope/v1",
+  "contractVersion": "1.0.0",
+  "id": "run.meeting-intake.transaction-fixture",
+  "createdAt": "2026-07-15T12:00:00.000Z",
+  "requestedOutcome": "Assemble grounded meeting-intake context from contained fixtures and stop before automation writes.",
+  "initiation": "user-requested",
+  "intent": "operate",
+  "lifecycleState": "completed",
+  "automation": {
+    "id": "automation.meeting-intake",
+    "version": "0.1.0"
+  },
+  "configurationLock": {
+    "path": "soter/fixtures/meeting-intake/meeting-intake.lock.json",
+    "fingerprint": "sha256:3ba61127ff8c9a83717d7413f1729bd201f6f23518e12a23c9be3cfc241ea8fa"
+  },
+  "graphFingerprint": "sha256:5fac24b51636f37ea4fc9617ce369bc4b504d49e5187a234f20cc2938fde5d03",
+  "context": [
+    {
+      "subject": "crm.records",
+      "authority": "authority.crm.definition",
+      "role": "definition",
+      "uri": "notion://configured/policies",
+      "declarationFingerprint": "sha256:c8dbfdba8c691ed28726d9d1a7172fc8a0c5b6301a60ee799e087cfc81fecc09",
+      "status": "loaded",
+      "provenance": "provider.integration.notion.fixture:sha256:5e2f48da9e0315fa936da8c8a84957357ca03bf501919ff84bf3f5216e742bcb",
+      "freshness": "passed"
+    },
+    {
+      "subject": "crm.records",
+      "authority": "authority.crm.instance",
+      "role": "instance",
+      "uri": "notion://configured/crm",
+      "declarationFingerprint": "sha256:acc46cc0beda542593e6eee2fc829d3df1cde544dde7d4ab8db4e2e2951d215f",
+      "status": "loaded",
+      "provenance": "provider.integration.notion.fixture:sha256:53cd3a1c1c6e57171999030088059a1dcf8de28f9df454c40f372dffcbe7c9b6",
+      "freshness": "passed"
+    },
+    {
+      "subject": "notion.workspace",
+      "authority": "authority.notion.provider",
+      "role": "provider",
+      "uri": "notion://configured-user",
+      "declarationFingerprint": "sha256:0567ff10843e26a53e85ffa7d609867226b00615288193983c4e6f9384050032",
+      "status": "declared",
+      "provenance": "configuration-lock:sha256:3ba61127ff8c9a83717d7413f1729bd201f6f23518e12a23c9be3cfc241ea8fa",
+      "freshness": "unknown"
+    },
+    {
+      "subject": "meeting.transcript",
+      "authority": "authority.otter.provider",
+      "role": "provider",
+      "uri": "otter://configured-user",
+      "declarationFingerprint": "sha256:af8a0c5b1e9d750efabf27107c9e788794a67396933f49e9a629f6e53c2660f2",
+      "status": "loaded",
+      "provenance": "provider.integration.otter.fixture:sha256:4af2b54f30824f47a8e91b08eec7fd0f549b7e4c99f49d3e0805c99f3913daae",
+      "freshness": "passed"
+    },
+    {
+      "subject": "runtime.runs",
+      "authority": "authority.run.evidence",
+      "role": "evidence",
+      "uri": "soter-state://runs",
+      "declarationFingerprint": "sha256:6f39e99f1ebc86fe11ee09cc7170824ac4c11a6fc88371edb673bd2379dacdc8",
+      "status": "declared",
+      "provenance": "configuration-lock:sha256:3ba61127ff8c9a83717d7413f1729bd201f6f23518e12a23c9be3cfc241ea8fa",
+      "freshness": "unknown"
+    }
+  ],
+  "bindings": [
+    {
+      "capability": "crm.records.create",
+      "capabilityVersion": "1.0.0",
+      "providerPack": "integration.notion",
+      "providerVersion": "0.1.0",
+      "authorities": [
+        "authority.crm.instance"
+      ],
+      "effects": [
+        "write"
+      ],
+      "reason": "Notion is the configured instance authority for creating approved CRM records."
+    },
+    {
+      "capability": "crm.records.read",
+      "capabilityVersion": "1.0.0",
+      "providerPack": "integration.notion",
+      "providerVersion": "0.1.0",
+      "authorities": [
+        "authority.crm.definition",
+        "authority.crm.instance"
+      ],
+      "effects": [
+        "disclosure",
+        "read"
+      ],
+      "reason": "Notion is the configured instance authority for reading CRM records."
+    },
+    {
+      "capability": "crm.records.update",
+      "capabilityVersion": "1.0.0",
+      "providerPack": "integration.notion",
+      "providerVersion": "0.1.0",
+      "authorities": [
+        "authority.crm.instance"
+      ],
+      "effects": [
+        "write"
+      ],
+      "reason": "Notion is the configured instance authority for bounded CRM record updates."
+    },
+    {
+      "capability": "meeting.transcript.read",
+      "capabilityVersion": "1.0.0",
+      "providerPack": "integration.otter",
+      "providerVersion": "0.1.0",
+      "authorities": [
+        "authority.otter.provider"
+      ],
+      "effects": [
+        "disclosure",
+        "read"
+      ],
+      "reason": "Otter implements transcript reading for the configured meeting provider authority."
+    }
+  ],
+  "host": {
+    "id": "codex",
+    "adapter": "host.codex",
+    "version": "0.1.0",
+    "manifestFingerprint": "sha256:97a997f51e9b633799333e7917ac6cb81e10ba2b641baf0681ffacb55a51f832"
+  },
+  "effectPolicies": {
+    "read": {
+      "mode": "allow",
+      "reason": "Selected authorities may be read to perform the requested automation."
+    },
+    "disclosure": {
+      "mode": "allow",
+      "reason": "Selected records may enter the configured private run envelope."
+    },
+    "write": {
+      "mode": "confirm",
+      "reason": "The complete external record batch requires one explicit user confirmation."
+    },
+    "dispatch": {
+      "mode": "prohibit",
+      "reason": "Meeting intake does not send messages or publish notifications."
+    },
+    "destructive": {
+      "mode": "prohibit",
+      "reason": "Meeting intake never deletes records or performs destructive changes."
+    }
+  },
+  "approvals": [
+    {
+      "$contract": "soter://contracts/approval/v1",
+      "contractVersion": "1.0.0",
+      "id": "approval.meeting-intake.transaction-fixture",
+      "runId": "run.meeting-intake.transaction-fixture",
+      "createdAt": "2026-07-15T12:00:00.000Z",
+      "actor": "fixture.user",
+      "decision": "approved",
+      "scope": {
+        "changeSetId": "changeset.meeting-intake.transaction-fixture",
+        "fingerprint": "sha256:74b9e60251a53393aaf1417f0e2b09261acf7be63adfaf428e61fbbcde78d9a2",
+        "effects": [
+          "write"
+        ]
+      },
+      "reason": "Approve this exact contained meeting-intake write batch for transactional fixture execution."
+    }
+  ],
+  "checkpoints": [
+    {
+      "id": "effects-established",
+      "state": "passed",
+      "details": "Read and disclosure policies were evaluated before every fixture provider invocation."
+    },
+    {
+      "id": "context-assembled",
+      "state": "passed",
+      "details": "CRM definitions, CRM instances, and the meeting transcript were loaded from typed fixture providers."
+    },
+    {
+      "id": "contained-boundary",
+      "state": "passed",
+      "details": "The run paused before automation execution, provider writes, or external effects."
+    },
+    {
+      "id": "write-batch-approved",
+      "state": "passed",
+      "details": "Approval fingerprint matched the exact proposed operation scope."
+    },
+    {
+      "id": "write-transaction",
+      "state": "passed",
+      "details": "Contained writes completed under one checkpoint with explicit rollback state."
+    },
+    {
+      "id": "read-after-write",
+      "state": "passed",
+      "details": "The fixture store was re-read and checked against the change-set acceptance criteria."
+    }
+  ],
+  "outputs": [
+    {
+      "id": "context.meeting-intake.transaction-fixture",
+      "type": "context-snapshot",
+      "fingerprint": "sha256:820d0fddfad4778ae8aeae9c60d556a1a13e56105ed20d6af579f49ac27a5385"
+    },
+    {
+      "id": "changeset.meeting-intake.transaction-fixture",
+      "type": "change-set",
+      "fingerprint": "sha256:8b5a786470d8783031805e400038d9278603ddd67711e0636117519c8779daac"
+    }
+  ],
+  "effects": [
+    {
+      "id": "effect.meeting-intake.crm-definition.fixture",
+      "capability": "crm.records.read",
+      "capabilityVersion": "1.0.0",
+      "providerPack": "integration.notion",
+      "providerImplementation": "provider.integration.notion.fixture",
+      "providerVersion": "0.1.0",
+      "containment": "fixture",
+      "authority": "authority.crm.definition",
+      "startedAt": "2026-07-15T12:00:00.000Z",
+      "completedAt": "2026-07-15T12:00:00.000Z",
+      "declaredEffects": [
+        "read",
+        "disclosure"
+      ],
+      "policyDecisions": [
+        {
+          "effect": "read",
+          "mode": "allow",
+          "decision": "allowed",
+          "reason": "Selected authorities may be read to perform the requested automation."
+        },
+        {
+          "effect": "disclosure",
+          "mode": "allow",
+          "decision": "allowed",
+          "reason": "Selected records may enter the configured private run envelope."
+        }
+      ],
+      "inputFingerprint": "sha256:579bf52b491d897fab55d6daa3d943ef3744ff27469ceb3887bc38ec04c341de",
+      "state": "passed",
+      "outputFingerprint": "sha256:5e2f48da9e0315fa936da8c8a84957357ca03bf501919ff84bf3f5216e742bcb",
+      "error": null
+    },
+    {
+      "id": "effect.meeting-intake.crm-instances.fixture",
+      "capability": "crm.records.read",
+      "capabilityVersion": "1.0.0",
+      "providerPack": "integration.notion",
+      "providerImplementation": "provider.integration.notion.fixture",
+      "providerVersion": "0.1.0",
+      "containment": "fixture",
+      "authority": "authority.crm.instance",
+      "startedAt": "2026-07-15T12:00:00.000Z",
+      "completedAt": "2026-07-15T12:00:00.000Z",
+      "declaredEffects": [
+        "read",
+        "disclosure"
+      ],
+      "policyDecisions": [
+        {
+          "effect": "read",
+          "mode": "allow",
+          "decision": "allowed",
+          "reason": "Selected authorities may be read to perform the requested automation."
+        },
+        {
+          "effect": "disclosure",
+          "mode": "allow",
+          "decision": "allowed",
+          "reason": "Selected records may enter the configured private run envelope."
+        }
+      ],
+      "inputFingerprint": "sha256:3129a07972abb5fc99a3fe8bf424608790f38e8d7a14443a7ba54caf647e8656",
+      "state": "passed",
+      "outputFingerprint": "sha256:53cd3a1c1c6e57171999030088059a1dcf8de28f9df454c40f372dffcbe7c9b6",
+      "error": null
+    },
+    {
+      "id": "effect.meeting-intake.transcript.fixture",
+      "capability": "meeting.transcript.read",
+      "capabilityVersion": "1.0.0",
+      "providerPack": "integration.otter",
+      "providerImplementation": "provider.integration.otter.fixture",
+      "providerVersion": "0.1.0",
+      "containment": "fixture",
+      "authority": "authority.otter.provider",
+      "startedAt": "2026-07-15T12:00:00.000Z",
+      "completedAt": "2026-07-15T12:00:00.000Z",
+      "declaredEffects": [
+        "read",
+        "disclosure"
+      ],
+      "policyDecisions": [
+        {
+          "effect": "read",
+          "mode": "allow",
+          "decision": "allowed",
+          "reason": "Selected authorities may be read to perform the requested automation."
+        },
+        {
+          "effect": "disclosure",
+          "mode": "allow",
+          "decision": "allowed",
+          "reason": "Selected records may enter the configured private run envelope."
+        }
+      ],
+      "inputFingerprint": "sha256:53f979e4253733a4ac12c9b09e8e42f3bf612bc8cb718b75d895dfa2793b70a6",
+      "state": "passed",
+      "outputFingerprint": "sha256:4af2b54f30824f47a8e91b08eec7fd0f549b7e4c99f49d3e0805c99f3913daae",
+      "error": null
+    },
+    {
+      "id": "effect.meeting-intake.transaction-fixture.summary.create",
+      "capability": "crm.records.create",
+      "capabilityVersion": "1.0.0",
+      "providerPack": "integration.notion",
+      "providerImplementation": "provider.integration.notion.fixture",
+      "providerVersion": "0.1.0",
+      "containment": "fixture",
+      "authority": "authority.crm.instance",
+      "startedAt": "2026-07-15T12:00:00.000Z",
+      "completedAt": "2026-07-15T12:00:00.000Z",
+      "declaredEffects": [
+        "write"
+      ],
+      "policyDecisions": [
+        {
+          "effect": "write",
+          "mode": "confirm",
+          "decision": "confirmed",
+          "reason": "The complete external record batch requires one explicit user confirmation."
+        }
+      ],
+      "inputFingerprint": "sha256:ef56cc336c01f442333e563e75816254e17f0f29bc72899603b07d4b088a85f1",
+      "state": "passed",
+      "outputFingerprint": "sha256:f27751417c126102092045d609bd72cc5d2c7f3beeecf25829bccc819bd91956",
+      "error": null
+    },
+    {
+      "id": "effect.meeting-intake.transaction-fixture.task.update",
+      "capability": "crm.records.update",
+      "capabilityVersion": "1.0.0",
+      "providerPack": "integration.notion",
+      "providerImplementation": "provider.integration.notion.fixture",
+      "providerVersion": "0.1.0",
+      "containment": "fixture",
+      "authority": "authority.crm.instance",
+      "startedAt": "2026-07-15T12:00:00.000Z",
+      "completedAt": "2026-07-15T12:00:00.000Z",
+      "declaredEffects": [
+        "write"
+      ],
+      "policyDecisions": [
+        {
+          "effect": "write",
+          "mode": "confirm",
+          "decision": "confirmed",
+          "reason": "The complete external record batch requires one explicit user confirmation."
+        }
+      ],
+      "inputFingerprint": "sha256:f94072288382ea75e1b25a98acbc9bce6e22247013c9fa28892b2fcff7cd3a3f",
+      "state": "passed",
+      "outputFingerprint": "sha256:efaf8eaf38af9c6993ca10788217ea001d14ab7952f57b0dad2b48d5b29dab70",
+      "error": null
+    },
+    {
+      "id": "effect.meeting-intake.transaction-fixture.meeting.update",
+      "capability": "crm.records.update",
+      "capabilityVersion": "1.0.0",
+      "providerPack": "integration.notion",
+      "providerImplementation": "provider.integration.notion.fixture",
+      "providerVersion": "0.1.0",
+      "containment": "fixture",
+      "authority": "authority.crm.instance",
+      "startedAt": "2026-07-15T12:00:00.000Z",
+      "completedAt": "2026-07-15T12:00:00.000Z",
+      "declaredEffects": [
+        "write"
+      ],
+      "policyDecisions": [
+        {
+          "effect": "write",
+          "mode": "confirm",
+          "decision": "confirmed",
+          "reason": "The complete external record batch requires one explicit user confirmation."
+        }
+      ],
+      "inputFingerprint": "sha256:0d76e3c1508fc01dd8ac7799e58578b4aaaea96a34b1f21e283fdba1abe32145",
+      "state": "passed",
+      "outputFingerprint": "sha256:7decf2f281493dc2b309a4d81ceedeebd30313f61ac827dd7290b85803ccf673",
+      "error": null
+    },
+    {
+      "id": "effect.meeting-intake.transaction-fixture.verify",
+      "capability": "crm.records.read",
+      "capabilityVersion": "1.0.0",
+      "providerPack": "integration.notion",
+      "providerImplementation": "provider.integration.notion.fixture",
+      "providerVersion": "0.1.0",
+      "containment": "fixture",
+      "authority": "authority.crm.instance",
+      "startedAt": "2026-07-15T12:00:00.000Z",
+      "completedAt": "2026-07-15T12:00:00.000Z",
+      "declaredEffects": [
+        "read",
+        "disclosure"
+      ],
+      "policyDecisions": [
+        {
+          "effect": "read",
+          "mode": "allow",
+          "decision": "allowed",
+          "reason": "Selected authorities may be read to perform the requested automation."
+        },
+        {
+          "effect": "disclosure",
+          "mode": "allow",
+          "decision": "allowed",
+          "reason": "Selected records may enter the configured private run envelope."
+        }
+      ],
+      "inputFingerprint": "sha256:248a0c5ff166bc131eb25bab450203a72831ed2ac226717b285049fad33cd7d3",
+      "state": "passed",
+      "outputFingerprint": "sha256:33edf0ad970a7ab8961c5b06bd79b5eab08edb84da6e456340e982b1dc9535c5",
+      "error": null
+    }
+  ],
+  "evidenceIds": [
+    "evidence.meeting-intake.resolution.fixture",
+    "evidence.meeting-intake.transaction.fixture"
+  ],
+  "scenario": {
+    "id": "meeting-intake.happy-path",
+    "path": "soter/scenarios/meeting-intake/happy-path.scenario.json",
+    "fingerprint": "sha256:e4bb717e0d7ee875c5d71aef6d0d4b564edc61d3be26843b265f3f5b17279851"
+  }
+}

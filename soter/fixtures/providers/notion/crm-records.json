@@ -1,0 +1,71 @@
+{
+  "$contract": "soter://contracts/provider-fixture/v1",
+  "contractVersion": "1.0.0",
+  "id": "fixture.integration.notion.crm-records",
+  "provider": "provider.integration.notion.fixture",
+  "observedAt": "2026-07-15T11:59:00.000Z",
+  "data": {
+    "records": [
+    {
+      "type": "policy",
+      "id": "policy.meeting-intake",
+      "version": "1",
+      "fields": {
+        "summaryRequired": true,
+        "taskGroundingRequired": true,
+        "deduplicateBeforeCreate": true,
+        "externalCommitmentsStayInSummary": true
+      }
+    },
+    {
+      "type": "organization",
+      "id": "org.acme",
+      "version": "1",
+      "fields": {
+        "name": "Acme Design",
+        "status": "active"
+      }
+    },
+    {
+      "type": "person",
+      "id": "person.maya",
+      "version": "1",
+      "fields": {
+        "name": "Maya Chen",
+        "organizationId": "org.acme"
+      }
+    },
+    {
+      "type": "project",
+      "id": "project.launch",
+      "version": "1",
+      "fields": {
+        "name": "Acme launch",
+        "organizationId": "org.acme",
+        "status": "active"
+      }
+    },
+    {
+      "type": "task",
+      "id": "task.existing-deck",
+      "version": "1",
+      "fields": {
+        "title": "Send launch deck",
+        "projectId": "project.launch",
+        "status": "open"
+      }
+    },
+    {
+      "type": "meeting",
+      "id": "meeting.fixture-001",
+      "version": "1",
+      "fields": {
+        "title": "Acme launch review",
+        "projectId": "project.launch",
+        "organizationId": "org.acme",
+        "recordingUri": "otter://fixture/meeting.fixture-001"
+      }
+    }
+    ]
+  }
+}

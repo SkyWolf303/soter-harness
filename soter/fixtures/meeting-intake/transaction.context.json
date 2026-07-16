@@ -1,0 +1,188 @@
+{
+  "$contract": "soter://contracts/context-snapshot/v1",
+  "contractVersion": "1.0.0",
+  "id": "context.meeting-intake.transaction-fixture",
+  "runId": "run.meeting-intake.transaction-fixture",
+  "createdAt": "2026-07-15T12:00:00.000Z",
+  "configurationLockFingerprint": "sha256:3ba61127ff8c9a83717d7413f1729bd201f6f23518e12a23c9be3cfc241ea8fa",
+  "graphFingerprint": "sha256:5fac24b51636f37ea4fc9617ce369bc4b504d49e5187a234f20cc2938fde5d03",
+  "containment": "fixture",
+  "entries": [
+    {
+      "id": "context.crm.definition",
+      "subject": "crm.records",
+      "authority": "authority.crm.definition",
+      "role": "definition",
+      "capability": "crm.records.read",
+      "providerPack": "integration.notion",
+      "providerImplementation": "provider.integration.notion.fixture",
+      "providerVersion": "0.1.0",
+      "observedAt": "2026-07-15T12:00:00.000Z",
+      "freshness": "passed",
+      "provenance": {
+        "provider": "notion-fixture",
+        "authority": "authority.crm.definition",
+        "fixture": "soter/fixtures/providers/notion/crm-records.json"
+      },
+      "valueFingerprint": "sha256:5e2f48da9e0315fa936da8c8a84957357ca03bf501919ff84bf3f5216e742bcb",
+      "value": {
+        "records": [
+          {
+            "type": "policy",
+            "id": "policy.meeting-intake",
+            "version": "1",
+            "fields": {
+              "summaryRequired": true,
+              "taskGroundingRequired": true,
+              "deduplicateBeforeCreate": true,
+              "externalCommitmentsStayInSummary": true
+            }
+          }
+        ],
+        "provenance": {
+          "provider": "notion-fixture",
+          "authority": "authority.crm.definition",
+          "fixture": "soter/fixtures/providers/notion/crm-records.json"
+        },
+        "observedAt": "2026-07-15T12:00:00.000Z"
+      }
+    },
+    {
+      "id": "context.crm.instances",
+      "subject": "crm.records",
+      "authority": "authority.crm.instance",
+      "role": "instance",
+      "capability": "crm.records.read",
+      "providerPack": "integration.notion",
+      "providerImplementation": "provider.integration.notion.fixture",
+      "providerVersion": "0.1.0",
+      "observedAt": "2026-07-15T12:00:00.000Z",
+      "freshness": "passed",
+      "provenance": {
+        "provider": "notion-fixture",
+        "authority": "authority.crm.instance",
+        "fixture": "soter/fixtures/providers/notion/crm-records.json"
+      },
+      "valueFingerprint": "sha256:53cd3a1c1c6e57171999030088059a1dcf8de28f9df454c40f372dffcbe7c9b6",
+      "value": {
+        "records": [
+          {
+            "type": "organization",
+            "id": "org.acme",
+            "version": "1",
+            "fields": {
+              "name": "Acme Design",
+              "status": "active"
+            }
+          },
+          {
+            "type": "person",
+            "id": "person.maya",
+            "version": "1",
+            "fields": {
+              "name": "Maya Chen",
+              "organizationId": "org.acme"
+            }
+          },
+          {
+            "type": "project",
+            "id": "project.launch",
+            "version": "1",
+            "fields": {
+              "name": "Acme launch",
+              "organizationId": "org.acme",
+              "status": "active"
+            }
+          },
+          {
+            "type": "task",
+            "id": "task.existing-deck",
+            "version": "1",
+            "fields": {
+              "title": "Send launch deck",
+              "projectId": "project.launch",
+              "status": "open"
+            }
+          },
+          {
+            "type": "meeting",
+            "id": "meeting.fixture-001",
+            "version": "1",
+            "fields": {
+              "title": "Acme launch review",
+              "projectId": "project.launch",
+              "organizationId": "org.acme",
+              "recordingUri": "otter://fixture/meeting.fixture-001"
+            }
+          }
+        ],
+        "provenance": {
+          "provider": "notion-fixture",
+          "authority": "authority.crm.instance",
+          "fixture": "soter/fixtures/providers/notion/crm-records.json"
+        },
+        "observedAt": "2026-07-15T12:00:00.000Z"
+      }
+    },
+    {
+      "id": "context.meeting.transcript",
+      "subject": "meeting.transcript",
+      "authority": "authority.otter.provider",
+      "role": "provider",
+      "capability": "meeting.transcript.read",
+      "providerPack": "integration.otter",
+      "providerImplementation": "provider.integration.otter.fixture",
+      "providerVersion": "0.1.0",
+      "observedAt": "2026-07-15T11:59:30.000Z",
+      "freshness": "passed",
+      "provenance": {
+        "provider": "otter-fixture",
+        "authority": "authority.otter.provider",
+        "fixture": "soter/fixtures/providers/otter/transcripts.json"
+      },
+      "valueFingerprint": "sha256:4af2b54f30824f47a8e91b08eec7fd0f549b7e4c99f49d3e0805c99f3913daae",
+      "value": {
+        "meetingId": "meeting.fixture-001",
+        "speakers": [
+          {
+            "id": "speaker.retro",
+            "displayName": "Retro"
+          },
+          {
+            "id": "speaker.maya",
+            "displayName": "Maya Chen"
+          }
+        ],
+        "segments": [
+          {
+            "speakerId": "speaker.maya",
+            "text": "The launch direction is approved. Please send the updated deck Friday.",
+            "startSeconds": 12
+          },
+          {
+            "speakerId": "speaker.retro",
+            "text": "I will revise the deck and link it to the launch project.",
+            "startSeconds": 26
+          }
+        ],
+        "provenance": {
+          "provider": "otter-fixture",
+          "authority": "authority.otter.provider",
+          "fixture": "soter/fixtures/providers/otter/transcripts.json"
+        },
+        "observedAt": "2026-07-15T11:59:30.000Z"
+      }
+    }
+  ],
+  "effectIds": [
+    "effect.meeting-intake.crm-definition.fixture",
+    "effect.meeting-intake.crm-instances.fixture",
+    "effect.meeting-intake.transcript.fixture"
+  ],
+  "privacy": {
+    "scope": "private",
+    "redactions": [
+      "Provider credentials and secret references are excluded."
+    ]
+  }
+}

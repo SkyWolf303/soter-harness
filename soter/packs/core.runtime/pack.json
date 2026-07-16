@@ -1,0 +1,48 @@
+{
+  "$contract": "soter://contracts/pack/v1",
+  "contractVersion": "1.0.0",
+  "id": "core.runtime",
+  "version": "0.1.0",
+  "layer": "core",
+  "releaseStage": "experimental",
+  "evidenceMaturity": "declared",
+  "summary": "Provides configuration resolution, context assembly, capability binding, effect policy, evidence, and health.",
+  "dependencies": [
+    {
+      "pack": "kernel.soter",
+      "version": "^0.1.0",
+      "optional": false,
+      "reason": "Core runtime contracts are governed and verified by the Soter kernel."
+    }
+  ],
+  "capabilities": {
+    "requires": [],
+    "provides": []
+  },
+  "authorities": [
+    { "role": "evidence", "subject": "runtime.runs", "required": true }
+  ],
+  "effects": [],
+  "artifacts": [
+    { "path": "soter/core/lib/canonical-json.mjs", "role": "implementation" },
+    { "path": "soter/core/resolve.mjs", "role": "implementation" },
+    { "path": "soter/core/run.mjs", "role": "implementation" },
+    { "path": "soter/core/evidence.mjs", "role": "implementation" },
+    { "path": "soter/core/doctor.mjs", "role": "implementation" },
+    { "path": "soter/core/capabilities.mjs", "role": "implementation" },
+    { "path": "soter/core/host-tools.mjs", "role": "implementation" },
+    { "path": "soter/core/context.mjs", "role": "implementation" },
+    { "path": "soter/core/transaction.mjs", "role": "implementation" },
+    { "path": "soter/core/fixtures.mjs", "role": "implementation" },
+    { "path": "soter/core/cli.mjs", "role": "implementation" },
+    { "path": "soter/core/selftest.mjs", "role": "evaluation" }
+  ],
+  "compatibility": {
+    "baseContract": "^1.0.0",
+    "hosts": ["codex", "claude"]
+  },
+  "verification": {
+    "maxLevel": "static",
+    "scenarios": []
+  }
+}

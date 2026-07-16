@@ -1,0 +1,2142 @@
+#!/usr/bin/env node
+
+import fs from 'node:fs';
+import crypto from 'node:crypto';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const CONTRACT_VERSION = '1.0.0';
+const EFFECTS = ['read', 'disclosure', 'write', 'dispatch', 'destructive'];
+const ERROR_KINDS = [
+  'authentication',
+  'authorization',
+  'validation',
+  'conflict',
+  'rate-limit',
+  'unavailable',
+  'retryable',
+  'not-found',
+  'unknown'
+];
+const VERIFICATION_LEVELS = ['static', 'graph', 'fixture', 'agent', 'contained', 'canary', 'monitored'];
+const RUNTIME_ARTIFACT_CONTRACTS = new Set([
+  'soter://contracts/lock/v1',
+  'soter://contracts/run-envelope/v1',
+  'soter://contracts/evidence/v1',
+  'soter://contracts/doctor-result/v1',
+  'soter://contracts/provider-probe/v1',
+  'soter://contracts/host-tool-call/v1',
+  'soter://contracts/context-snapshot/v1',
+  'soter://contracts/approval/v1',
+  'soter://contracts/change-set/v1'
+]);
+const SECRET_RE = /\b(secret_[A-Za-z0-9]{32,}|ntn_[A-Za-z0-9]{32,}|sk-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{36})\b/;
+const ZERO_WIDTH_RE = /[​‌‍⁠﻿]/;
+
+const scriptFile = fileURLToPath(import.meta.url);
+const defaultRoot = path.resolve(path.dirname(scriptFile), '..', '..');
+
+function violation(file, code, what, why, fix, level = 'error') {
+  return { file, code, what, why, fix, level };
+}
+
+function walkFiles(dir, predicate) {
+  const found = [];
+  if (!fs.existsSync(dir)) return found;
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const file = path.join(dir, entry.name);
+    if (entry.isDirectory()) found.push(...walkFiles(file, predicate));
+    else if (predicate(file)) found.push(file);
+  }
+  return found;
+}
+
+function parseJson(file, out) {
+  try {
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch (error) {
+    out.push(violation(
+      file,
+      'SOTER_JSON',
+      'invalid JSON: ' + error.message,
+      'contracts cannot be resolved or reproduced when their serialized form is ambiguous',
+      'repair the JSON and rerun the target verifier'
+    ));
+    return null;
+  }
+}
+
+function deepEqual(a, b) {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+function canonicalize(value) {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.keys(value).sort().map((key) => [key, canonicalize(value[key])])
+    );
+  }
+  return value;
+}
+
+function fingerprintJson(value) {
+  return 'sha256:' + crypto.createHash('sha256')
+    .update(JSON.stringify(canonicalize(value)))
+    .digest('hex');
+}
+
+function jsonType(value) {
+  if (value === null) return 'null';
+  if (Array.isArray(value)) return 'array';
+  if (Number.isInteger(value)) return 'integer';
+  return typeof value;
+}
+
+function resolvePointer(rootSchema, ref) {
+  if (!ref.startsWith('#/')) return null;
+  let value = rootSchema;
+  for (const raw of ref.slice(2).split('/')) {
+    const key = raw.replace(/~1/g, '/').replace(/~0/g, '~');
+    if (!value || !Object.prototype.hasOwnProperty.call(value, key)) return null;
+    value = value[key];
+  }
+  return value;
+}
+
+function schemaErrors(value, schema, rootSchema = schema, at = '$') {
+  const errors = [];
+  if (!schema || typeof schema !== 'object') {
+    return [{ path: at, message: 'schema node is not an object' }];
+  }
+
+  if (schema.$ref) {
+    const target = resolvePointer(rootSchema, schema.$ref);
+    if (!target) return [{ path: at, message: 'unresolved schema reference ' + schema.$ref }];
+    return schemaErrors(value, target, rootSchema, at);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(schema, 'const') && !deepEqual(value, schema.const)) {
+    errors.push({ path: at, message: 'must equal ' + JSON.stringify(schema.const) });
+  }
+  if (schema.enum && !schema.enum.some((candidate) => deepEqual(candidate, value))) {
+    errors.push({ path: at, message: 'must be one of ' + schema.enum.map((item) => JSON.stringify(item)).join(', ') });
+  }
+
+  if (schema.type) {
+    const expected = Array.isArray(schema.type) ? schema.type : [schema.type];
+    const actual = jsonType(value);
+    const typeMatches = expected.includes(actual)
+      || (actual === 'integer' && expected.includes('number'));
+    if (!typeMatches) {
+      errors.push({ path: at, message: 'must have type ' + expected.join(' or ') + ', got ' + actual });
+      return errors;
+    }
+  }
+
+  if (typeof value === 'string') {
+    if (schema.minLength !== undefined && value.length < schema.minLength) {
+      errors.push({ path: at, message: 'must contain at least ' + schema.minLength + ' characters' });
+    }
+    if (schema.pattern) {
+      try {
+        if (!new RegExp(schema.pattern).test(value)) {
+          errors.push({ path: at, message: 'must match pattern ' + schema.pattern });
+        }
+      } catch (error) {
+        errors.push({ path: at, message: 'schema contains invalid pattern: ' + error.message });
+      }
+    }
+  }
+
+  if (typeof value === 'number' && schema.minimum !== undefined && value < schema.minimum) {
+    errors.push({ path: at, message: 'must be at least ' + schema.minimum });
+  }
+
+  if (Array.isArray(value)) {
+    if (schema.minItems !== undefined && value.length < schema.minItems) {
+      errors.push({ path: at, message: 'must contain at least ' + schema.minItems + ' items' });
+    }
+    if (schema.uniqueItems) {
+      const serialized = value.map((item) => JSON.stringify(item));
+      if (new Set(serialized).size !== serialized.length) {
+        errors.push({ path: at, message: 'must not contain duplicate items' });
+      }
+    }
+    if (schema.items) {
+      value.forEach((item, index) => {
+        errors.push(...schemaErrors(item, schema.items, rootSchema, at + '[' + index + ']'));
+      });
+    }
+  }
+
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const properties = schema.properties || {};
+    for (const required of schema.required || []) {
+      if (!Object.prototype.hasOwnProperty.call(value, required)) {
+        errors.push({ path: at, message: 'missing required property ' + required });
+      }
+    }
+    for (const [key, child] of Object.entries(value)) {
+      if (Object.prototype.hasOwnProperty.call(properties, key)) {
+        errors.push(...schemaErrors(child, properties[key], rootSchema, at + '.' + key));
+      } else if (schema.additionalProperties === false) {
+        errors.push({ path: at + '.' + key, message: 'additional property is not allowed' });
+      } else if (schema.additionalProperties && typeof schema.additionalProperties === 'object') {
+        errors.push(...schemaErrors(child, schema.additionalProperties, rootSchema, at + '.' + key));
+      }
+    }
+  }
+
+  return errors;
+}
+
+function scanStrings(value, file, out, at = '$') {
+  if (typeof value === 'string') {
+    if (ZERO_WIDTH_RE.test(value)) {
+      out.push(violation(
+        file,
+        'SOTER_SECURITY',
+        at + ' contains a zero-width character',
+        'invisible characters can smuggle instructions or corrupt identifiers',
+        'remove the invisible character'
+      ));
+    }
+    if (SECRET_RE.test(value)) {
+      out.push(violation(
+        file,
+        'SOTER_SECRET',
+        at + ' contains what looks like a real credential',
+        'desired configuration may contain secret references but never secret values',
+        'remove the value and use a secret-ref identifier'
+      ));
+    }
+    return;
+  }
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => scanStrings(item, file, out, at + '[' + index + ']'));
+    return;
+  }
+  if (value && typeof value === 'object') {
+    for (const [key, child] of Object.entries(value)) {
+      scanStrings(child, file, out, at + '.' + key);
+    }
+  }
+}
+
+function parseVersion(version) {
+  const match = String(version).match(/^(\d+)\.(\d+)\.(\d+)$/);
+  return match ? match.slice(1).map(Number) : null;
+}
+
+function compareVersion(a, b) {
+  for (let i = 0; i < 3; i += 1) {
+    if (a[i] !== b[i]) return a[i] < b[i] ? -1 : 1;
+  }
+  return 0;
+}
+
+function satisfies(version, range) {
+  const actual = parseVersion(version);
+  if (!actual) return false;
+  const match = String(range).match(/^(\^|~|>=|<=|>|<)?(\d+\.\d+\.\d+)$/);
+  if (!match) return false;
+  const operator = match[1] || '=';
+  const expected = parseVersion(match[2]);
+  const comparison = compareVersion(actual, expected);
+  if (operator === '=') return comparison === 0;
+  if (operator === '>=') return comparison >= 0;
+  if (operator === '<=') return comparison <= 0;
+  if (operator === '>') return comparison > 0;
+  if (operator === '<') return comparison < 0;
+  if (operator === '~') {
+    return comparison >= 0 && actual[0] === expected[0] && actual[1] === expected[1];
+  }
+  if (operator === '^') {
+    if (comparison < 0) return false;
+    if (expected[0] > 0) return actual[0] === expected[0];
+    if (expected[1] > 0) return actual[0] === 0 && actual[1] === expected[1];
+    return actual[0] === 0 && actual[1] === 0 && actual[2] === expected[2];
+  }
+  return false;
+}
+
+function detectDependencyCycles(packs, out) {
+  const visiting = new Set();
+  const visited = new Set();
+
+  function visit(id, trail) {
+    if (visiting.has(id)) {
+      out.push(violation(
+        packs.get(id).file,
+        'SOTER_DEPENDENCY_CYCLE',
+        'pack dependency cycle: ' + [...trail, id].join(' -> '),
+        'a cyclic pack graph cannot be resolved in a stable order',
+        'remove or invert one dependency edge'
+      ));
+      return;
+    }
+    if (visited.has(id)) return;
+    visiting.add(id);
+    const entry = packs.get(id);
+    for (const dep of entry?.doc.dependencies || []) {
+      if (packs.has(dep.pack)) visit(dep.pack, [...trail, id]);
+    }
+    visiting.delete(id);
+    visited.add(id);
+  }
+
+  for (const id of packs.keys()) visit(id, []);
+}
+
+function addSchemaViolations(file, failures, out) {
+  for (const failure of failures.slice(0, 20)) {
+    out.push(violation(
+      file,
+      'SOTER_SCHEMA',
+      failure.path + ' ' + failure.message,
+      'machine-readable contracts must have one mechanically enforced shape',
+      'change the document to match its declared contract'
+    ));
+  }
+  if (failures.length > 20) {
+    out.push(violation(
+      file,
+      'SOTER_SCHEMA',
+      String(failures.length - 20) + ' additional schema violations were omitted',
+      'a heavily malformed document obscures the first actionable failures',
+      'fix the reported violations and rerun the verifier'
+    ));
+  }
+}
+
+function collectDocuments(root, out, census, options = {}) {
+  const soterRoot = path.join(root, 'soter');
+  const contractDir = path.join(soterRoot, 'contracts');
+  const schemas = new Map();
+  const documents = [];
+
+  for (const file of walkFiles(contractDir, (candidate) => candidate.endsWith('.schema.json'))) {
+    const schema = parseJson(file, out);
+    if (!schema) continue;
+    census.contracts += 1;
+    if (schema.$schema !== 'https://json-schema.org/draft/2020-12/schema' || typeof schema.$id !== 'string') {
+      out.push(violation(
+        file,
+        'SOTER_SCHEMA_DEFINITION',
+        'contract schema must declare JSON Schema 2020-12 and a stable $id',
+        'instances need an unambiguous versioned contract identity',
+        'add the draft URI and a stable soter:// contract identifier'
+      ));
+      continue;
+    }
+    if (schemas.has(schema.$id)) {
+      out.push(violation(
+        file,
+        'SOTER_SCHEMA_DEFINITION',
+        'duplicate contract identifier ' + schema.$id,
+        'two schemas cannot own the same contract identity',
+        'give each versioned schema a unique $id'
+      ));
+      continue;
+    }
+    schemas.set(schema.$id, { file, schema });
+  }
+
+  const instanceFiles = walkFiles(soterRoot, (candidate) => {
+    return candidate.endsWith('.json') && !candidate.startsWith(contractDir + path.sep);
+  });
+  for (const file of instanceFiles) {
+    const doc = parseJson(file, out);
+    if (!doc) continue;
+    scanStrings(doc, file, out);
+    const contractId = doc && doc.$contract;
+    if (options.includeRuntimeArtifacts === false && RUNTIME_ARTIFACT_CONTRACTS.has(contractId)) {
+      continue;
+    }
+    if (typeof contractId !== 'string' || !schemas.has(contractId)) {
+      out.push(violation(
+        file,
+        'SOTER_CONTRACT',
+        'document does not reference a known $contract',
+        'untyped JSON silently bypasses the architecture contracts',
+        'set $contract to one of the versioned schema identifiers in soter/contracts'
+      ));
+      continue;
+    }
+    const failures = schemaErrors(doc, schemas.get(contractId).schema);
+    addSchemaViolations(file, failures, out);
+    if (!failures.length) documents.push({ file, doc, contractId });
+  }
+
+  return { schemas, documents };
+}
+
+function checkPackGraph(root, documents, out, census) {
+  const packs = new Map();
+  const capabilities = new Map();
+  const hosts = new Map();
+  const configs = [];
+  const scenarios = [];
+  const migrations = [];
+  const locks = [];
+  const runs = new Map();
+  const evidence = new Map();
+  const doctors = new Map();
+  const providers = new Map();
+  const snapshots = new Map();
+  const providerFixtures = new Map();
+  const providerProbes = new Map();
+  const hostToolCalls = new Map();
+  const approvals = new Map();
+  const changeSets = new Map();
+
+  const addUniqueRuntimeArtifact = (entries, entry, kind) => {
+    if (entries.has(entry.doc.id)) {
+      out.push(violation(
+        entry.file,
+        'SOTER_' + kind.toUpperCase() + '_DUPLICATE',
+        'duplicate ' + kind + ' id ' + entry.doc.id,
+        'runtime state and evidence references require globally unique identities',
+        'rename or remove the duplicate ' + kind + ' artifact'
+      ));
+    } else {
+      entries.set(entry.doc.id, entry);
+    }
+  };
+
+  for (const entry of documents) {
+    if (entry.contractId === 'soter://contracts/pack/v1') {
+      census.packs += 1;
+      if (packs.has(entry.doc.id)) {
+        out.push(violation(
+          entry.file,
+          'SOTER_PACK_DUPLICATE',
+          'duplicate pack id ' + entry.doc.id,
+          'pack selection and dependency resolution require globally unique identities',
+          'rename or remove one pack manifest'
+        ));
+      } else {
+        packs.set(entry.doc.id, entry);
+      }
+    } else if (entry.contractId === 'soter://contracts/capability/v1') {
+      census.capabilities += 1;
+      if (capabilities.has(entry.doc.id)) {
+        out.push(violation(
+          entry.file,
+          'SOTER_CAPABILITY_DUPLICATE',
+          'duplicate capability id ' + entry.doc.id,
+          'automations must bind one stable capability contract',
+          'version the existing contract or choose a different identity'
+        ));
+      } else {
+        capabilities.set(entry.doc.id, entry);
+      }
+    } else if (entry.contractId === 'soter://contracts/configuration/v1') {
+      census.configurations += 1;
+      configs.push(entry);
+    } else if (entry.contractId === 'soter://contracts/host-adapter/v1') {
+      census.hosts += 1;
+      if (hosts.has(entry.doc.id)) {
+        out.push(violation(
+          entry.file,
+          'SOTER_HOST',
+          'duplicate host adapter id ' + entry.doc.id,
+          'one adapter identity must resolve to one declared projection contract',
+          'rename or remove the duplicate adapter'
+        ));
+      } else {
+        hosts.set(entry.doc.id, entry);
+      }
+    } else if (entry.contractId === 'soter://contracts/scenario/v1') {
+      census.scenarios += 1;
+      scenarios.push(entry);
+    } else if (entry.contractId === 'soter://contracts/migration/v1') {
+      census.migrations += 1;
+      migrations.push(entry);
+    } else if (entry.contractId === 'soter://contracts/lock/v1') {
+      census.locks += 1;
+      locks.push(entry);
+    } else if (entry.contractId === 'soter://contracts/run-envelope/v1') {
+      census.runEnvelopes += 1;
+      addUniqueRuntimeArtifact(runs, entry, 'run');
+    } else if (entry.contractId === 'soter://contracts/evidence/v1') {
+      census.evidence += 1;
+      addUniqueRuntimeArtifact(evidence, entry, 'evidence');
+    } else if (entry.contractId === 'soter://contracts/doctor-result/v1') {
+      census.doctorResults += 1;
+      addUniqueRuntimeArtifact(doctors, entry, 'doctor');
+    } else if (entry.contractId === 'soter://contracts/capability-provider/v1') {
+      census.providers += 1;
+      addUniqueRuntimeArtifact(providers, entry, 'provider');
+    } else if (entry.contractId === 'soter://contracts/context-snapshot/v1') {
+      census.contextSnapshots += 1;
+      addUniqueRuntimeArtifact(snapshots, entry, 'context');
+    } else if (entry.contractId === 'soter://contracts/provider-fixture/v1') {
+      census.providerFixtures += 1;
+      addUniqueRuntimeArtifact(providerFixtures, entry, 'fixture');
+    } else if (entry.contractId === 'soter://contracts/provider-probe/v1') {
+      census.providerProbes += 1;
+      addUniqueRuntimeArtifact(providerProbes, entry, 'probe');
+    } else if (entry.contractId === 'soter://contracts/host-tool-call/v1') {
+      census.hostToolCalls += 1;
+      addUniqueRuntimeArtifact(hostToolCalls, entry, 'toolcall');
+    } else if (entry.contractId === 'soter://contracts/approval/v1') {
+      census.approvals += 1;
+      addUniqueRuntimeArtifact(approvals, entry, 'approval');
+    } else if (entry.contractId === 'soter://contracts/change-set/v1') {
+      census.changeSets += 1;
+      addUniqueRuntimeArtifact(changeSets, entry, 'changeset');
+    }
+  }
+
+  for (const [id, entry] of packs) {
+    const expected = path.join(root, 'soter', 'packs', id, 'pack.json');
+    if (path.resolve(entry.file) !== path.resolve(expected)) {
+      out.push(violation(
+        entry.file,
+        'SOTER_PACK_PATH',
+        'pack ' + id + ' is not stored at soter/packs/' + id + '/pack.json',
+        'a deterministic pack path makes discovery independent of host behavior',
+        'move the manifest to its canonical path'
+      ));
+    }
+    if (!id.startsWith(entry.doc.layer + '.')) {
+      out.push(violation(
+        entry.file,
+        'SOTER_LAYER',
+        'pack id prefix and layer disagree',
+        'layer ownership must be machine-readable without inferring it from prose',
+        'align the id prefix with layer ' + entry.doc.layer
+      ));
+    }
+    const maturityFloor = {
+      declared: 'static',
+      'fixture-proven': 'fixture',
+      'contained-proven': 'contained',
+      'live-proven': 'canary'
+    }[entry.doc.evidenceMaturity];
+    if (VERIFICATION_LEVELS.indexOf(entry.doc.verification.maxLevel)
+      < VERIFICATION_LEVELS.indexOf(maturityFloor)) {
+      out.push(violation(
+        entry.file,
+        'SOTER_MATURITY',
+        entry.doc.evidenceMaturity + ' requires at least ' + maturityFloor + ' verification',
+        'maturity labels must be derived from evidence rather than author confidence',
+        'lower the maturity claim or attach verification at the required level'
+      ));
+    }
+    for (const artifact of entry.doc.artifacts || []) {
+      if (!fs.existsSync(path.join(root, artifact.path))) {
+        out.push(violation(
+          entry.file,
+          'SOTER_ARTIFACT',
+          'declared artifact does not exist: ' + artifact.path,
+          'a pack cannot claim an implementation, definition, or evaluation that is absent',
+          'create the artifact or remove the declaration'
+        ));
+      }
+    }
+    for (const scenario of entry.doc.verification?.scenarios || []) {
+      if (!fs.existsSync(path.join(root, scenario))) {
+        out.push(violation(
+          entry.file,
+          'SOTER_ARTIFACT',
+          'declared verification scenario does not exist: ' + scenario,
+          'verification claims require inspectable scenarios',
+          'create the scenario or remove the claim'
+        ));
+      }
+    }
+    for (const dep of entry.doc.dependencies || []) {
+      const target = packs.get(dep.pack);
+      if (!target) {
+        out.push(violation(
+          entry.file,
+          'SOTER_DEPENDENCY',
+          'dependency pack is missing: ' + dep.pack,
+          'unresolved dependencies make pack selection incomplete',
+          'add the dependency pack or remove the edge'
+        ));
+      } else if (!satisfies(target.doc.version, dep.version)) {
+        out.push(violation(
+          entry.file,
+          'SOTER_DEPENDENCY',
+          dep.pack + ' version ' + target.doc.version + ' does not satisfy ' + dep.version,
+          'the resolved graph must honor every declared compatibility range',
+          'choose compatible versions or provide a migration'
+        ));
+      }
+    }
+  }
+  detectDependencyCycles(packs, out);
+
+  for (const [id, entry] of capabilities) {
+    const expected = path.join(root, 'soter', 'capabilities', id + '.json');
+    if (path.resolve(entry.file) !== path.resolve(expected)) {
+      out.push(violation(
+        entry.file,
+        'SOTER_CAPABILITY_PATH',
+        'capability ' + id + ' is not stored at soter/capabilities/' + id + '.json',
+        'stable paths keep capability lookup deterministic',
+        'move the contract to its canonical path'
+      ));
+    }
+    const errors = new Set(entry.doc.errors || []);
+    for (const kind of ERROR_KINDS) {
+      if (!errors.has(kind)) {
+        out.push(violation(
+          entry.file,
+          'SOTER_ERROR_MODEL',
+          'capability error model omits ' + kind,
+          'automations need one normalized failure vocabulary across providers',
+          'add the missing normalized error kind'
+        ));
+      }
+    }
+    if (!entry.doc.inputSchema?.type || !entry.doc.outputSchema?.type) {
+      out.push(violation(
+        entry.file,
+        'SOTER_IO_SCHEMA',
+        'capability inputSchema and outputSchema must each declare a root type',
+        'typed capability boundaries cannot be enforced from opaque object placeholders',
+        'declare the root JSON type for both input and output'
+      ));
+    }
+    if (!fs.existsSync(path.join(root, entry.doc.health.fixture))) {
+      out.push(violation(
+        entry.file,
+        'SOTER_ARTIFACT',
+        'capability health fixture does not exist: ' + entry.doc.health.fixture,
+        'health cannot be checked without a stable contained fixture',
+        'create the fixture or correct the path'
+      ));
+    }
+  }
+
+  for (const entry of packs.values()) {
+    for (const provided of entry.doc.capabilities?.provides || []) {
+      const capability = capabilities.get(provided.id);
+      if (entry.doc.layer !== 'integration') {
+        out.push(violation(
+          entry.file,
+          'SOTER_CAPABILITY_OWNER',
+          'non-integration pack claims integration capability ' + provided.id,
+          'provider implementations belong to the integration layer',
+          'move the provision to an integration pack'
+        ));
+      }
+      if (!capability) {
+        out.push(violation(
+          entry.file,
+          'SOTER_CAPABILITY',
+          'provided capability has no contract: ' + provided.id,
+          'a provider cannot implement an undefined interface',
+          'add the capability contract or remove the provision'
+        ));
+      } else {
+        if (provided.version !== capability.doc.version) {
+          out.push(violation(
+            entry.file,
+            'SOTER_CAPABILITY',
+            provided.id + ' provision version does not match its contract',
+            'bindings must identify the exact interface being implemented',
+            'align the provision and capability versions'
+          ));
+        }
+        for (const effect of capability.doc.effects) {
+          if (!entry.doc.effects.includes(effect)) {
+            out.push(violation(
+              entry.file,
+              'SOTER_EFFECT',
+              'pack omits effect ' + effect + ' required by ' + provided.id,
+              'pack-level previews must include every transitive capability effect',
+              'add the effect to the pack manifest'
+            ));
+          }
+        }
+      }
+    }
+    for (const required of entry.doc.capabilities?.requires || []) {
+      const capability = capabilities.get(required.id);
+      if (!capability) {
+        out.push(violation(
+          entry.file,
+          'SOTER_CAPABILITY',
+          'required capability has no contract: ' + required.id,
+          'an automation cannot request an undefined interface',
+          'add the capability contract or remove the requirement'
+        ));
+      } else if (!satisfies(capability.doc.version, required.version)) {
+        out.push(violation(
+          entry.file,
+          'SOTER_CAPABILITY',
+          required.id + ' version ' + capability.doc.version + ' does not satisfy ' + required.version,
+          'the capability graph must honor declared compatibility',
+          'select a compatible contract or update the requirement'
+        ));
+      } else {
+        for (const effect of capability.doc.effects) {
+          if (!entry.doc.effects.includes(effect)) {
+            out.push(violation(
+              entry.file,
+              'SOTER_EFFECT',
+              'pack omits transitive effect ' + effect + ' from ' + required.id,
+              'users must see every effect before selecting an automation',
+              'add the effect to the requiring pack manifest'
+            ));
+          }
+        }
+      }
+    }
+  }
+
+  for (const [id, entry] of hosts) {
+    const expected = path.join(root, 'soter', 'hosts', entry.doc.host, 'adapter.json');
+    if (path.resolve(entry.file) !== path.resolve(expected)) {
+      out.push(violation(
+        entry.file,
+        'SOTER_HOST_PATH',
+        'host adapter ' + id + ' is not stored at soter/hosts/' + entry.doc.host + '/adapter.json',
+        'deterministic host paths keep projection ownership discoverable',
+        'move the adapter manifest to its canonical path'
+      ));
+    }
+    if (id !== 'host.' + entry.doc.host) {
+      out.push(violation(
+        entry.file,
+        'SOTER_HOST',
+        'host adapter id and host name disagree',
+        'configuration must identify adapters without host-specific guessing',
+        'align id with host.' + entry.doc.host
+      ));
+    }
+    const maturityFloor = {
+      declared: 'static',
+      'fixture-proven': 'fixture',
+      'contained-proven': 'contained',
+      'live-proven': 'canary'
+    }[entry.doc.evidenceMaturity];
+    if (VERIFICATION_LEVELS.indexOf(entry.doc.conformance.maxLevel)
+      < VERIFICATION_LEVELS.indexOf(maturityFloor)) {
+      out.push(violation(
+        entry.file,
+        'SOTER_MATURITY',
+        entry.doc.evidenceMaturity + ' host adapter requires at least ' + maturityFloor + ' conformance',
+        'host support must be derived from behavior evidence rather than file presence',
+        'lower the maturity claim or attach conformance at the required level'
+      ));
+    }
+    for (const projection of entry.doc.projections) {
+      if (!fs.existsSync(path.join(root, projection.path))) {
+        out.push(violation(
+          entry.file,
+          'SOTER_HOST_PROJECTION',
+          'declared host projection does not exist: ' + projection.path,
+          'an adapter cannot own a projection that is absent',
+          'create the projection or remove the declaration'
+        ));
+      }
+    }
+    const projectionPaths = new Set(entry.doc.projections.map((projection) => projection.path));
+    const serverIds = new Set();
+    for (const server of entry.doc.mcpServers) {
+      if (serverIds.has(server.id)) {
+        out.push(violation(
+          entry.file,
+          'SOTER_HOST_MCP',
+          'host adapter declares duplicate MCP server ' + server.id,
+          'provider routing requires one inspectable delivery path per server identity',
+          'remove the duplicate MCP server declaration'
+        ));
+      }
+      serverIds.add(server.id);
+      if (server.state === 'configured') {
+        if (!server.configurationPath) {
+          out.push(violation(
+            entry.file,
+            'SOTER_HOST_MCP',
+            'configured MCP server has no configuration path: ' + server.id,
+            'configured state must identify the exact host projection that realizes it',
+            'add configurationPath or lower the server state to declared'
+          ));
+        } else if (!projectionPaths.has(server.configurationPath)
+          || !fs.existsSync(path.join(root, server.configurationPath))) {
+          out.push(violation(
+            entry.file,
+            'SOTER_HOST_MCP',
+            'MCP server configuration is absent from host projections: ' + server.configurationPath,
+            'tool delivery cannot be inferred from unowned or missing host files',
+            'add the path as a host projection and ensure the file exists'
+          ));
+        }
+      }
+    }
+    for (const scenario of entry.doc.conformance.scenarios) {
+      if (!fs.existsSync(path.join(root, scenario))) {
+        out.push(violation(
+          entry.file,
+          'SOTER_HOST_PROJECTION',
+          'declared host conformance scenario does not exist: ' + scenario,
+          'host support claims require inspectable behavior scenarios',
+          'create the scenario or remove the claim'
+        ));
+      }
+    }
+  }
+
+  for (const config of configs) {
+    checkConfiguration(root, config, packs, capabilities, hosts, out);
+  }
+  for (const scenario of scenarios) {
+    checkScenario(root, scenario, packs, capabilities, configs, out);
+  }
+  for (const migration of migrations) {
+    checkMigration(root, migration, packs, out);
+  }
+
+  checkCapabilityProviders(root, providers, providerFixtures, packs, capabilities, hosts, out);
+  checkRuntimeArtifacts(
+    locks,
+    runs,
+    evidence,
+    doctors,
+    snapshots,
+    providers,
+    providerProbes,
+    hostToolCalls,
+    approvals,
+    changeSets,
+    out
+  );
+
+  return {
+    packs,
+    capabilities,
+    hosts,
+    configs,
+    scenarios,
+    migrations,
+    locks,
+    runs,
+    evidence,
+    doctors,
+    providers,
+    snapshots,
+    providerFixtures,
+    providerProbes,
+    hostToolCalls,
+    approvals,
+    changeSets
+  };
+}
+
+function checkCapabilityProviders(root, providers, providerFixtures, packs, capabilities, hosts, out) {
+  const implementations = new Set();
+  const fixturesByPath = new Map([...providerFixtures.values()].map((entry) => {
+    return [path.relative(root, entry.file).split(path.sep).join('/'), entry];
+  }));
+  for (const [id, entry] of providers) {
+    const expected = path.join(root, 'soter', 'providers', id + '.json');
+    if (path.resolve(entry.file) !== path.resolve(expected)) {
+      out.push(violation(
+        entry.file,
+        'SOTER_PROVIDER_PATH',
+        'provider ' + id + ' is not stored at soter/providers/' + id + '.json',
+        'deterministic provider discovery cannot depend on naming guesses',
+        'move the provider declaration to its canonical path'
+      ));
+    }
+    const pack = packs.get(entry.doc.pack);
+    if (!pack || pack.doc.layer !== 'integration') {
+      out.push(violation(
+        entry.file,
+        'SOTER_PROVIDER_PACK',
+        'provider pack is missing or not an integration pack: ' + entry.doc.pack,
+        'capability implementations belong to one explicit integration system',
+        'select an existing integration pack as provider owner'
+      ));
+      continue;
+    }
+    const packPath = path.relative(root, pack.file).split(path.sep).join('/');
+    const ownedPaths = new Set([packPath, ...pack.doc.artifacts.map((artifact) => artifact.path)]);
+    const requiredPaths = [
+      path.relative(root, entry.file).split(path.sep).join('/'),
+      entry.doc.runtime.module,
+      ...entry.doc.fixtures
+    ];
+    for (const requiredPath of requiredPaths) {
+      if (!ownedPaths.has(requiredPath)) {
+        out.push(violation(
+          entry.file,
+          'SOTER_PROVIDER_OWNERSHIP',
+          entry.doc.pack + ' does not declare provider artifact ' + requiredPath,
+          'runtime implementations and fixtures need one inspectable pack owner',
+          'add the artifact to the provider pack manifest'
+        ));
+      }
+      if (!fs.existsSync(path.join(root, requiredPath))) {
+        out.push(violation(
+          entry.file,
+          'SOTER_PROVIDER_ARTIFACT',
+          'provider artifact does not exist: ' + requiredPath,
+          'a declared implementation cannot execute or be reproduced without its artifacts',
+          'create the artifact or correct the provider declaration'
+        ));
+      }
+    }
+    if (entry.doc.runtime.engine === 'node') {
+      if (!entry.doc.runtime.export) {
+        out.push(violation(
+          entry.file,
+          'SOTER_PROVIDER_RUNTIME',
+          'Node provider does not declare one invocation export',
+          'Core cannot dispatch a local provider through an inferred module entry point',
+          'set runtime.export to the provider invocation function'
+        ));
+      }
+    } else if (entry.doc.runtime.engine === 'mcp') {
+      const missing = ['prepareExport', 'completeExport', 'server', 'tools']
+        .filter((field) => !entry.doc.runtime[field]
+          || (field === 'tools' && !entry.doc.runtime[field].length));
+      if (missing.length) {
+        out.push(violation(
+          entry.file,
+          'SOTER_PROVIDER_RUNTIME',
+          'MCP provider runtime is missing ' + missing.join(', '),
+          'host-dispatched calls require explicit translation entry points, server identity, and tool allowlist',
+          'declare the complete MCP runtime boundary'
+        ));
+      }
+      if (!['connected', 'canary', 'live'].includes(entry.doc.containment)) {
+        out.push(violation(
+          entry.file,
+          'SOTER_PROVIDER_RUNTIME',
+          'MCP provider uses non-connected containment ' + entry.doc.containment,
+          'fixture and contained execution must not depend on an authenticated external host transport',
+          'use a local Node provider for fixtures or classify this implementation as connected or stronger'
+        ));
+      }
+      for (const hostName of pack.doc.compatibility.hosts) {
+        const host = hosts.get('host.' + hostName);
+        if (!host?.doc.mcpServers.some((server) => server.id === entry.doc.runtime.server)) {
+          out.push(violation(
+            entry.file,
+            'SOTER_PROVIDER_HOST_ROUTE',
+            'compatible host ' + hostName + ' has no MCP route for ' + entry.doc.runtime.server,
+            'provider portability claims require every compatible host to realize the logical server identity',
+            'add the host MCP route or narrow the integration pack compatibility claim'
+          ));
+        }
+      }
+    }
+    for (const fixturePath of entry.doc.fixtures) {
+      const fixture = fixturesByPath.get(fixturePath);
+      if (!fixture || fixture.doc.provider !== id) {
+        out.push(violation(
+          entry.file,
+          'SOTER_PROVIDER_FIXTURE',
+          'fixture does not declare provider ownership ' + id + ': ' + fixturePath,
+          'contained data must be typed and attributable to the implementation that reads it',
+          'use a provider-fixture contract with the matching provider id'
+        ));
+      }
+    }
+    for (const provided of entry.doc.capabilities) {
+      const key = entry.doc.pack + '|' + entry.doc.containment + '|' + provided.id;
+      if (implementations.has(key)) {
+        out.push(violation(
+          entry.file,
+          'SOTER_PROVIDER_DUPLICATE',
+          'more than one provider implements ' + key,
+          'one containment level must resolve to one implementation per bound pack and capability',
+          'remove the duplicate or give it a distinct containment level'
+        ));
+      }
+      implementations.add(key);
+      const capability = capabilities.get(provided.id);
+      const packProvision = pack.doc.capabilities.provides.find((item) => item.id === provided.id);
+      if (!capability || !packProvision
+        || capability.doc.version !== provided.version
+        || packProvision.version !== provided.version) {
+        out.push(violation(
+          entry.file,
+          'SOTER_PROVIDER_CAPABILITY',
+          'provider capability does not match its contract and pack provision: ' + provided.id,
+          'runtime dispatch must preserve one exact portable interface version',
+          'align the provider, capability contract, and pack provision versions'
+        ));
+        continue;
+      }
+      for (const effect of capability.doc.effects) {
+        if (!entry.doc.effects.includes(effect) || !pack.doc.effects.includes(effect)) {
+          out.push(violation(
+            entry.file,
+            'SOTER_PROVIDER_EFFECT',
+            'provider omits effect ' + effect + ' required by ' + provided.id,
+            'effect gates must see the complete transitive capability effect set',
+            'declare the effect on both provider and pack'
+          ));
+        }
+      }
+    }
+  }
+  for (const fixture of providerFixtures.values()) {
+    const provider = providers.get(fixture.doc.provider);
+    const fixturePath = path.relative(root, fixture.file).split(path.sep).join('/');
+    if (!provider || !provider.doc.fixtures.includes(fixturePath)) {
+      out.push(violation(
+        fixture.file,
+        'SOTER_PROVIDER_FIXTURE',
+        'provider fixture is not declared by its provider: ' + fixture.doc.provider,
+        'unowned fixture data can silently bypass implementation and pack boundaries',
+        'declare the fixture path on its provider implementation'
+      ));
+    }
+  }
+}
+
+function checkRuntimeArtifacts(
+  locks,
+  runs,
+  evidence,
+  doctors,
+  snapshots,
+  providers,
+  providerProbes,
+  hostToolCalls,
+  approvals,
+  changeSets,
+  out
+) {
+  const lockByFingerprint = new Map();
+  for (const entry of locks) {
+    const fingerprint = fingerprintJson(entry.doc);
+    lockByFingerprint.set(fingerprint, entry);
+    const unsigned = { ...entry.doc };
+    delete unsigned.graphFingerprint;
+    const expectedGraphFingerprint = fingerprintJson(unsigned);
+    if (entry.doc.graphFingerprint !== expectedGraphFingerprint) {
+      out.push(violation(
+        entry.file,
+        'SOTER_LOCK_FINGERPRINT',
+        'lock graph fingerprint does not match its resolved contents',
+        'a lock cannot establish reproducibility if its own integrity marker is stale',
+        'resolve the configuration again and replace dependent runtime artifacts'
+      ));
+    }
+  }
+
+  const requireLock = (entry, fingerprint, kind) => {
+    const lock = lockByFingerprint.get(fingerprint);
+    if (!lock) {
+      out.push(violation(
+        entry.file,
+        'SOTER_RUNTIME_LINK',
+        kind + ' references a configuration lock that is not present: ' + fingerprint,
+        'runtime and evidence claims must be traceable to an inspectable exact graph',
+        'include the referenced lock or regenerate the ' + kind + ' from a present lock'
+      ));
+    }
+    return lock;
+  };
+
+  const requireEvidence = (entry, evidenceId, kind) => {
+    if (!evidence.has(evidenceId)) {
+      out.push(violation(
+        entry.file,
+        'SOTER_RUNTIME_LINK',
+        kind + ' references evidence that is not present: ' + evidenceId,
+        'state transitions and health claims require inspectable supporting evidence',
+        'include the evidence record or remove the unsupported reference'
+      ));
+    }
+  };
+
+  for (const entry of runs.values()) {
+    const lock = requireLock(entry, entry.doc.configurationLock.fingerprint, 'run envelope');
+    if (lock && entry.doc.graphFingerprint !== lock.doc.graphFingerprint) {
+      out.push(violation(
+        entry.file,
+        'SOTER_RUNTIME_LINK',
+        'run envelope graph fingerprint disagrees with its configuration lock',
+        'a run must execute against the exact graph it names',
+        'regenerate the run envelope from the referenced lock'
+      ));
+    }
+    entry.doc.evidenceIds.forEach((id) => requireEvidence(entry, id, 'run envelope'));
+  }
+
+  for (const entry of evidence.values()) {
+    const lock = requireLock(entry, entry.doc.configurationLockFingerprint, 'evidence record');
+    if (lock) {
+      const lockedPacks = new Map(lock.doc.packs.map((pack) => [pack.id, pack]));
+      for (const dependency of entry.doc.dependencies) {
+        const pack = lockedPacks.get(dependency.id);
+        if (!pack
+          || pack.version !== dependency.version
+          || pack.manifestFingerprint !== dependency.fingerprint) {
+          out.push(violation(
+            entry.file,
+            'SOTER_EVIDENCE_DEPENDENCY',
+            'evidence dependency does not match its configuration lock: ' + dependency.id,
+            'evidence is applicable only to the exact versions and artifacts it evaluated',
+            'regenerate the evidence against the referenced lock'
+          ));
+        }
+      }
+    }
+  }
+
+  for (const entry of doctors.values()) {
+    const doctorLock = requireLock(entry, entry.doc.configuration.lockFingerprint, 'doctor result');
+    entry.doc.evidenceIds.forEach((id) => requireEvidence(entry, id, 'doctor result'));
+    entry.doc.checks.flatMap((check) => check.evidenceIds)
+      .forEach((id) => requireEvidence(entry, id, 'doctor check'));
+    entry.doc.diagnostics.flatMap((item) => item.evidenceIds)
+      .forEach((id) => requireEvidence(entry, id, 'doctor diagnostic'));
+    for (const id of entry.doc.providerProbeIds) {
+      const probe = providerProbes.get(id);
+      if (!probe) {
+        out.push(violation(
+          entry.file,
+          'SOTER_RUNTIME_LINK',
+          'doctor result references a provider probe that is not present: ' + id,
+          'connected readiness must remain traceable to the exact observation that supports it',
+          'include the provider probe or remove the unsupported reference'
+        ));
+      } else if (probe.doc.configuration.lockFingerprint !== entry.doc.configuration.lockFingerprint
+        || probe.doc.configuration.name !== entry.doc.configuration.name) {
+        out.push(violation(
+          entry.file,
+          'SOTER_RUNTIME_LINK',
+          'doctor result and provider probe reference different configurations: ' + id,
+          'a provider observation cannot establish readiness for another resolved graph',
+          'regenerate the doctor from probes for the same exact lock'
+        ));
+      }
+    }
+    if (entry.doc.level === 'offline' && entry.doc.providerProbeIds.length) {
+      out.push(violation(
+        entry.file,
+        'SOTER_DOCTOR_SCOPE',
+        'offline doctor result references connected provider probes',
+        'offline diagnostics must remain effect-free and independent of provider state',
+        'remove provider probes or classify the result as connected'
+      ));
+    }
+    if (doctorLock && entry.doc.configuration.name !== doctorLock.doc.configuration.name) {
+      out.push(violation(
+        entry.file,
+        'SOTER_RUNTIME_LINK',
+        'doctor result configuration name disagrees with its lock',
+        'human-readable state labels must identify the same configuration as the exact fingerprint',
+        'regenerate the doctor result from the referenced lock'
+      ));
+    }
+  }
+
+  for (const entry of providerProbes.values()) {
+    const lock = requireLock(entry, entry.doc.configuration.lockFingerprint, 'provider probe');
+    const provider = providers.get(entry.doc.provider.implementation);
+    if (!provider
+      || provider.doc.pack !== entry.doc.provider.pack
+      || provider.doc.version !== entry.doc.provider.version
+      || provider.doc.containment !== entry.doc.provider.containment) {
+      out.push(violation(
+        entry.file,
+        'SOTER_PROVIDER_PROBE_LINK',
+        'provider probe has no exact declared connected implementation: ' + entry.doc.provider.implementation,
+        'connection observations are meaningful only for one inspectable implementation version',
+        'declare the exact provider or regenerate the probe from the selected implementation'
+      ));
+      continue;
+    }
+    if (lock && lock.doc.configuration.name !== entry.doc.configuration.name) {
+      out.push(violation(
+        entry.file,
+        'SOTER_PROVIDER_PROBE_LINK',
+        'provider probe configuration name disagrees with its lock',
+        'runtime observations cannot be reused across named configurations by fingerprint alone',
+        'regenerate the probe for the referenced configuration'
+      ));
+    }
+    for (const item of entry.doc.capabilities) {
+      if (!provider.doc.capabilities.some((capability) => capability.id === item.id)) {
+        out.push(violation(
+          entry.file,
+          'SOTER_PROVIDER_PROBE_CAPABILITY',
+          'probe reports a capability the provider does not implement: ' + item.id,
+          'readiness checks cannot expand an integration implementation by assertion',
+          'remove the check or declare and implement the capability'
+        ));
+      }
+    }
+    if (lock) {
+      const boundAuthorities = new Set(lock.doc.bindings
+        .filter((binding) => binding.providerPack === provider.doc.pack)
+        .flatMap((binding) => binding.authorities));
+      for (const item of entry.doc.authorities) {
+        if (!boundAuthorities.has(item.id)) {
+          out.push(violation(
+            entry.file,
+            'SOTER_PROVIDER_PROBE_AUTHORITY',
+            'probe reports an authority outside the resolved provider bindings: ' + item.id,
+            'connection checks must stay within the exact user-selected authority scope',
+            'remove the authority or resolve it into the provider binding before probing'
+          ));
+        }
+      }
+    }
+  }
+
+  for (const entry of hostToolCalls.values()) {
+    const lock = requireLock(entry, entry.doc.configurationLockFingerprint, 'host tool call');
+    const run = runs.get(entry.doc.runId);
+    const provider = providers.get(entry.doc.provider.implementation);
+    if (!run
+      || run.doc.configurationLock.fingerprint !== entry.doc.configurationLockFingerprint
+      || run.doc.graphFingerprint !== entry.doc.graphFingerprint) {
+      out.push(violation(
+        entry.file,
+        'SOTER_HOST_TOOL_LINK',
+        'host tool call has no exact matching run envelope: ' + entry.doc.runId,
+        'external calls must remain attributable to the run and graph that authorized them',
+        'include the exact run or regenerate the host tool request'
+      ));
+    }
+    if (!provider
+      || provider.doc.pack !== entry.doc.provider.pack
+      || provider.doc.version !== entry.doc.provider.version
+      || provider.doc.containment !== entry.doc.provider.containment
+      || provider.doc.runtime.engine !== 'mcp'
+      || provider.doc.runtime.server !== entry.doc.transport.server
+      || (entry.doc.transport.tool
+        && !provider.doc.runtime.tools.includes(entry.doc.transport.tool))) {
+      out.push(violation(
+        entry.file,
+        'SOTER_HOST_TOOL_PROVIDER',
+        'host tool call has no exact declared MCP provider: ' + entry.doc.provider.implementation,
+        'host dispatch must not expand or substitute an integration implementation at runtime',
+        'regenerate the request from the exact selected MCP provider declaration'
+      ));
+    }
+    if (lock) {
+      const binding = lock.doc.bindings.find((item) => {
+        return item.capability === entry.doc.capability.id
+          && item.capabilityVersion === entry.doc.capability.version
+          && item.providerPack === entry.doc.provider.pack
+          && item.authorities.includes(entry.doc.authority);
+      });
+      if (!binding
+        || lock.doc.graphFingerprint !== entry.doc.graphFingerprint
+        || lock.doc.host.id !== entry.doc.host.id
+        || lock.doc.host.adapter !== entry.doc.host.adapter
+        || lock.doc.host.version !== entry.doc.host.version) {
+        out.push(violation(
+          entry.file,
+          'SOTER_HOST_TOOL_SCOPE',
+          'host tool call is outside its locked capability, authority, graph, or host scope',
+          'portable tool execution must preserve the exact user-selected graph and authority boundary',
+          'prepare the request again from the referenced lock'
+        ));
+      }
+    }
+    if (entry.doc.arguments !== null
+      && entry.doc.argumentsFingerprint !== fingerprintJson(entry.doc.arguments)) {
+      out.push(violation(
+        entry.file,
+        'SOTER_HOST_TOOL_FINGERPRINT',
+        'host tool arguments fingerprint is stale',
+        'the executed request must be identical to the reviewed and recorded request',
+        'regenerate the request or restore the original arguments'
+      ));
+    }
+    const blockedByPolicy = entry.doc.policyDecisions.some((item) => item.decision === 'blocked');
+    const requestedShape = entry.doc.transport.tool !== null
+      && entry.doc.arguments !== null
+      && entry.doc.argumentsFingerprint !== null;
+    const validLifecycle = (entry.doc.state === 'requested'
+        && entry.doc.completedAt === null
+        && requestedShape
+        && entry.doc.responseFingerprint === null
+        && entry.doc.outputFingerprint === null
+        && entry.doc.error === null
+        && !blockedByPolicy)
+      || (entry.doc.state === 'completed'
+        && entry.doc.completedAt !== null
+        && requestedShape
+        && entry.doc.responseFingerprint !== null
+        && entry.doc.outputFingerprint !== null
+        && entry.doc.error === null
+        && !blockedByPolicy)
+      || (entry.doc.state === 'failed'
+        && entry.doc.completedAt !== null
+        && entry.doc.error !== null)
+      || (entry.doc.state === 'blocked'
+        && entry.doc.completedAt !== null
+        && !requestedShape
+        && entry.doc.responseFingerprint === null
+        && entry.doc.outputFingerprint === null
+        && entry.doc.error !== null
+        && blockedByPolicy);
+    if (!validLifecycle) {
+      out.push(violation(
+        entry.file,
+        'SOTER_HOST_TOOL_STATE',
+        'host tool call fields disagree with lifecycle state ' + entry.doc.state,
+        'requested, completed, failed, and policy-blocked calls need mechanically distinct evidence',
+        'regenerate the call through the Core host-tool state machine'
+      ));
+    }
+  }
+
+  for (const entry of snapshots.values()) {
+    const lock = requireLock(entry, entry.doc.configurationLockFingerprint, 'context snapshot');
+    const run = runs.get(entry.doc.runId);
+    if (!run) {
+      out.push(violation(
+        entry.file,
+        'SOTER_RUNTIME_LINK',
+        'context snapshot references a run that is not present: ' + entry.doc.runId,
+        'assembled context must remain attributable to the run that requested it',
+        'include the run envelope or correct the run identifier'
+      ));
+    } else {
+      if (run.doc.configurationLock.fingerprint !== entry.doc.configurationLockFingerprint
+        || run.doc.graphFingerprint !== entry.doc.graphFingerprint) {
+        out.push(violation(
+          entry.file,
+          'SOTER_RUNTIME_LINK',
+          'context snapshot lock or graph disagrees with its run envelope',
+          'context is applicable only to the exact run graph that assembled it',
+          'regenerate the snapshot from the referenced run and lock'
+        ));
+      }
+      const runEffectIds = new Set(run.doc.effects.map((effect) => effect.id));
+      for (const effectId of entry.doc.effectIds) {
+        if (!runEffectIds.has(effectId)) {
+          out.push(violation(
+            entry.file,
+            'SOTER_RUNTIME_LINK',
+            'context snapshot references an absent run effect: ' + effectId,
+            'every loaded value must be attributable to the capability effect that produced it',
+            'record the effect on the run envelope or remove the unsupported context entry'
+          ));
+        }
+      }
+    }
+    if (lock && lock.doc.graphFingerprint !== entry.doc.graphFingerprint) {
+      out.push(violation(
+        entry.file,
+        'SOTER_RUNTIME_LINK',
+        'context snapshot graph fingerprint disagrees with its lock',
+        'context cannot be reused across a different resolved graph',
+        'regenerate the context snapshot from the referenced lock'
+      ));
+    }
+    for (const item of entry.doc.entries) {
+      const provider = providers.get(item.providerImplementation);
+      if (!provider
+        || provider.doc.pack !== item.providerPack
+        || provider.doc.version !== item.providerVersion
+        || !provider.doc.capabilities.some((capability) => capability.id === item.capability)) {
+        out.push(violation(
+          entry.file,
+          'SOTER_CONTEXT_PROVIDER',
+          'context entry has no matching provider implementation: ' + item.id,
+          'loaded context must identify the exact implementation that produced it',
+          'correct the provider reference or regenerate the snapshot'
+        ));
+      }
+      if (item.valueFingerprint !== fingerprintJson(item.value)) {
+        out.push(violation(
+          entry.file,
+          'SOTER_CONTEXT_FINGERPRINT',
+          'context value fingerprint is stale: ' + item.id,
+          'context integrity must be independently checkable after compaction or resume',
+          'regenerate the snapshot from its provider fixture'
+        ));
+      }
+    }
+  }
+
+  for (const entry of changeSets.values()) {
+    requireLock(entry, entry.doc.configurationLockFingerprint, 'change set');
+    const run = runs.get(entry.doc.runId);
+    if (!run) {
+      out.push(violation(
+        entry.file,
+        'SOTER_TRANSACTION_LINK',
+        'change set references an absent run: ' + entry.doc.runId,
+        'mutation state must remain attributable to its exact run envelope',
+        'include the run envelope or correct the run id'
+      ));
+    } else {
+      const effectIds = new Set(run.doc.effects.map((effect) => effect.id));
+      for (const operation of entry.doc.operations) {
+        if (operation.effectId && !effectIds.has(operation.effectId)) {
+          out.push(violation(
+            entry.file,
+            'SOTER_TRANSACTION_LINK',
+            'change-set operation references an absent run effect: ' + operation.effectId,
+            'every attempted mutation must be visible in the durable run envelope',
+            'record the invocation or regenerate the transaction artifacts'
+          ));
+        }
+      }
+      if (entry.doc.verification.effectId && !effectIds.has(entry.doc.verification.effectId)) {
+        out.push(violation(
+          entry.file,
+          'SOTER_TRANSACTION_LINK',
+          'change-set verification references an absent run effect',
+          'post-write claims require an inspectable read-after-write invocation',
+          'record the verification invocation on the run envelope'
+        ));
+      }
+    }
+    const expectedScope = fingerprintJson({
+      id: entry.doc.id,
+      runId: entry.doc.runId,
+      configurationLockFingerprint: entry.doc.configurationLockFingerprint,
+      operations: entry.doc.operations.map((operation) => ({
+        id: operation.id,
+        capability: operation.capability,
+        authority: operation.authority,
+        inputFingerprint: operation.inputFingerprint
+      }))
+    });
+    if (entry.doc.scopeFingerprint !== expectedScope) {
+      out.push(violation(
+        entry.file,
+        'SOTER_APPROVAL_SCOPE',
+        'change-set scope fingerprint does not match its operations',
+        'an approval cannot safely authorize a batch whose scope marker is stale',
+        'recompute the change set and obtain a new approval'
+      ));
+    }
+    if (entry.doc.approvalId) {
+      const approval = approvals.get(entry.doc.approvalId);
+      if (!approval
+        || approval.doc.runId !== entry.doc.runId
+        || approval.doc.scope.changeSetId !== entry.doc.id
+        || approval.doc.scope.fingerprint !== entry.doc.scopeFingerprint) {
+        out.push(violation(
+          entry.file,
+          'SOTER_APPROVAL_SCOPE',
+          'change set has no matching exact-scope approval: ' + entry.doc.approvalId,
+          'confirmation is valid only for the reviewed operation batch',
+          'include the matching approval or return the change set to proposed state'
+        ));
+      }
+    }
+  }
+
+  for (const entry of approvals.values()) {
+    const changeSet = changeSets.get(entry.doc.scope.changeSetId);
+    if (!runs.has(entry.doc.runId) || !changeSet
+      || changeSet.doc.runId !== entry.doc.runId
+      || changeSet.doc.scopeFingerprint !== entry.doc.scope.fingerprint) {
+      out.push(violation(
+        entry.file,
+        'SOTER_APPROVAL_SCOPE',
+        'approval is not linked to its exact run and change-set scope',
+        'free-floating approval records could authorize unrelated effects',
+        'regenerate the approval from the exact proposed change set'
+      ));
+    }
+  }
+}
+
+function checkConfiguration(root, entry, packs, capabilities, hosts, out) {
+  const doc = entry.doc;
+  const selectedIds = [doc.base.kernel, doc.base.core, ...doc.packs.map((selection) => selection.id)];
+  const selected = new Set(selectedIds);
+  if (selected.size !== selectedIds.length) {
+    out.push(violation(
+      entry.file,
+      'SOTER_SELECTION',
+      'base and selectable pack lists contain a duplicate',
+      'one exact desired selection should have one reason and one resolved version per pack',
+      'remove the duplicate selection'
+    ));
+  }
+
+  const kernel = packs.get(doc.base.kernel);
+  const core = packs.get(doc.base.core);
+  if (!kernel || kernel.doc.layer !== 'kernel') {
+    out.push(violation(
+      entry.file,
+      'SOTER_BASE',
+      'configuration kernel base is missing or not a kernel pack',
+      'every conforming configuration requires an explicit kernel',
+      'select a declared kernel pack'
+    ));
+  }
+  if (!core || core.doc.layer !== 'core') {
+    out.push(violation(
+      entry.file,
+      'SOTER_BASE',
+      'configuration core base is missing or not a core pack',
+      'every conforming configuration requires an explicit minimum core',
+      'select a declared core pack'
+    ));
+  }
+
+  const hostAdapter = hosts.get(doc.host.adapter);
+  if (!hostAdapter) {
+    out.push(violation(
+      entry.file,
+      'SOTER_HOST',
+      'configured host adapter does not exist: ' + doc.host.adapter,
+      'host projection cannot be inferred from an identifier alone',
+      'declare the adapter or select an existing one'
+    ));
+  } else {
+    if (hostAdapter.doc.host !== doc.host.id) {
+      out.push(violation(
+        entry.file,
+        'SOTER_HOST',
+        doc.host.adapter + ' targets ' + hostAdapter.doc.host + ', not ' + doc.host.id,
+        'the active host and adapter contract must agree',
+        'select the matching host adapter'
+      ));
+    }
+    if (hostAdapter.doc.version !== doc.host.version) {
+      out.push(violation(
+        entry.file,
+        'SOTER_HOST',
+        'configured adapter version does not match ' + hostAdapter.doc.version,
+        'host realization evidence is version-specific',
+        'select the declared adapter version or add a compatible manifest'
+      ));
+    }
+  }
+
+  for (const id of selected) {
+    const pack = packs.get(id);
+    if (!pack) {
+      out.push(violation(
+        entry.file,
+        'SOTER_SELECTION',
+        'selected pack does not exist: ' + id,
+        'desired configuration cannot resolve an absent pack',
+        'add the pack or remove it from the configuration'
+      ));
+      continue;
+    }
+    if (!pack.doc.compatibility.hosts.includes(doc.host.id)) {
+      out.push(violation(
+        entry.file,
+        'SOTER_HOST',
+        id + ' does not declare compatibility with host ' + doc.host.id,
+        'host realization must preserve every selected pack contract',
+        'select a compatible host or add proven host support'
+      ));
+    }
+    for (const dep of pack.doc.dependencies) {
+      if (!dep.optional && !selected.has(dep.pack)) {
+        out.push(violation(
+          entry.file,
+          'SOTER_SELECTION',
+          id + ' requires unselected pack ' + dep.pack,
+          'hidden transitive installation violates explicit user selection',
+          'add the dependency visibly or remove the dependent pack'
+        ));
+      }
+    }
+  }
+
+  const authorities = new Map();
+  for (const authority of doc.authorities) {
+    if (authorities.has(authority.id)) {
+      out.push(violation(
+        entry.file,
+        'SOTER_AUTHORITY',
+        'duplicate authority id ' + authority.id,
+        'a run must resolve one explicit source for each authority identity',
+        'remove or rename the duplicate'
+      ));
+    }
+    authorities.set(authority.id, authority);
+  }
+  const secretRefs = new Set(doc.secretRefs.map((secret) => secret.id));
+
+  for (const id of selected) {
+    const pack = packs.get(id);
+    if (!pack) continue;
+    for (const requirement of pack.doc.authorities) {
+      if (!requirement.required) continue;
+      const matched = doc.authorities.some((authority) => {
+        return authority.role === requirement.role && authority.subject === requirement.subject;
+      });
+      if (!matched) {
+        out.push(violation(
+          entry.file,
+          'SOTER_AUTHORITY',
+          id + ' has no ' + requirement.role + ' authority for ' + requirement.subject,
+          'definitions, instances, providers, projections, and evidence cannot be inferred from location',
+          'declare an authority with the required role and subject'
+        ));
+      }
+    }
+  }
+
+  const bindings = new Map();
+  for (const binding of doc.bindings) {
+    if (bindings.has(binding.capability)) {
+      out.push(violation(
+        entry.file,
+        'SOTER_BINDING',
+        'capability has more than one selected binding: ' + binding.capability,
+        'a resolved configuration must choose one provider per required capability',
+        'remove the duplicate binding'
+      ));
+      continue;
+    }
+    bindings.set(binding.capability, binding);
+    const provider = packs.get(binding.providerPack);
+    if (!selected.has(binding.providerPack) || !provider) {
+      out.push(violation(
+        entry.file,
+        'SOTER_BINDING',
+        'binding provider is not selected: ' + binding.providerPack,
+        'capabilities cannot resolve through hidden or absent providers',
+        'select the provider pack or change the binding'
+      ));
+    } else if (!provider.doc.capabilities.provides.some((item) => item.id === binding.capability)) {
+      out.push(violation(
+        entry.file,
+        'SOTER_BINDING',
+        binding.providerPack + ' does not provide ' + binding.capability,
+        'provider choice must satisfy the declared capability contract',
+        'choose a provider that advertises this capability'
+      ));
+    }
+    for (const authority of binding.authorities) {
+      if (!authorities.has(authority)) {
+        out.push(violation(
+          entry.file,
+          'SOTER_BINDING',
+          'binding authority does not exist: ' + authority,
+          'a capability call must identify which source or store is authoritative',
+          'declare the authority or correct the binding'
+        ));
+      }
+    }
+    if (binding.secretRef && !secretRefs.has(binding.secretRef)) {
+      out.push(violation(
+        entry.file,
+        'SOTER_BINDING',
+        'binding secret reference does not exist: ' + binding.secretRef,
+        'authentication must resolve through a declared secret reference',
+        'declare the secret reference without embedding its value'
+      ));
+    }
+    if (!capabilities.has(binding.capability)) {
+      out.push(violation(
+        entry.file,
+        'SOTER_BINDING',
+        'binding capability has no contract: ' + binding.capability,
+        'configuration cannot bind an undefined interface',
+        'add the capability contract or remove the binding'
+      ));
+    }
+  }
+
+  const requiredCapabilities = new Set();
+  for (const id of selected) {
+    const pack = packs.get(id);
+    if (!pack) continue;
+    for (const requirement of pack.doc.capabilities.requires) {
+      if (!requirement.optional) requiredCapabilities.add(requirement.id);
+    }
+  }
+  for (const capability of requiredCapabilities) {
+    if (!bindings.has(capability)) {
+      out.push(violation(
+        entry.file,
+        'SOTER_BINDING',
+        'required capability is unbound: ' + capability,
+        'the selected automation is not ready without an explicit provider',
+        'add one binding to a selected compatible integration pack'
+      ));
+    }
+  }
+  for (const capability of bindings.keys()) {
+    if (!requiredCapabilities.has(capability)) {
+      out.push(violation(
+        entry.file,
+        'SOTER_BINDING',
+        'configuration binds an unrequested capability: ' + capability,
+        'unused bindings create hidden permissions and confusing configuration',
+        'remove the binding or select a pack that requires it'
+      ));
+    }
+  }
+
+  const selectedEffects = new Set();
+  for (const id of selected) {
+    const pack = packs.get(id);
+    for (const effect of pack?.doc.effects || []) selectedEffects.add(effect);
+  }
+  for (const effect of EFFECTS) {
+    if (!doc.effectPolicies[effect]) {
+      out.push(violation(
+        entry.file,
+        'SOTER_EFFECT_POLICY',
+        'effect policy is missing for ' + effect,
+        'every possible effect needs an explicit default',
+        'declare allow, confirm, or prohibit with a reason'
+      ));
+    } else if (selectedEffects.has(effect) && doc.effectPolicies[effect].mode === 'prohibit') {
+      out.push(violation(
+        entry.file,
+        'SOTER_EFFECT_POLICY',
+        'selected packs require prohibited effect ' + effect,
+        'a configuration cannot be ready while its required behavior is forbidden',
+        'remove the pack or choose an appropriate effect policy'
+      ));
+    }
+  }
+}
+
+function checkScenario(root, entry, packs, capabilities, configs, out) {
+  const automation = packs.get(entry.doc.automation);
+  if (!automation || automation.doc.layer !== 'automation') {
+    out.push(violation(
+      entry.file,
+      'SOTER_SCENARIO',
+      'scenario automation does not resolve to an automation pack',
+      'behavior evidence must identify the exact contract under test',
+      'correct the automation id or add the pack'
+    ));
+    return;
+  }
+  const required = new Set(automation.doc.capabilities.requires.map((item) => item.id));
+  for (const capability of entry.doc.expected.capabilityOrder) {
+    if (!required.has(capability) || !capabilities.has(capability)) {
+      out.push(violation(
+        entry.file,
+        'SOTER_SCENARIO',
+        'scenario calls undeclared capability ' + capability,
+        'fixtures cannot smuggle provider behavior around the automation contract',
+        'declare the capability requirement or correct the scenario'
+      ));
+    }
+  }
+  for (const sourceCase of entry.doc.sourceCases) {
+    if (!fs.existsSync(path.join(root, sourceCase))) {
+      out.push(violation(
+        entry.file,
+        'SOTER_MIGRATION_PATH',
+        'source evaluation does not exist: ' + sourceCase,
+        'migration provenance must remain inspectable until the old case is retired',
+        'correct the path or record an explicit retirement'
+      ));
+    }
+  }
+  const relevantConfigs = configs.filter((config) => {
+    return config.doc.packs.some((selection) => selection.id === entry.doc.automation);
+  });
+  if (!relevantConfigs.length) {
+    out.push(violation(
+      entry.file,
+      'SOTER_SCENARIO',
+      'no desired configuration selects this automation',
+      'a scenario without a resolvable configuration cannot prove runtime behavior',
+      'add a configuration that selects and binds the automation'
+    ));
+  }
+  for (const config of relevantConfigs) {
+    for (const [effect, mode] of Object.entries(entry.doc.expected.effectModes)) {
+      if (config.doc.effectPolicies[effect]?.mode !== mode) {
+        out.push(violation(
+          entry.file,
+          'SOTER_SCENARIO',
+          'scenario expects ' + effect + '=' + mode + ' but ' + config.doc.name + ' config differs',
+          'scenario evidence must be tied to the exact effect policy under test',
+          'align the scenario or desired configuration'
+        ));
+      }
+    }
+  }
+}
+
+function checkMigration(root, entry, packs, out) {
+  if (!packs.has(entry.doc.slice) || packs.get(entry.doc.slice).doc.layer !== 'automation') {
+    out.push(violation(
+      entry.file,
+      'SOTER_MIGRATION',
+      'migration slice is not a declared automation pack',
+      'a vertical slice needs one inspectable outcome boundary',
+      'set slice to the target automation pack'
+    ));
+  }
+  for (const item of entry.doc.items) {
+    const source = path.join(root, item.sourcePath);
+    const target = path.join(root, item.targetPath);
+    const pack = packs.get(item.targetPack);
+    if (!fs.existsSync(source)) {
+      out.push(violation(
+        entry.file,
+        'SOTER_MIGRATION_PATH',
+        'migration source does not exist: ' + item.sourcePath,
+        'a missing source makes migration status unverifiable',
+        'correct the path or mark the artifact retired with evidence'
+      ));
+    }
+    if (!fs.existsSync(target)) {
+      out.push(violation(
+        entry.file,
+        'SOTER_MIGRATION_PATH',
+        'migration target does not exist: ' + item.targetPath,
+        'mapped and migrated states require an inspectable target',
+        'create the target or return the item to current state'
+      ));
+    }
+    if (!pack) {
+      out.push(violation(
+        entry.file,
+        'SOTER_MIGRATION',
+        'migration target pack does not exist: ' + item.targetPack,
+        'every target artifact needs one owner',
+        'add the pack or correct targetPack'
+      ));
+    } else {
+      const packPath = path.relative(root, pack.file);
+      const ownedPaths = new Set([packPath, ...pack.doc.artifacts.map((artifact) => artifact.path)]);
+      if (!ownedPaths.has(item.targetPath)) {
+        out.push(violation(
+          entry.file,
+          'SOTER_MIGRATION',
+          item.targetPath + ' is not owned by ' + item.targetPack,
+          'migration cannot land an artifact outside its declared pack boundary',
+          'list the artifact on the pack or correct targetPack'
+        ));
+      }
+    }
+    if ((item.state === 'migrated' || item.state === 'retired') && !(item.evidence?.length)) {
+      out.push(violation(
+        entry.file,
+        'SOTER_MIGRATION_EVIDENCE',
+        item.state + ' item has no evidence: ' + item.sourcePath,
+        'status words cannot substitute for proof that behavior moved or was intentionally removed',
+        'attach verification or retirement evidence'
+      ));
+    }
+  }
+}
+
+export function validateJsonSchema(value, schema) {
+  return schemaErrors(value, schema);
+}
+
+export function verifySoter(root = defaultRoot, options = {}) {
+  const resolvedRoot = path.resolve(root);
+  const out = [];
+  const census = {
+    contracts: 0,
+    packs: 0,
+    capabilities: 0,
+    hosts: 0,
+    configurations: 0,
+    scenarios: 0,
+    migrations: 0,
+    locks: 0,
+    runEnvelopes: 0,
+    evidence: 0,
+    doctorResults: 0,
+    providers: 0,
+    contextSnapshots: 0,
+    providerFixtures: 0,
+    providerProbes: 0,
+    hostToolCalls: 0,
+    approvals: 0,
+    changeSets: 0
+  };
+  const soterRoot = path.join(resolvedRoot, 'soter');
+  if (!fs.existsSync(soterRoot)) {
+    out.push(violation(
+      soterRoot,
+      'SOTER_EMPTY',
+      'target implementation directory does not exist',
+      'silence is not evidence that the target architecture is valid',
+      'create the versioned target contracts or point --root at a Soter repository'
+    ));
+    return result(resolvedRoot, census, out, null);
+  }
+  const collected = collectDocuments(resolvedRoot, out, census, options);
+  const graph = checkPackGraph(resolvedRoot, collected.documents, out, census);
+  if (!census.contracts || !census.packs || !census.configurations) {
+    out.push(violation(
+      soterRoot,
+      'SOTER_EMPTY',
+      'scan found no usable contracts, packs, or desired configurations',
+      'a vacuous scan cannot establish architecture validity',
+      'add the missing target foundation artifacts'
+    ));
+  }
+  return result(resolvedRoot, census, out, graph);
+}
+
+function result(root, census, violations, graph) {
+  const errors = violations.filter((item) => item.level !== 'warn').length;
+  const selectedPackIds = new Set();
+  for (const config of graph?.configs || []) {
+    selectedPackIds.add(config.doc.base.kernel);
+    selectedPackIds.add(config.doc.base.core);
+    config.doc.packs.forEach((selection) => selectedPackIds.add(selection.id));
+  }
+  const selectedPacks = [...selectedPackIds].map((id) => graph?.packs.get(id)?.doc).filter(Boolean);
+  const selectedHosts = [...new Set((graph?.configs || []).map((config) => config.doc.host.adapter))]
+    .map((id) => graph?.hosts.get(id)?.doc)
+    .filter(Boolean);
+  const fixtureEvidenceApplies = errors === 0
+    && selectedPacks.length > 0
+    && selectedHosts.length > 0
+    && selectedPacks.every((pack) => pack.evidenceMaturity !== 'declared')
+    && selectedHosts.every((host) => host.evidenceMaturity !== 'declared')
+    && selectedPacks.every((pack) => {
+      return VERIFICATION_LEVELS.indexOf(pack.verification.maxLevel) >= VERIFICATION_LEVELS.indexOf('fixture');
+    })
+    && selectedHosts.every((host) => {
+      return VERIFICATION_LEVELS.indexOf(host.conformance.maxLevel) >= VERIFICATION_LEVELS.indexOf('fixture');
+    });
+  const resolvedConfigurations = [];
+  for (const config of graph?.configs || []) {
+    const selectionMetadata = new Map(config.doc.packs.map((selection) => [selection.id, selection]));
+    const ids = [config.doc.base.kernel, config.doc.base.core, ...selectionMetadata.keys()];
+    const authorities = new Map(config.doc.authorities.map((authority) => [authority.id, authority]));
+    const hostAdapter = graph.hosts.get(config.doc.host.adapter)?.doc;
+    resolvedConfigurations.push({
+      name: config.doc.name,
+      status: 'declared-static',
+      host: {
+        ...config.doc.host,
+        releaseStage: hostAdapter?.releaseStage || null,
+        evidenceMaturity: hostAdapter?.evidenceMaturity || null,
+        mechanisms: hostAdapter?.mechanisms || null,
+        limitations: hostAdapter?.limitations || []
+      },
+      selections: ids.map((id) => {
+        const pack = graph.packs.get(id)?.doc;
+        const selected = selectionMetadata.get(id);
+        return {
+          id,
+          version: pack?.version || null,
+          layer: pack?.layer || null,
+          releaseStage: pack?.releaseStage || null,
+          evidenceMaturity: pack?.evidenceMaturity || null,
+          source: selected?.source || 'base',
+          reason: selected?.reason || ('Required ' + (pack?.layer || 'base') + ' foundation: ' + (pack?.summary || id))
+        };
+      }),
+      dependencies: ids.flatMap((id) => {
+        const pack = graph.packs.get(id)?.doc;
+        return (pack?.dependencies || []).map((dependency) => ({
+          from: id,
+          to: dependency.pack,
+          version: dependency.version,
+          optional: dependency.optional,
+          reason: dependency.reason
+        }));
+      }),
+      bindings: config.doc.bindings.map((binding) => ({
+        capability: binding.capability,
+        capabilityVersion: graph.capabilities.get(binding.capability)?.doc.version || null,
+        effects: graph.capabilities.get(binding.capability)?.doc.effects || [],
+        providerPack: binding.providerPack,
+        providerVersion: graph.packs.get(binding.providerPack)?.doc.version || null,
+        authorities: [...binding.authorities],
+        authorityRoles: binding.authorities.map((authority) => ({
+          id: authority,
+          role: authorities.get(authority)?.role || null
+        })),
+        secretRef: binding.secretRef || null,
+        reason: binding.reason
+      })),
+      authorities: config.doc.authorities,
+      effectPolicies: config.doc.effectPolicies
+    });
+  }
+  return {
+    contractVersion: CONTRACT_VERSION,
+    root,
+    census,
+    health: {
+      valid: errors === 0 ? 'passed' : 'failed',
+      ready: errors === 0 ? 'unknown' : 'failed',
+      verified: fixtureEvidenceApplies ? 'passed' : 'unknown',
+      healthy: 'unknown'
+    },
+    resolvedConfigurations,
+    violations
+  };
+}
+
+function report(resultValue, json) {
+  if (json) {
+    console.log(JSON.stringify(resultValue, null, 2));
+    return;
+  }
+  for (const item of resultValue.violations) {
+    const tag = item.level === 'warn' ? 'WARN' : 'FAIL';
+    console.log('[' + tag + '] ' + item.file);
+    console.log('  what: ' + item.what + ' (' + item.code + ')');
+    console.log('  why:  ' + item.why);
+    console.log('  fix:  ' + item.fix);
+  }
+  const errors = resultValue.violations.filter((item) => item.level !== 'warn').length;
+  const warnings = resultValue.violations.length - errors;
+  const c = resultValue.census;
+  console.log(
+    'Scanned target: ' + c.contracts + ' contracts, ' + c.packs + ' packs, '
+      + c.capabilities + ' capabilities, ' + c.hosts + ' hosts, '
+      + c.configurations + ' configurations, '
+      + c.scenarios + ' scenarios, ' + c.migrations + ' migrations, '
+      + c.locks + ' locks, ' + c.runEnvelopes + ' run envelopes, '
+      + c.evidence + ' evidence records, ' + c.doctorResults + ' doctor results, '
+      + c.providers + ' providers, ' + c.contextSnapshots + ' context snapshots, '
+      + c.providerFixtures + ' provider fixtures, ' + c.providerProbes + ' provider probes, '
+      + c.hostToolCalls + ' host tool calls, '
+      + c.approvals + ' approvals, '
+      + c.changeSets + ' change sets.'
+  );
+  console.log(
+    'Health: valid=' + String(resultValue.health.valid)
+      + ', ready=' + String(resultValue.health.ready)
+      + ', verified=' + String(resultValue.health.verified)
+      + ', healthy=' + resultValue.health.healthy + '.'
+  );
+  console.log('Soter verifier: ' + errors + ' error(s), ' + warnings + ' warning(s).');
+}
+
+function copyMigrationSources(sourceRoot, targetRoot) {
+  const migrationDir = path.join(sourceRoot, 'soter', 'migrations');
+  for (const file of walkFiles(migrationDir, (candidate) => candidate.endsWith('.json'))) {
+    const migration = JSON.parse(fs.readFileSync(file, 'utf8'));
+    for (const item of migration.items || []) {
+      const target = path.join(targetRoot, item.sourcePath);
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.writeFileSync(target, 'selftest source fixture\n');
+    }
+  }
+  const hostDir = path.join(sourceRoot, 'soter', 'hosts');
+  for (const file of walkFiles(hostDir, (candidate) => candidate.endsWith('adapter.json'))) {
+    const adapter = JSON.parse(fs.readFileSync(file, 'utf8'));
+    for (const projection of adapter.projections || []) {
+      const source = path.join(sourceRoot, projection.path);
+      const target = path.join(targetRoot, projection.path);
+      if (fs.existsSync(source) && fs.statSync(source).isDirectory()) {
+        fs.mkdirSync(target, { recursive: true });
+      } else {
+        fs.mkdirSync(path.dirname(target), { recursive: true });
+        fs.writeFileSync(target, 'selftest host projection\n');
+      }
+    }
+  }
+}
+
+function selftest(root) {
+  const failures = [];
+  const schema = {
+    type: 'object',
+    additionalProperties: false,
+    required: ['mode', 'items'],
+    properties: {
+      mode: { enum: ['safe'] },
+      items: { type: 'array', minItems: 2, uniqueItems: true, items: { type: 'string' } }
+    }
+  };
+  const plantedSchemaErrors = schemaErrors({ mode: 'unsafe', items: ['x', 'x'], extra: true }, schema);
+  if (plantedSchemaErrors.length < 3) {
+    failures.push('schema validator missed enum, uniqueness, minimum, or additional-property failures');
+  }
+  if (!satisfies('0.1.5', '^0.1.0') || satisfies('0.2.0', '^0.1.0') || !satisfies('1.9.0', '^1.2.0')) {
+    failures.push('semantic version range checks are incorrect');
+  }
+
+  const live = verifySoter(root);
+  if (live.health.valid !== 'passed') {
+    failures.push('repository target fixture is not clean: ' + live.violations.map((item) => item.code).join(', '));
+  }
+  if (!live.resolvedConfigurations.length
+    || live.resolvedConfigurations.some((config) => config.selections.some((selection) => !selection.reason))) {
+    failures.push('structured resolution omits configuration or selection reasons');
+  }
+
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'soter-verifier-'));
+  try {
+    fs.cpSync(path.join(root, 'soter'), path.join(temp, 'soter'), { recursive: true });
+    copyMigrationSources(root, temp);
+    const clean = verifySoter(temp);
+    if (clean.health.valid !== 'passed') {
+      failures.push('copied clean fixture failed: ' + clean.violations.map((item) => item.code).join(', '));
+    }
+
+    const configFile = path.join(temp, 'soter', 'configurations', 'meeting-intake.config.json');
+    const config = JSON.parse(fs.readFileSync(configFile, 'utf8'));
+    config.bindings[0].providerPack = 'integration.missing';
+    fs.writeFileSync(configFile, JSON.stringify(config, null, 2) + '\n');
+    const badBinding = verifySoter(temp);
+    if (!badBinding.violations.some((item) => item.code === 'SOTER_BINDING')) {
+      failures.push('planted missing provider binding was not detected');
+    }
+
+    config.host.adapter = 'host.missing';
+    fs.writeFileSync(configFile, JSON.stringify(config, null, 2) + '\n');
+    const badHost = verifySoter(temp);
+    if (!badHost.violations.some((item) => item.code === 'SOTER_HOST')) {
+      failures.push('planted missing host adapter was not detected');
+    }
+
+    fs.writeFileSync(path.join(temp, 'soter', 'capabilities', 'broken.json'), '{ broken');
+    const badJson = verifySoter(temp);
+    if (!badJson.violations.some((item) => item.code === 'SOTER_JSON')) {
+      failures.push('planted malformed JSON was not detected');
+    }
+
+    fs.writeFileSync(
+      path.join(temp, 'soter', 'capabilities', 'unknown.json'),
+      JSON.stringify({ $contract: 'soter://contracts/unknown/v1' }) + '\n'
+    );
+    const unknownContract = verifySoter(temp);
+    if (!unknownContract.violations.some((item) => item.code === 'SOTER_CONTRACT')) {
+      failures.push('planted unknown contract was not detected');
+    }
+
+    fs.writeFileSync(
+      path.join(temp, 'soter', 'capabilities', 'invalid-known.json'),
+      JSON.stringify({ $contract: 'soter://contracts/capability/v1' }) + '\n'
+    );
+    const invalidKnown = verifySoter(temp);
+    if (!invalidKnown.violations.some((item) => item.code === 'SOTER_SCHEMA')) {
+      failures.push('planted known but malformed contract was not detected');
+    }
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+
+  if (failures.length) {
+    failures.forEach((failure) => console.error('SELFTEST FAIL: ' + failure));
+    return false;
+  }
+  console.log('SELFTEST PASS: schema, version, clean graph, binding, host, malformed JSON, unknown-contract, and malformed-contract checks fired as expected.');
+  return true;
+}
+
+const argv = process.argv.slice(2);
+const rootIndex = argv.indexOf('--root');
+const root = rootIndex >= 0 ? path.resolve(argv[rootIndex + 1]) : defaultRoot;
+const isDirect = process.argv[1] && path.resolve(process.argv[1]) === path.resolve(scriptFile);
+
+if (isDirect) {
+  if (argv.includes('--selftest')) {
+    process.exit(selftest(root) ? 0 : 1);
+  }
+  const verification = verifySoter(root);
+  report(verification, argv.includes('--json'));
+  process.exit(verification.health.valid === 'passed' ? 0 : 1);
+}

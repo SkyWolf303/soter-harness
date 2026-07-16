@@ -1,0 +1,166 @@
+{
+  "$contract": "soter://contracts/doctor-result/v1",
+  "contractVersion": "1.0.0",
+  "id": "doctor.meeting-intake.connected-fixture",
+  "createdAt": "2026-07-15T12:00:00.000Z",
+  "level": "connected",
+  "configuration": {
+    "name": "meeting-intake",
+    "lockFingerprint": "sha256:3ba61127ff8c9a83717d7413f1729bd201f6f23518e12a23c9be3cfc241ea8fa"
+  },
+  "states": {
+    "valid": "passed",
+    "ready": "failed",
+    "verified": "unknown",
+    "healthy": "unknown"
+  },
+  "checks": [
+    {
+      "id": "kernel.graph-valid",
+      "claim": "Machine contracts and the selected dependency graph are internally valid.",
+      "state": "passed",
+      "evidenceIds": [],
+      "details": "The dependency-free Kernel verifier reported no graph errors."
+    },
+    {
+      "id": "core.lock-current",
+      "claim": "The supplied lock exactly matches a fresh deterministic resolution.",
+      "state": "passed",
+      "evidenceIds": [
+        "evidence.meeting-intake.resolution.fixture"
+      ],
+      "details": "The observed and freshly resolved lock fingerprints match."
+    },
+    {
+      "id": "connections.runtime-state-valid",
+      "claim": "Connected checks use the exact desired configuration and contract-valid provider probes.",
+      "state": "passed",
+      "evidenceIds": [],
+      "details": "The desired configuration matches the lock and every supplied probe is uniquely typed."
+    },
+    {
+      "id": "integrations.implementations-ready",
+      "claim": "Every required capability resolves to exactly one connected provider implementation.",
+      "state": "failed",
+      "evidenceIds": [],
+      "details": "0 of 4 required connected implementation checks passed; inspect diagnostics and probe details."
+    },
+    {
+      "id": "connections.credentials-ready",
+      "claim": "Configured secret references authenticate with sufficient provider permissions.",
+      "state": "unknown",
+      "evidenceIds": [],
+      "details": "0 of 2 required credential checks passed; inspect diagnostics and probe details."
+    },
+    {
+      "id": "integrations.reachable",
+      "claim": "Selected connected provider endpoints are currently reachable.",
+      "state": "unknown",
+      "evidenceIds": [],
+      "details": "0 of 2 required reachability checks passed; inspect diagnostics and probe details."
+    },
+    {
+      "id": "authorities.current",
+      "claim": "Every configured external authority is visible to its selected provider identity.",
+      "state": "unknown",
+      "evidenceIds": [],
+      "details": "0 of 3 required authority checks passed; inspect diagnostics and probe details."
+    },
+    {
+      "id": "integrations.capability-compatible",
+      "claim": "Required capabilities pass safe connected compatibility checks.",
+      "state": "unknown",
+      "evidenceIds": [],
+      "details": "0 of 4 required capability checks passed; inspect diagnostics and probe details."
+    },
+    {
+      "id": "behavior.evidence-current",
+      "claim": "Applicable fixture or stronger behavior evidence is current for every selected component.",
+      "state": "unknown",
+      "evidenceIds": [],
+      "details": "Static declarations and graph evidence do not establish behavior verification."
+    },
+    {
+      "id": "runtime.health-current",
+      "claim": "Recent real outcomes establish current end-to-end health for this configuration.",
+      "state": "unknown",
+      "evidenceIds": [],
+      "details": "Connected probes establish start readiness only; outcome health requires canary or monitored run evidence."
+    }
+  ],
+  "diagnostics": [
+    {
+      "code": "SOTER_CONNECTED_PROVIDER_MISSING",
+      "severity": "error",
+      "claim": "Every required capability has exactly one declared connected provider implementation.",
+      "subject": "integration.notion/crm.records.create",
+      "path": [
+        "bindings",
+        "crm.records.create"
+      ],
+      "expected": "One connected implementation of 1.0.0.",
+      "observed": "Found 0 connected implementations for integration.notion/crm.records.create.",
+      "evidenceIds": [],
+      "remediation": "Add and declare a connected provider implementation before attempting a connected run."
+    },
+    {
+      "code": "SOTER_CONNECTED_PROVIDER_MISSING",
+      "severity": "error",
+      "claim": "Every required capability has exactly one declared connected provider implementation.",
+      "subject": "integration.notion/crm.records.read",
+      "path": [
+        "bindings",
+        "crm.records.read"
+      ],
+      "expected": "One connected implementation of 1.0.0.",
+      "observed": "Found 0 connected implementations for integration.notion/crm.records.read.",
+      "evidenceIds": [],
+      "remediation": "Add and declare a connected provider implementation before attempting a connected run."
+    },
+    {
+      "code": "SOTER_CONNECTED_PROVIDER_MISSING",
+      "severity": "error",
+      "claim": "Every required capability has exactly one declared connected provider implementation.",
+      "subject": "integration.notion/crm.records.update",
+      "path": [
+        "bindings",
+        "crm.records.update"
+      ],
+      "expected": "One connected implementation of 1.0.0.",
+      "observed": "Found 0 connected implementations for integration.notion/crm.records.update.",
+      "evidenceIds": [],
+      "remediation": "Add and declare a connected provider implementation before attempting a connected run."
+    },
+    {
+      "code": "SOTER_CONNECTED_PROVIDER_MISSING",
+      "severity": "error",
+      "claim": "Every required capability has exactly one declared connected provider implementation.",
+      "subject": "integration.otter/meeting.transcript.read",
+      "path": [
+        "bindings",
+        "meeting.transcript.read"
+      ],
+      "expected": "One connected implementation of 1.0.0.",
+      "observed": "Found 0 connected implementations for integration.otter/meeting.transcript.read.",
+      "evidenceIds": [],
+      "remediation": "Add and declare a connected provider implementation before attempting a connected run."
+    },
+    {
+      "code": "SOTER_CONNECTED_SCOPE",
+      "severity": "info",
+      "claim": "Connected doctor derives readiness from exact, short-lived, read-only provider probes.",
+      "subject": "meeting-intake",
+      "path": [],
+      "expected": "No provider mutation, dispatch, destructive effect, or secret value enters the report.",
+      "observed": "Connected readiness was evaluated from 0 structured provider probes.",
+      "evidenceIds": [
+        "evidence.meeting-intake.resolution.fixture"
+      ],
+      "remediation": "Use a separately authorized canary when write or dispatch behavior must be established."
+    }
+  ],
+  "providerProbeIds": [],
+  "evidenceIds": [
+    "evidence.meeting-intake.resolution.fixture"
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "$contract": "soter://contracts/approval/v1",
+  "contractVersion": "1.0.0",
+  "id": "approval.meeting-intake.transaction-fixture",
+  "runId": "run.meeting-intake.transaction-fixture",
+  "createdAt": "2026-07-15T12:00:00.000Z",
+  "actor": "fixture.user",
+  "decision": "approved",
+  "scope": {
+    "changeSetId": "changeset.meeting-intake.transaction-fixture",
+    "fingerprint": "sha256:74b9e60251a53393aaf1417f0e2b09261acf7be63adfaf428e61fbbcde78d9a2",
+    "effects": [
+      "write"
+    ]
+  },
+  "reason": "Approve this exact contained meeting-intake write batch for transactional fixture execution."
+}

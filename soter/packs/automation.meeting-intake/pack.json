@@ -1,0 +1,86 @@
+{
+  "$contract": "soter://contracts/pack/v1",
+  "contractVersion": "1.0.0",
+  "id": "automation.meeting-intake",
+  "version": "0.1.0",
+  "layer": "automation",
+  "releaseStage": "experimental",
+  "evidenceMaturity": "declared",
+  "summary": "Turns one recorded meeting into grounded summaries and linked CRM records through one reviewable batch.",
+  "dependencies": [
+    {
+      "pack": "core.runtime",
+      "version": "^0.1.0",
+      "optional": false,
+      "reason": "The automation requires resolution, context assembly, effect policy, evidence, and health."
+    },
+    {
+      "pack": "context.crm",
+      "version": "^0.1.0",
+      "optional": false,
+      "reason": "Meeting meaning, record shapes, relationships, and authorities belong to CRM context."
+    }
+  ],
+  "capabilities": {
+    "requires": [
+      {
+        "id": "meeting.transcript.read",
+        "version": "^1.0.0",
+        "optional": false,
+        "reason": "The automation must ground every derived outcome in the source transcript."
+      },
+      {
+        "id": "crm.records.read",
+        "version": "^1.0.0",
+        "optional": false,
+        "reason": "The automation must resolve authorities, policies, relationships, and existing records."
+      },
+      {
+        "id": "crm.records.create",
+        "version": "^1.0.0",
+        "optional": false,
+        "reason": "Approved summaries and tasks are created through the configured CRM record provider."
+      },
+      {
+        "id": "crm.records.update",
+        "version": "^1.0.0",
+        "optional": false,
+        "reason": "Approved meeting links, deduplicated tasks, and project state require bounded updates."
+      }
+    ],
+    "provides": []
+  },
+  "authorities": [
+    { "role": "definition", "subject": "crm.records", "required": true },
+    { "role": "instance", "subject": "crm.records", "required": true },
+    { "role": "provider", "subject": "meeting.transcript", "required": true },
+    { "role": "evidence", "subject": "runtime.runs", "required": true }
+  ],
+  "effects": ["read", "disclosure", "write"],
+  "artifacts": [
+    {
+      "path": "soter/scenarios/meeting-intake/happy-path.scenario.json",
+      "role": "evaluation"
+    },
+    {
+      "path": "soter/scenarios/meeting-intake/stale-meeting.scenario.json",
+      "role": "evaluation"
+    },
+    {
+      "path": "soter/scenarios/meeting-intake/grounded-and-gated.scenario.json",
+      "role": "evaluation"
+    }
+  ],
+  "compatibility": {
+    "baseContract": "^1.0.0",
+    "hosts": ["codex", "claude"]
+  },
+  "verification": {
+    "maxLevel": "static",
+    "scenarios": [
+      "soter/scenarios/meeting-intake/happy-path.scenario.json",
+      "soter/scenarios/meeting-intake/stale-meeting.scenario.json",
+      "soter/scenarios/meeting-intake/grounded-and-gated.scenario.json"
+    ]
+  }
+}

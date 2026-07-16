@@ -1,0 +1,45 @@
+{
+  "$contract": "soter://contracts/host-adapter/v1",
+  "contractVersion": "1.0.0",
+  "id": "host.codex",
+  "host": "codex",
+  "version": "0.1.0",
+  "releaseStage": "experimental",
+  "evidenceMaturity": "declared",
+  "summary": "Projects resolved Soter behavior into Codex instructions, skills, tools, lifecycle controls, and structured task workflows.",
+  "projections": [
+    { "path": "AGENTS.md", "role": "instructions" },
+    { "path": ".codex/config.toml", "role": "tools" }
+  ],
+  "mcpServers": [
+    {
+      "id": "notion",
+      "delivery": "connector",
+      "state": "declared",
+      "reason": "The Notion app connector supplies authenticated workspace tools outside repository configuration."
+    },
+    {
+      "id": "otter",
+      "delivery": "project",
+      "state": "configured",
+      "configurationPath": ".codex/config.toml",
+      "reason": "The trusted project config declares Otter's OAuth-authenticated streamable HTTP MCP server."
+    }
+  ],
+  "mechanisms": {
+    "instructions": "available",
+    "skills": "declared",
+    "tools": "available",
+    "lifecycle": "declared",
+    "compactionRehydration": "declared",
+    "backgroundRuns": "declared",
+    "structuredOutput": "declared"
+  },
+  "conformance": {
+    "maxLevel": "static",
+    "scenarios": []
+  },
+  "limitations": [
+    "Instructions and Otter MCP configuration are projected, but connector authentication, pack skills, lifecycle enforcement, and behavior conformance are not proven."
+  ]
+}
