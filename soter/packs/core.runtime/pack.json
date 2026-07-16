@@ -28,6 +28,7 @@
     { "path": "package-lock.json", "role": "implementation" },
     { "path": "soter/core/lib/canonical-json.mjs", "role": "implementation" },
     { "path": "soter/core/resolve.mjs", "role": "implementation" },
+    { "path": "soter/core/configuration-view.mjs", "role": "implementation" },
     { "path": "soter/core/run.mjs", "role": "implementation" },
     { "path": "soter/core/evidence.mjs", "role": "implementation" },
     { "path": "soter/core/doctor.mjs", "role": "implementation" },

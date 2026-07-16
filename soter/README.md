@@ -343,6 +343,19 @@ forking its packs, bindings, authorities, or policies:
 Changing the selected host changes the lock and host projection fingerprints.
 Unknown or pack-incompatible hosts fail resolution.
 
+Inspect the proposed configuration as concise text, or consume the same
+schema-checked facts as JSON from a future UI:
+
+    node soter/core/cli.mjs config-inspect
+    node soter/core/cli.mjs config-inspect --host claude --json
+    node soter/core/cli.mjs config-inspect --lock soter/fixtures/meeting-intake/meeting-intake.lock.json --json
+
+The view explains each selected system and why it is present, dependencies,
+bindings, authorities, portable sources, effects, host limitations, and exact
+fingerprints. Lock inspection fails if the lock is stale. Fresh resolution
+establishes local validity only, so the report keeps ready, verified, and
+healthy unknown.
+
 Exercise typed context assembly without external access:
 
     node soter/core/cli.mjs context --lock soter/fixtures/meeting-intake/meeting-intake.lock.json --scenario soter/scenarios/meeting-intake/happy-path.scenario.json --meeting-id meeting.fixture-001 --recording-uri otter://fixture/meeting.fixture-001

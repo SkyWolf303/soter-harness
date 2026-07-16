@@ -21,12 +21,20 @@ import {
 } from './evidence.mjs';
 import { checkMeetingIntakeFixtures, writeMeetingIntakeFixtures } from './fixtures.mjs';
 import {
+  buildConfigurationView,
+  formatConfigurationView
+} from './configuration-view.mjs';
+import {
   readJson,
   readPrivateJsonInput,
   resolveRepoPath,
   writeJson
 } from './lib/canonical-json.mjs';
-import { fingerprintLock, resolveConfiguration } from './resolve.mjs';
+import {
+  fingerprintLock,
+  lockMatchesResolution,
+  resolveConfiguration
+} from './resolve.mjs';
 import { prepareRunEnvelope } from './run.mjs';
 import {
   completeDurableCapabilityExecution,
@@ -126,6 +134,41 @@ async function main() {
           + 'Lock: ' + fingerprintLock(lock) + '\n'
           + (output ? 'Wrote: ' + output + '\n' : '')
       );
+    }
+    return;
+  }
+
+  if (command === 'config-inspect') {
+    const configPath = option(args, '--config');
+    const host = option(args, '--host');
+    const lockPath = option(args, '--lock');
+    if (lockPath && (configPath || host)) {
+      throw new Error('config-inspect accepts either --lock or configuration/host selection, not both.');
+    }
+    let lock;
+    let basis;
+    if (lockPath) {
+      lock = readJson(resolveRepoPath(root, lockPath));
+      const exact = lockMatchesResolution({ lock, root });
+      if (!exact.matches) {
+        throw new Error(
+          'Configuration lock is stale: expected ' + fingerprintLock(exact.expected)
+            + ' but observed ' + fingerprintLock(lock) + '.'
+        );
+      }
+      basis = 'lock';
+    } else {
+      lock = resolveConfiguration({ root, configPath, host });
+      basis = 'configuration';
+    }
+    const view = buildConfigurationView({ root, lock, basis });
+    const output = option(args, '--output');
+    if (output) writeJson(resolveRepoPath(root, output), view);
+    if (json) {
+      print(view);
+    } else {
+      process.stdout.write(formatConfigurationView(view));
+      if (output) process.stdout.write('Wrote: ' + output + '\n');
     }
     return;
   }
@@ -952,8 +995,9 @@ async function main() {
   }
 
   throw new Error(
-    'Usage: node soter/core/cli.mjs <resolve|prepare|context|context-connected-prepare|context-connected-finalize|meeting-intake-decision-inspect|meeting-intake-decision-commit|meeting-intake-proposal|transaction|connected-batch-preview|connected-batch-approve|connected-transaction-prepare|connected-transaction-complete|connected-transaction-reconcile|doctor|probe-prepare|probe-complete|capability-prepare|capability-complete|plan-prepare|plan-complete|host-fail|host-get|host-list|fixtures|selftest> [options]\n'
+    'Usage: node soter/core/cli.mjs <resolve|config-inspect|prepare|context|context-connected-prepare|context-connected-finalize|meeting-intake-decision-inspect|meeting-intake-decision-commit|meeting-intake-proposal|transaction|connected-batch-preview|connected-batch-approve|connected-transaction-prepare|connected-transaction-complete|connected-transaction-reconcile|doctor|probe-prepare|probe-complete|capability-prepare|capability-complete|plan-prepare|plan-complete|host-fail|host-get|host-list|fixtures|selftest> [options]\n'
       + '  resolve [--config PATH] [--host ID] [--output PATH] [--json]\n'
+      + '  config-inspect [--config PATH] [--host ID | --lock PATH] [--output PATH] [--json]\n'
       + '  prepare --lock PATH [--scenario PATH] [--output PATH] [--evidence-dir PATH] [--json]\n'
       + '  context --lock PATH --meeting-id ID --recording-uri URI [--scenario PATH] [--json]\n'
       + '  context-connected-prepare --lock PATH --run PATH --meeting-id ID --recording-uri URI [--snapshot-id ID] [--json]\n'

@@ -235,7 +235,11 @@ The main remaining gaps are structural and behavioral:
 - The target has an explicit desired configuration and lock, but host
   install/upgrade transactions and live host conformance are not implemented.
   Core does locally prove that one portable configuration resolves into
-  distinct reproducible Codex and Claude locks and native tool requests.
+  distinct reproducible Codex and Claude locks and native tool requests. A
+  fingerprinted configuration-view contract projects that exact lock into
+  selected systems and their reasons, dependencies, host limitations, bindings,
+  sources, authorities, effects, and honest unevaluated runtime states for both
+  terminal and future graphical consumers.
 - Evidence does not yet support complete transitive freshness and health claims.
 - The legacy Claude realization remains more mature than Codex or other host
   realizations; the target adapter boundary has equal local projection coverage
@@ -303,6 +307,10 @@ Exercise Core resolution and its checked-in preflight evidence:
       --config soter/configurations/meeting-intake.config.json \
       --host claude \
       --json
+    node soter/core/cli.mjs config-inspect
+    node soter/core/cli.mjs config-inspect \
+      --lock soter/fixtures/meeting-intake/meeting-intake.lock.json \
+      --json
     node soter/core/cli.mjs selftest
     node soter/core/cli.mjs fixtures --check
     node soter/core/cli.mjs doctor --lock soter/fixtures/meeting-intake/meeting-intake.lock.json
@@ -311,6 +319,10 @@ The configuration-default and explicit-host commands resolve the same portable
 pack, binding, authority, and context selection. They produce different locks
 whose host selection and projection fingerprints make the intended runtime
 unambiguous and reproducible. An incompatible or unknown host fails resolution.
+`config-inspect` renders the same schema-checked configuration-view facts as
+text or JSON. Lock-based inspection first rejects a stale lock; it does not
+silently refresh or reinterpret it. The view can establish fresh local validity
+but leaves readiness, verification, and health unknown.
 
 Run the same contained context operation through the shared CLI:
 

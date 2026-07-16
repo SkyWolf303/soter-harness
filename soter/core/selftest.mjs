@@ -9,6 +9,10 @@ import {
 } from './capabilities.mjs';
 import { assembleMeetingIntakeContext } from './context.mjs';
 import {
+  buildConfigurationView,
+  formatConfigurationView
+} from './configuration-view.mjs';
+import {
   finalizeMeetingIntakeConnectedContext,
   prepareMeetingIntakeConnectedContext
 } from '../automations/meeting-intake/context.mjs';
@@ -395,6 +399,11 @@ export async function selftest(root) {
   const second = resolveConfiguration({ root });
   const claude = resolveConfiguration({ root, host: 'claude' });
   const claudeMatch = lockMatchesResolution({ lock: claude, root });
+  const defaultView = buildConfigurationView({ root, lock: first });
+  const repeatedView = buildConfigurationView({ root, lock: second });
+  const claudeView = buildConfigurationView({ root, lock: claude });
+  const lockedView = buildConfigurationView({ root, lock: first, basis: 'lock' });
+  const formattedView = formatConfigurationView(defaultView);
   if (fingerprintLock(first) !== fingerprintLock(second)) {
     failures.push('unchanged inputs did not produce a deterministic lock');
   }
@@ -423,6 +432,26 @@ export async function selftest(root) {
   }
   if (!unknownHostRejected) {
     failures.push('resolver accepted an unknown host override');
+  }
+  if (defaultView.viewFingerprint !== repeatedView.viewFingerprint
+    || defaultView.basis.lockFingerprint !== fingerprintLock(first)
+    || defaultView.systems.length !== first.packs.length
+    || defaultView.systems.some((system) => !system.summary || !system.selection.reason)
+    || defaultView.host.selectionSource !== 'configuration'
+    || claudeView.host.selectionSource !== 'override'
+    || claudeView.host.id !== 'claude'
+    || claudeView.configuration.configuredDefaultHost !== 'codex'
+    || claudeView.viewFingerprint === defaultView.viewFingerprint
+    || lockedView.basis.kind !== 'lock'
+    || lockedView.viewFingerprint === defaultView.viewFingerprint
+    || defaultView.states.valid !== 'passed'
+    || ['ready', 'verified', 'healthy'].some((state) => {
+      return defaultView.states[state] !== 'unknown';
+    })
+    || !formattedView.includes('Included by base:')
+    || !formattedView.includes('write=confirm')
+    || !formattedView.includes('ready=unknown')) {
+    failures.push('configuration view was not deterministic, explainable, host-aware, and honest');
   }
   if (JSON.stringify(first).includes('secret-ref') || JSON.stringify(first).includes('OAUTH')) {
     failures.push('configuration lock contains credential-reference material');
@@ -3859,7 +3888,7 @@ export async function selftest(root) {
     return false;
   }
   process.stdout.write(
-    'CORE SELFTEST PASS: deterministic source-bound and host-selectable locks, portable Codex and Claude request/result projection, typed fixture reads/writes, grounded Automation decisions with explicit ambiguity and abstention, exact-scope approval, deduplication, expected-version conflicts, rollback, read-after-write verification, resumable fixed and bound sequential operation plans, approval-bound connected update transactions and terminal creates with exact record/content verification, reverse compensation, and read-only ambiguity reconciliation, bounded connected context finalization with exact applicable policy bodies, resumable MCP host dispatch, exact-lock single and multi-step provider probes including minimized document reads, schema and identity drift rejection, connected readiness, expiry, honest states, and stale-lock detection.\n'
+    'CORE SELFTEST PASS: deterministic source-bound and host-selectable locks, fingerprinted explainable configuration views, portable Codex and Claude request/result projection, typed fixture reads/writes, grounded Automation decisions with explicit ambiguity and abstention, exact-scope approval, deduplication, expected-version conflicts, rollback, read-after-write verification, resumable fixed and bound sequential operation plans, approval-bound connected update transactions and terminal creates with exact record/content verification, reverse compensation, and read-only ambiguity reconciliation, bounded connected context finalization with exact applicable policy bodies, resumable MCP host dispatch, exact-lock single and multi-step provider probes including minimized document reads, schema and identity drift rejection, connected readiness, expiry, honest states, and stale-lock detection.\n'
   );
   return true;
 }

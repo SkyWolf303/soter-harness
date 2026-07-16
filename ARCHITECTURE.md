@@ -306,6 +306,13 @@ graphical interfaces, and automation triggers. Business rules, graph
 resolution, effect policy, and health calculations live in core so interfaces
 cannot drift.
 
+The first operator-facing read projection is a deterministic configuration view
+over one exact fresh lock. It explains selected systems, dependencies, host
+choice, bindings, sources, authorities, effects, maturity, and limitations while
+keeping readiness, verification, and health explicitly unknown unless separate
+evidence establishes them. Terminal and graphical renderers consume that same
+view contract.
+
 The current reference projection realizes that rule with one Core service and
 two thin interfaces: structured CLI commands and a local stdio MCP server. The
 MCP server is not an integration provider and does not proxy credentials or

@@ -588,6 +588,16 @@ operations have one structured contract:
 - Export a reusable template or exact lock.
 - Upgrade, migrate, roll back, or diagnose drift.
 
+The first implemented read projection is the
+[configuration view](./soter/contracts/configuration-view.schema.json). It is a
+deterministic, fingerprinted explanation of one exact fresh lock: selected
+systems and inclusion reasons, dependency edges, host choice and limitations,
+capability bindings, sources, authorities, and effect policies. It reports
+`valid=passed` only because resolution just revalidated the local graph and
+lock. Readiness, verification, and health remain `unknown` until their own
+evidence-bearing operations run. CLI and graphical interfaces must render these
+structured facts rather than reconstructing architecture or state from prose.
+
 ### Pack distribution contract
 
 A distributable pack contains everything needed to inspect and verify the

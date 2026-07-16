@@ -18,6 +18,7 @@
     { "path": "soter/contracts/pack.schema.json", "role": "definition" },
     { "path": "soter/contracts/capability.schema.json", "role": "definition" },
     { "path": "soter/contracts/configuration.schema.json", "role": "definition" },
+    { "path": "soter/contracts/configuration-view.schema.json", "role": "definition" },
     { "path": "soter/contracts/host-adapter.schema.json", "role": "definition" },
     { "path": "soter/contracts/scenario.schema.json", "role": "definition" },
     { "path": "soter/contracts/migration.schema.json", "role": "definition" },

@@ -8,11 +8,11 @@
   },
   "runId": "run.meeting-intake.transaction-fixture",
   "createdAt": "2026-07-15T12:00:00.000Z",
-  "configurationLockFingerprint": "sha256:ce0ec398d13f999f9226b93ec50668106906a99fa4c6d4c39d2e95cef9b77d22",
-  "graphFingerprint": "sha256:61993b5e604d23686ffa90c735e7631ae056bb6b3403121202695caa594ea2b8",
+  "configurationLockFingerprint": "sha256:e00e913061ab24b58b27e9db1127716608ff8493b8aef6e6176965348a97f22f",
+  "graphFingerprint": "sha256:2347567fdbf731deb027976d3676da73a98c8d57066620b26b1d66022b223cc8",
   "context": {
     "snapshotId": "context.meeting-intake.transaction-fixture",
-    "snapshotFingerprint": "sha256:45f2d3cb2fd59546bdfc52c2e75921ccf38d244d20900ae3ecf377bccf61f60d"
+    "snapshotFingerprint": "sha256:0d09d4a94c4bd0b350ab59321c1e70107ad78102fa35042ffe874d43a60a50e4"
   },
   "producer": {
     "kind": "fixture",
@@ -74,5 +74,5 @@
       "Only exact bounded record identities, transcript segment fingerprints, and cited policy excerpts are retained."
     ]
   },
-  "decisionFingerprint": "sha256:e7352fd6a58c422cd960c76511b89cfea01fa265bfeb4e4a2a47c8c3bdc9a464"
+  "decisionFingerprint": "sha256:be7845b53546aefbc2fde6ca0184dafa87ece3b30c6c5f06e62361f0577ae369"
 }
