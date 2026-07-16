@@ -17,12 +17,31 @@
       "delivery": "project",
       "state": "configured",
       "configurationPath": ".codex/config.toml",
+      "toolMappings": [],
       "reason": "The trusted project config exposes the provider-neutral Core service through a local stdio MCP server."
     },
     {
       "id": "notion",
       "delivery": "connector",
       "state": "declared",
+      "toolMappings": [
+        {
+          "logical": "fetch",
+          "native": "mcp__codex_apps__notion_fetch"
+        },
+        {
+          "logical": "query_data_sources",
+          "native": "mcp__codex_apps__notion_notion_query_data_sources"
+        },
+        {
+          "logical": "create_pages",
+          "native": "mcp__codex_apps__notion_notion_create_pages"
+        },
+        {
+          "logical": "update_page",
+          "native": "mcp__codex_apps__notion_notion_update_page"
+        }
+      ],
       "reason": "The Notion app connector supplies authenticated workspace tools outside repository configuration."
     },
     {
@@ -30,6 +49,16 @@
       "delivery": "project",
       "state": "configured",
       "configurationPath": ".codex/config.toml",
+      "toolMappings": [
+        {
+          "logical": "fetch",
+          "native": "mcp__otter__fetch"
+        },
+        {
+          "logical": "get_user_info",
+          "native": "mcp__otter__get_user_info"
+        }
+      ],
       "reason": "The trusted project config declares Otter's OAuth-authenticated streamable HTTP MCP server."
     }
   ],
@@ -47,6 +76,6 @@
     "scenarios": []
   },
   "limitations": [
-    "The local Core MCP service durably checkpoints calls and Otter is configured, but Codex startup, connector authentication, real provider dispatch, checkpoint recovery by the host, lifecycle judgment, and end-to-end behavior conformance are not proven."
+    "The local Core MCP service durably checkpoints calls, Otter is configured, and the current Notion connector tool names are mapped, but Codex startup, connector authentication for another installation, real provider dispatch through Soter, checkpoint recovery by the host, lifecycle judgment, and end-to-end behavior conformance are not proven."
   ]
 }

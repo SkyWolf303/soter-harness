@@ -17,6 +17,7 @@
     { "role": "provider", "subject": "meeting.transcript" }
   ],
   "effects": ["read", "disclosure"],
+  "mappings": [],
   "fixtures": [
     "soter/fixtures/providers/otter/transcripts.json"
   ],

@@ -23,6 +23,7 @@
     { "role": "provider", "subject": "meeting.transcript" }
   ],
   "effects": ["read", "disclosure"],
+  "mappings": [],
   "fixtures": [],
   "limitations": [
     "Fetch accepts an Otter meeting ID extracted from a canonical https://otter.ai/u/MEETING_ID recording URI; it does not search the user's account or infer a meeting from a title.",

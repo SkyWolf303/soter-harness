@@ -43,13 +43,13 @@ export function createSoterMcpServer({ root, host }) {
   const server = new McpServer(
     { name: 'soter-core', version: '0.1.0' },
     {
-      instructions: 'Soter Core validates exact locks and runs for the active ' + host + ' host projection, then saves a private durable checkpoint before emitting a logical provider request. After compaction or restart, use soter_list_host_calls and soter_get_host_call to recover pending work. Only when checkpoint.call.state is requested, invoke exactly checkpoint.call.transport.server/checkpoint.call.transport.tool with checkpoint.call.arguments through the separately configured provider MCP server. Pass the native result unchanged with checkpoint.id to the matching complete tool. Never fabricate a provider response. Soter does not invoke providers, persist raw responses, or authorize connected writes.'
+      instructions: 'Soter Core validates exact locks and runs for the active ' + host + ' host projection, then saves a private durable checkpoint before emitting a provider-neutral operation resolved to an exact native host tool. After compaction or restart, use soter_list_host_calls and soter_get_host_call to recover pending work. Only when checkpoint.call.state is requested, use checkpoint.call.transport.operation for explanation and invoke exactly checkpoint.call.transport.tool with checkpoint.call.arguments through checkpoint.call.transport.server and its separately configured provider MCP route. Pass the native result unchanged with checkpoint.id to the matching complete tool. Never fabricate a provider response. Soter does not invoke providers, persist raw responses, or authorize connected writes.'
     }
   );
 
   server.registerTool('soter_prepare_provider_probe', {
     title: 'Prepare Soter provider probe',
-    description: 'Validate an exact configuration lock, durably checkpoint it, and emit one logical identity-minimized provider probe request. This tool does not call the provider.',
+    description: 'Validate an exact configuration lock, durably checkpoint it, and emit one identity-minimized provider operation resolved to an exact native host tool. This tool does not call the provider.',
     inputSchema: {
       lock_path: z.string().min(1),
       provider_implementation: z.string().min(1),
@@ -97,7 +97,7 @@ export function createSoterMcpServer({ root, host }) {
 
   server.registerTool('soter_prepare_capability_call', {
     title: 'Prepare Soter capability call',
-    description: 'Validate and durably checkpoint an exact run before emitting one policy-bound logical provider request. This interface supplies no connected-write approval.',
+    description: 'Validate and durably checkpoint an exact run before emitting one policy-bound provider operation resolved to an exact native host tool. This interface supplies no connected-write approval.',
     inputSchema: {
       lock_path: z.string().min(1),
       run_path: z.string().min(1),

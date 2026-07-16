@@ -5,9 +5,10 @@ import { listProviderDeclarations } from './capabilities.mjs';
 import {
   assertMcpRuntime,
   containsCredentialMaterial,
-  hostRoute,
+  loadProviderMappings,
   loadProviderModule,
-  normalizedError
+  normalizedError,
+  resolveHostTool
 } from './host-runtime.mjs';
 import { fingerprintJson, readJson, resolveRepoPath } from './lib/canonical-json.mjs';
 import { fingerprintLock } from './resolve.mjs';
@@ -104,7 +105,7 @@ function failedPreparation(base, at, error) {
     ...base,
     completedAt: at,
     state: 'failed',
-    transport: { ...base.transport, tool: null },
+    transport: { ...base.transport, operation: null, tool: null },
     arguments: null,
     argumentsFingerprint: null,
     responseFingerprint: null,
@@ -171,7 +172,6 @@ export async function prepareProviderProbeCall({
     providerImplementation
   );
   assertMcpRuntime(provider);
-  hostRoute(resolvedRoot, lock, provider);
   const plan = probePlan(resolvedRoot, lock, provider, bindings);
   const base = {
     $contract: 'soter://contracts/provider-probe-call/v1',
@@ -199,6 +199,7 @@ export async function prepareProviderProbeCall({
     transport: {
       protocol: 'mcp',
       server: provider.runtime.server,
+      operation: null,
       tool: null
     },
     secretValuesExcluded: true
@@ -213,7 +214,12 @@ export async function prepareProviderProbeCall({
         { kind: 'validation' }
       );
     }
-    const request = await prepare({ plan, settings: lock.settings || {}, at });
+    const request = await prepare({
+      plan,
+      settings: lock.settings || {},
+      mappings: loadProviderMappings(resolvedRoot, provider),
+      at
+    });
     if (!request || typeof request.tool !== 'string' || !request.arguments
       || typeof request.arguments !== 'object' || Array.isArray(request.arguments)) {
       throw Object.assign(new Error('MCP probe translator must return { tool, arguments }.'), {
@@ -233,9 +239,14 @@ export async function prepareProviderProbeCall({
         { kind: 'validation' }
       );
     }
+    const hostTool = resolveHostTool(resolvedRoot, lock, provider, request.tool);
     const call = {
       ...base,
-      transport: { ...base.transport, tool: request.tool },
+      transport: {
+        ...base.transport,
+        operation: request.tool,
+        tool: hostTool.nativeTool
+      },
       arguments: request.arguments,
       argumentsFingerprint: fingerprintJson(request.arguments),
       responseFingerprint: null,
@@ -274,12 +285,18 @@ export async function completeProviderProbeCall({
     call.provider.implementation
   );
   assertMcpRuntime(provider);
-  hostRoute(resolvedRoot, lock, provider);
   const expectedPlan = probePlan(resolvedRoot, lock, provider, bindings);
+  const hostTool = resolveHostTool(
+    resolvedRoot,
+    lock,
+    provider,
+    call.transport.operation
+  );
   if (provider.pack !== call.provider.pack
     || provider.version !== call.provider.version
     || provider.runtime.server !== call.transport.server
-    || !provider.runtime.probeTools.includes(call.transport.tool)
+    || !provider.runtime.probeTools.includes(call.transport.operation)
+    || hostTool.nativeTool !== call.transport.tool
     || fingerprintJson(expectedPlan) !== fingerprintJson(call.plan)) {
     throw new Error('Provider probe response does not match the exact provider and probe plan request.');
   }
@@ -298,6 +315,7 @@ export async function completeProviderProbeCall({
       response,
       plan: call.plan,
       settings: lock.settings || {},
+      mappings: loadProviderMappings(resolvedRoot, provider),
       at
     });
     assertObservationScope(call.plan, observations);

@@ -6,7 +6,7 @@
   "level": "connected",
   "configuration": {
     "name": "meeting-intake",
-    "lockFingerprint": "sha256:345a985fea75b4d6edd9b68db591c255033336e313705e45a64f8e87846d5e98"
+    "lockFingerprint": "sha256:445ba22c56a829f199b81c87ab2107dcf52a5baaff87c75f464d470be711179e"
   },
   "states": {
     "valid": "passed",
@@ -43,28 +43,28 @@
       "claim": "Every required capability resolves to exactly one connected provider implementation.",
       "state": "failed",
       "evidenceIds": [],
-      "details": "1 of 4 required connected implementation checks passed; inspect diagnostics and probe details."
+      "details": "2 of 4 required connected implementation checks passed; inspect diagnostics and probe details."
     },
     {
       "id": "connections.credentials-ready",
       "claim": "Configured secret references authenticate with sufficient provider permissions.",
       "state": "unknown",
       "evidenceIds": [],
-      "details": "0 of 2 required credential checks passed; inspect diagnostics and probe details."
+      "details": "0 of 3 required credential checks passed; inspect diagnostics and probe details."
     },
     {
       "id": "integrations.reachable",
       "claim": "Selected connected provider endpoints are currently reachable.",
       "state": "unknown",
       "evidenceIds": [],
-      "details": "0 of 2 required reachability checks passed; inspect diagnostics and probe details."
+      "details": "0 of 3 required reachability checks passed; inspect diagnostics and probe details."
     },
     {
       "id": "authorities.current",
       "claim": "Every configured external authority is visible to its selected provider identity.",
       "state": "unknown",
       "evidenceIds": [],
-      "details": "0 of 3 required authority checks passed; inspect diagnostics and probe details."
+      "details": "0 of 4 required authority checks passed; inspect diagnostics and probe details."
     },
     {
       "id": "integrations.capability-compatible",
@@ -104,18 +104,18 @@
       "remediation": "Add and declare a connected provider implementation before attempting a connected run."
     },
     {
-      "code": "SOTER_CONNECTED_PROVIDER_MISSING",
-      "severity": "error",
-      "claim": "Every required capability has exactly one declared connected provider implementation.",
-      "subject": "integration.notion/crm.records.read",
+      "code": "SOTER_PROVIDER_PROBE_MISSING",
+      "severity": "warning",
+      "claim": "Each selected connected provider has one current probe for the supplied lock.",
+      "subject": "provider.integration.notion.mcp",
       "path": [
-        "bindings",
-        "crm.records.read"
+        "providerProbes",
+        "provider.integration.notion.mcp"
       ],
-      "expected": "One connected implementation of 1.0.0.",
-      "observed": "Found 0 connected implementations for integration.notion/crm.records.read.",
+      "expected": "One current probe bound to sha256:445ba22c56a829f199b81c87ab2107dcf52a5baaff87c75f464d470be711179e.",
+      "observed": "Found 0 matching probes.",
       "evidenceIds": [],
-      "remediation": "Add and declare a connected provider implementation before attempting a connected run."
+      "remediation": "Run the provider adapter read-only probe and pass its structured result to the connected doctor."
     },
     {
       "code": "SOTER_CONNECTED_PROVIDER_MISSING",
@@ -140,7 +140,7 @@
         "providerProbes",
         "provider.integration.otter.mcp"
       ],
-      "expected": "One current probe bound to sha256:345a985fea75b4d6edd9b68db591c255033336e313705e45a64f8e87846d5e98.",
+      "expected": "One current probe bound to sha256:445ba22c56a829f199b81c87ab2107dcf52a5baaff87c75f464d470be711179e.",
       "observed": "Found 0 matching probes.",
       "evidenceIds": [],
       "remediation": "Run the provider adapter read-only probe and pass its structured result to the connected doctor."

@@ -682,14 +682,29 @@ connector, SDK, CLI, local process, or direct service API. The integration pack
 normalizes whichever transport it uses into the declared capability and effect
 model.
 
+Provider-specific field semantics and user-specific target identities are
+separate contracts. An integration-owned provider mapping declares how
+portable record types and fields correspond to provider fields. A pack-owned
+settings definition validates the selected user's target identifiers and other
+desired configuration under `settings[pack-id]`. Mappings are shareable pack
+content; target identities are configuration. Neither belongs in an automation
+prompt or host projection.
+
+Portable record outputs include a provider version, revision, or deterministic
+content fingerprint whenever later compare-before-write or freshness logic may
+depend on the observed state. Absence of a provider-native revision does not
+permit Core to omit the concurrency boundary; the integration derives a stable
+fingerprint from the normalized record it actually observed.
+
 ### Host-dispatched MCP contract
 
 MCP-backed provider execution is resumable rather than a hidden direct network
 call from Core. A connected provider declaration names:
 
-- The logical MCP server identity and allowlisted tools it may request.
+- The logical MCP server identity and allowlisted provider-neutral operations
+  it may request.
 - An integration-owned prepare function that translates capability input into
-  one logical tool and argument object.
+  one logical operation and argument object.
 - An integration-owned completion function that normalizes the host response
   into the capability output contract.
 - A narrower probe-tool allowlist plus prepare and completion functions for
@@ -699,15 +714,17 @@ call from Core. A connected provider declaration names:
 Core creates a `host-tool-call/v1` record before dispatch. The record binds the
 request to the exact configuration lock, graph, host adapter, provider version,
 capability version, authority, effect-policy decisions, input fingerprint,
-logical server and tool, and argument fingerprint. It contains no credential
-values. If policy blocks the effect or the portable input is invalid, no tool
-or arguments may be emitted.
+logical server, provider operation, resolved native host tool, and argument
+fingerprint. It contains no credential values. If policy blocks the effect or
+the portable input is invalid, no tool or arguments may be emitted.
 
-The host adapter resolves the logical server and tool using its current native
-connector, plugin, or project MCP registration. Host-qualified names such as
-Codex or Claude MCP function prefixes are projections and must not appear in
-automation or capability contracts. Tool discovery may occur at host runtime,
-but the selected tool must remain inside the provider declaration's allowlist.
+The host adapter maps each allowlisted logical operation to an exact native tool
+name for its current connector, plugin, or project MCP registration. Core
+performs this resolution before returning the requested call; the host invokes
+only the resolved native tool. Host-qualified names such as Codex or Claude MCP
+function prefixes are projections and must not appear in automation,
+capability, or provider-mapping contracts. Tool discovery may inform an adapter
+update, but it cannot silently substitute a newly discovered name at runtime.
 
 After execution, Core accepts a result only for the exact outstanding request.
 The integration normalizes it, Core validates the portable output, and the call
@@ -745,8 +762,9 @@ reference CLI and local Soter MCP server are transports over that service; they
 must not reimplement lock freshness, run-envelope matching, policy evaluation,
 provider selection, argument allowlisting, normalization, or failure
 recording. The local Soter MCP server is a host interface, not a provider route:
-it emits a logical provider request and accepts a native result, but never
-invokes a provider tool itself.
+it exposes the logical operation for explanation, emits the exact resolved
+native tool request, and accepts a native result, but never invokes a provider
+tool itself.
 
 The initial connected service accepts no caller-supplied approval set.
 Consequently, a capability whose resolved effects require confirmation produces

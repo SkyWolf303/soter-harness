@@ -9,12 +9,12 @@
     "id": "run.meeting-intake.transaction-fixture",
     "version": null
   },
-  "configurationLockFingerprint": "sha256:345a985fea75b4d6edd9b68db591c255033336e313705e45a64f8e87846d5e98",
+  "configurationLockFingerprint": "sha256:445ba22c56a829f199b81c87ab2107dcf52a5baaff87c75f464d470be711179e",
   "dependencies": [
     {
       "id": "kernel.soter",
       "version": "0.1.0",
-      "fingerprint": "sha256:be8f1f3d2f0ac91106f542f7eeb6cac7a6401f6e9783563a70c5594ce823fc0f"
+      "fingerprint": "sha256:32f37d1dadd6af90fcdc127473f0bfbf8d5d54455a67e77dd55f9bff78d0d893"
     },
     {
       "id": "core.runtime",
@@ -34,7 +34,7 @@
     {
       "id": "integration.notion",
       "version": "0.1.0",
-      "fingerprint": "sha256:624634f8a424ba35902c2d0f09d82658f1c064c28b702a1ece99024e9b8b8e41"
+      "fingerprint": "sha256:73e134fda395dd1bdda923f033c204277d327615092ef2c186b54f996d3b097c"
     },
     {
       "id": "integration.otter",
@@ -46,13 +46,13 @@
     "id": "codex",
     "adapter": "host.codex",
     "version": "0.1.0",
-    "manifestFingerprint": "sha256:5998943ca91d2bd52255afa669339a4bcacbdc9d364efd8756926e7a466b4f29"
+    "manifestFingerprint": "sha256:36ff2a8573209811989d1baa966ed63d231820d5255ebb4a2df488df9cfc08e4"
   },
   "integrations": [
     {
       "id": "integration.notion",
       "version": "0.1.0",
-      "manifestFingerprint": "sha256:624634f8a424ba35902c2d0f09d82658f1c064c28b702a1ece99024e9b8b8e41",
+      "manifestFingerprint": "sha256:73e134fda395dd1bdda923f033c204277d327615092ef2c186b54f996d3b097c",
       "evidenceMaturity": "declared"
     },
     {
@@ -133,12 +133,12 @@
     {
       "role": "change-set",
       "id": "changeset.meeting-intake.transaction-fixture",
-      "fingerprint": "sha256:e57cf2ee8c3e28e60eb1521beafc067ff7ba26d21dcc19c9e09d7e33d9d72ecb"
+      "fingerprint": "sha256:d659e226f73e48df5ce602bb4d1dba3b0b22f603341c965de8b6d15787d2ac7d"
     },
     {
       "role": "approval",
       "id": "approval.meeting-intake.transaction-fixture",
-      "fingerprint": "sha256:cef68ce271307a1dd844aacd6d7fdfeb73682d8515df5c30048465a0a41f845d"
+      "fingerprint": "sha256:6f53d612efb3e24e959b935a8ec1f8d6ae3239c1374002ba439959b0ed3b6943"
     }
   ],
   "effects": [

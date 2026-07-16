@@ -34,6 +34,10 @@
     { "path": "soter/capabilities/crm.records.update.json", "role": "definition" },
     { "path": "soter/providers/provider.integration.notion.fixture.json", "role": "implementation" },
     { "path": "soter/integrations/notion/fixture.mjs", "role": "implementation" },
+    { "path": "soter/integrations/notion/settings.json", "role": "definition" },
+    { "path": "soter/integrations/notion/crm-records.mapping.json", "role": "definition" },
+    { "path": "soter/providers/provider.integration.notion.mcp.json", "role": "implementation" },
+    { "path": "soter/integrations/notion/mcp.mjs", "role": "implementation" },
     { "path": "soter/fixtures/providers/notion/crm-records.json", "role": "fixture" }
   ],
   "compatibility": {

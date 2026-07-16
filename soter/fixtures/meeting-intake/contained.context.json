@@ -4,8 +4,8 @@
   "id": "context.meeting-intake.contained-fixture",
   "runId": "run.meeting-intake.contained-fixture",
   "createdAt": "2026-07-15T12:00:00.000Z",
-  "configurationLockFingerprint": "sha256:345a985fea75b4d6edd9b68db591c255033336e313705e45a64f8e87846d5e98",
-  "graphFingerprint": "sha256:7a2a7851cbcf4a13b1e9c377b00ad65a1fc34c3f3169d7b58baf196c6be2b4f3",
+  "configurationLockFingerprint": "sha256:445ba22c56a829f199b81c87ab2107dcf52a5baaff87c75f464d470be711179e",
+  "graphFingerprint": "sha256:bc16e360b0e7c88b36b16312996dbbc59e809df45f5bd04ef13e76f5291ebbed",
   "containment": "fixture",
   "entries": [
     {

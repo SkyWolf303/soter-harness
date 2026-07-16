@@ -175,8 +175,8 @@ function runCheckpointEntry(call) {
     callFingerprint: fingerprintJson(call),
     updatedAt: call.completedAt || call.createdAt,
     details: call.state === 'requested'
-      ? 'Core emitted one exact logical provider request; the native result is pending.'
-      : 'Core closed the exact logical provider request in state ' + call.state + '.'
+      ? 'Core emitted one provider-neutral operation resolved to an exact native host tool; the native result is pending.'
+      : 'Core closed the exact resolved provider request in state ' + call.state + '.'
   };
 }
 

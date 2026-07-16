@@ -252,13 +252,15 @@ For an MCP-backed integration, Core and the host cooperate through a resumable
 boundary:
 
 1. Core resolves the exact capability, provider, authority, effects, and host.
-2. The integration translator converts the portable input into one logical MCP
-   server and allowlisted tool request.
+2. The integration translator converts the portable input into one
+   provider-neutral operation and argument object for an allowlisted logical
+   MCP server.
 3. Core validates policy and input before emitting that request. A blocked
    effect produces no provider arguments and no tool execution.
-4. The host resolves the logical server/tool through its current connector,
-   plugin, or project MCP configuration and performs authentication and native
-   approval handling.
+4. Core resolves the operation through the exact selected host adapter to one
+   native tool name. The host invokes only that resolved tool through its
+   current connector, plugin, or project MCP configuration and performs
+   authentication and native approval handling.
 5. The host returns the result to Core. The integration translator normalizes
    it into the portable capability output, and Core validates the output and
    records only the response and output fingerprints needed for traceability.
@@ -273,7 +275,9 @@ record compatibility.
 
 This keeps provider credentials and raw host transport outside Core while
 preventing Codex- or Claude-qualified tool names from becoming automation API.
-Host configuration proves only that a route is declared. Connected probes and
+The durable call records both the portable operation and resolved native tool,
+so a resume cannot silently reinterpret either side of the mapping. Host
+configuration proves only that a route is declared. Connected probes and
 behavior evidence are still required to claim readiness or verification.
 
 Core exposes one versioned structured model to agent tools, CLI commands,
@@ -469,12 +473,17 @@ claim-scoped evidence, an offline doctor, contract-enforced aggregation of
 short-lived connected provider probes, and private durable checkpoints for
 host-dispatched calls and their run envelopes. The current target includes the
 first connected Otter provider mapping, exact transcript-fetch request
-translation, and identity-only probe producer. That probe deliberately leaves transcript
-compatibility unknown, and unobserved response shapes fail closed. Connected
-readiness still fails because Notion has no connected implementation and no
-current private probes are checked in. Observed Otter transcript conformance,
-actual host dispatch, authority loading, approval-bound connected writes, live
-health, host judgment, and host conformance remain future proof boundaries.
+translation, and identity-only probe producer. It also includes a read-only
+connected Notion provider whose pack-owned settings, provider field mapping,
+bounded query translator, normalized record versions, and exact per-host native
+tool mappings are mechanically checked. Identity probes deliberately leave
+domain compatibility unknown, and unobserved response shapes fail closed.
+Connected readiness still fails because Notion create and update
+implementations are intentionally absent and no current private probes are
+checked in. Exact-lock Notion schema/read evidence, observed Otter transcript
+conformance, actual host dispatch, authority context loading, approval-bound
+multi-call writes, live health, host judgment, and host conformance remain
+future proof boundaries.
 
 ### Change unit and completion gate
 

@@ -151,7 +151,8 @@ async function selftest(root) {
     });
     if (preparedProbe.checkpoint?.state !== 'requested'
       || preparedProbe.checkpoint?.call?.transport?.server !== 'otter'
-      || preparedProbe.checkpoint?.call?.transport?.tool !== 'get_user_info'
+      || preparedProbe.checkpoint?.call?.transport?.operation !== 'get_user_info'
+      || preparedProbe.checkpoint?.call?.transport?.tool !== 'mcp__otter__get_user_info'
       || JSON.stringify(preparedProbe.checkpoint?.call?.arguments) !== '{}') {
       throw new Error('Provider probe preparation did not persist the exact Otter request.');
     }
@@ -239,7 +240,8 @@ async function selftest(root) {
     });
     if (preparedCapability.checkpoint?.state !== 'requested'
       || preparedCapability.checkpoint?.call?.transport?.server !== 'otter'
-      || preparedCapability.checkpoint?.call?.transport?.tool !== 'fetch'
+      || preparedCapability.checkpoint?.call?.transport?.operation !== 'fetch'
+      || preparedCapability.checkpoint?.call?.transport?.tool !== 'mcp__otter__fetch'
       || preparedCapability.checkpoint?.call?.arguments?.id !== 'conversation_mcp_selftest'
       || preparedCapability.run?.lifecycleState !== 'executing') {
       throw new Error('Capability preparation did not durably stage the exact Otter request.');

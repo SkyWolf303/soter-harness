@@ -5,9 +5,10 @@ import { evaluateEffectPolicy, listProviderDeclarations } from './capabilities.m
 import {
   assertMcpRuntime,
   containsCredentialMaterial,
-  hostRoute,
+  loadProviderMappings,
   loadProviderModule,
-  normalizedError
+  normalizedError,
+  resolveHostTool
 } from './host-runtime.mjs';
 import { fingerprintJson, readJson } from './lib/canonical-json.mjs';
 import { fingerprintLock } from './resolve.mjs';
@@ -76,6 +77,7 @@ function terminalCall(base, state, completedAt, error) {
     state,
     transport: {
       ...base.transport,
+      operation: null,
       tool: null
     },
     arguments: null,
@@ -110,7 +112,7 @@ export async function prepareHostToolCall({
   );
   assertMcpRuntime(provider);
   const authorityDeclaration = assertAuthority(lock, binding, provider, authority);
-  hostRoute(resolvedRoot, lock, provider);
+  const mappings = loadProviderMappings(resolvedRoot, provider);
   const contract = capabilityContract(resolvedRoot, capability);
   const decisions = evaluateEffectPolicy(lock, contract.effects, approvedEffects);
   const base = {
@@ -143,6 +145,7 @@ export async function prepareHostToolCall({
     transport: {
       protocol: 'mcp',
       server: provider.runtime.server,
+      operation: null,
       tool: null
     },
     secretValuesExcluded: true
@@ -179,6 +182,7 @@ export async function prepareHostToolCall({
       authority,
       authorityDeclaration,
       settings: lock.settings || {},
+      mappings,
       at
     });
     if (!request || typeof request.tool !== 'string' || !request.arguments
@@ -194,6 +198,7 @@ export async function prepareHostToolCall({
         { kind: 'validation' }
       );
     }
+    const hostTool = resolveHostTool(resolvedRoot, lock, provider, request.tool);
     if (containsCredentialMaterial(request.arguments)) {
       throw Object.assign(
         new Error('MCP arguments contain credential-like material; host-managed authentication must stay outside the request.'),
@@ -206,7 +211,8 @@ export async function prepareHostToolCall({
       state: 'requested',
       transport: {
         ...base.transport,
-        tool: request.tool
+        operation: request.tool,
+        tool: hostTool.nativeTool
       },
       arguments: request.arguments,
       argumentsFingerprint: fingerprintJson(request.arguments),
@@ -250,10 +256,17 @@ export async function completeHostToolCall({
     call.provider.implementation
   );
   assertMcpRuntime(provider);
+  const hostTool = resolveHostTool(
+    resolvedRoot,
+    lock,
+    provider,
+    call.transport.operation
+  );
   if (provider.pack !== call.provider.pack
     || provider.version !== call.provider.version
     || provider.runtime.server !== call.transport.server
-    || !provider.runtime.tools.includes(call.transport.tool)) {
+    || !provider.runtime.tools.includes(call.transport.operation)
+    || hostTool.nativeTool !== call.transport.tool) {
     throw new Error('Host tool response does not match the exact provider request.');
   }
   const contract = capabilityContract(resolvedRoot, call.capability.id);
@@ -274,6 +287,7 @@ export async function completeHostToolCall({
       authority: call.authority,
       response,
       settings: lock.settings || {},
+      mappings: loadProviderMappings(resolvedRoot, provider),
       at
     });
     const outputFailures = validateJsonSchema(output, contract.outputSchema);

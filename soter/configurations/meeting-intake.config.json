@@ -136,6 +136,17 @@
     "reason": "This example exercises the Codex host projection while preserving provider-neutral contracts."
   },
   "settings": {
+    "integration.notion": {
+      "targets": {
+        "policies": "collection://39dd79b5-de38-8042-9d47-000b9293ab47",
+        "organizations": "collection://2b2d79b5-de38-817a-981e-000b27e5575b",
+        "contacts": "collection://2b2d79b5-de38-81d0-852e-000bc3fdf8d2",
+        "projects": "collection://721bfb88-e8d5-4934-ac26-cc82e1afc7a0",
+        "tasks": "collection://2abd79b5-de38-80f8-9470-000b7181b18d",
+        "meetings": "collection://b2550e36-38d5-4d33-86db-bbd0987aeaef",
+        "documents": "collection://2abd79b5-de38-8075-a97b-000b24e99dc1"
+      }
+    },
     "automation.meeting-intake": {
       "stalenessReviewAfterDays": 7,
       "summaryTemplate": "authority.crm.definition"

@@ -60,6 +60,28 @@ export function hostRoute(root, lock, provider) {
   return route;
 }
 
+export function resolveHostTool(root, lock, provider, logicalTool) {
+  const route = hostRoute(root, lock, provider);
+  const matches = route.toolMappings.filter((mapping) => mapping.logical === logicalTool);
+  if (matches.length !== 1) {
+    throw new Error(
+      lock.host.adapter + ' must map provider operation ' + provider.runtime.server + '/'
+        + logicalTool + ' exactly once; found ' + matches.length + '.'
+    );
+  }
+  return {
+    route,
+    logicalTool,
+    nativeTool: matches[0].native
+  };
+}
+
+export function loadProviderMappings(root, provider) {
+  return provider.mappings.map((mappingPath) => {
+    return readJson(resolveRepoPath(root, mappingPath));
+  });
+}
+
 export async function loadProviderModule(root, provider, injected) {
   if (injected) return injected;
   const modulePath = resolveRepoPath(root, provider.runtime.module);

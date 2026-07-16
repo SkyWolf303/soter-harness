@@ -15,6 +15,7 @@
     "capabilities",
     "authorities",
     "effects",
+    "mappings",
     "fixtures",
     "limitations"
   ],
@@ -98,6 +99,11 @@
       "minItems": 1,
       "uniqueItems": true,
       "items": { "$ref": "#/$defs/effect" }
+    },
+    "mappings": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
     },
     "fixtures": {
       "type": "array",

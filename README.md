@@ -145,11 +145,15 @@ The main remaining gaps are structural and behavioral:
   handshake through both the CLI and a local stdio MCP server configured for
   Codex and Claude. The first connected Otter declaration now emits an
   exact `fetch({id})` request and an identity-only `get_user_info({})` probe
-  request through separate resumable contracts. The probe can establish
-  authentication and reachability while mechanically leaving transcript
-  compatibility unknown. Notion translation, observed Otter response-shape
-  conformance, actual provider dispatch by either host, and host-level agent
-  behavior remain unproven.
+  request through separate resumable contracts. The connected Notion read
+  declaration now translates bounded portable CRM record requests through a
+  pack-owned field mapping and user-configured target identities. Its
+  identity-only probe can establish authentication and reachability while
+  leaving target authority and schema compatibility unknown. Connected Notion
+  writes remain intentionally undeclared until multi-call deduplication,
+  compare-before-write, exact approval binding, and read-after-write
+  verification exist. Observed provider response-shape conformance, actual
+  dispatch through either host, and host-level agent behavior remain unproven.
 - Legacy provider behavior remains mixed into automations. The target now
   separates fixture reads and writes behind typed capabilities, but connected
   implementations and legacy migration remain.
@@ -176,9 +180,9 @@ desired configuration, behavior scenarios, and migration mapping. Minimum Core
 fixtures prove exact lock resolution, preflight, schema-valid CRM/transcript
 context assembly, confirmation-gated writes, rollback mechanics, and
 read-after-write verification through local providers. A negative connected
-doctor fixture also proves that a missing Notion implementation and a missing
-current Otter probe fail or leave readiness unknown without being represented
-as graph or fixture failures. All packs remain at an
+doctor fixture also proves that missing connected Notion write implementations
+and missing current provider probes fail or leave readiness unknown without
+being represented as graph or fixture failures. All packs remain at an
 **experimental** release stage and **declared** evidence maturity because those
 claims do not prove connected or agent-host behavior. The graph and checked-in
 lock are valid; connected readiness, full automation verification, and live
@@ -246,9 +250,12 @@ Inspect connected readiness separately:
       --lock soter/fixtures/meeting-intake/meeting-intake.lock.json \
       --level connected
 
-With no connected Notion implementation and no current Otter probe, that
-command exits nonzero with `ready=failed`. A connected integration must emit a
-`provider-probe/v1` document for the exact lock; Core will reject
+The connected Notion declaration covers reads only, while the
+meeting-intake automation also requires create and update capabilities. With
+those connected writes intentionally absent and no current private Notion or
+Otter probe, that command exits nonzero with `ready=failed`. A connected
+integration must emit a `provider-probe/v1` document for the exact lock; Core
+will reject
 missing, expired, malformed, ambiguous, or wrong-lock probes. Probe documents
 contain secret-reference identifiers and safe observations, never secret
 values. Connected readiness does not by itself establish automation
@@ -297,9 +304,10 @@ another host. Its tools follow one explicit sequence:
 1. Call `soter_prepare_provider_probe` or
    `soter_prepare_capability_call`.
 2. Continue only when `checkpoint.call.state` is `requested`.
-3. Invoke exactly `checkpoint.call.transport.server/tool` with
-   `checkpoint.call.arguments` through the separately authenticated provider
-   route.
+3. Inspect `checkpoint.call.transport.operation` for the provider-neutral
+   operation, then invoke exactly the host-native
+   `checkpoint.call.transport.tool` with `checkpoint.call.arguments` through
+   `checkpoint.call.transport.server` and its separately authenticated route.
 4. Pass the native response unchanged with `checkpoint.id` to the matching
    completion tool, or close it with `soter_fail_host_call`.
 5. After restart or compaction, use `soter_list_host_calls` and
@@ -353,12 +361,13 @@ runtime is connected or ready.
 2. Declare meeting intake as the representative vertical slice with its
    outcomes, scenarios, capability needs, authorities, effects, and migration
    mapping.
-3. Finish the connected integration slice: add the Notion MCP translator and
-   safe probe producer, validate Otter transcript response normalization with
-   an explicitly authorized private meeting fixture, and prove actual Codex and
-   Claude dispatch and checkpoint recovery through the configured Core service.
-   Then add approval-bound connected writes and the separately authorized
-   canary doctor level.
+3. Finish the connected integration slice: add an exact-lock Notion target
+   schema/read probe, use the connected read capability in context assembly,
+   validate Otter transcript response normalization with an explicitly
+   authorized private meeting fixture, and prove actual Codex and Claude
+   dispatch and checkpoint recovery through the configured Core service. Then
+   model multi-call operation batches and add approval-bound connected Notion
+   writes plus the separately authorized canary doctor level.
 4. Prove the full judgment and orchestration slice through both Claude and
    Codex host adapters rather than treating deterministic fixture mechanics as
    agent behavior evidence.

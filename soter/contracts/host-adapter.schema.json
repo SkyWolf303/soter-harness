@@ -54,7 +54,7 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["id", "delivery", "state", "reason"],
+        "required": ["id", "delivery", "state", "toolMappings", "reason"],
         "properties": {
           "id": {
             "type": "string",
@@ -67,6 +67,22 @@
             "enum": ["declared", "configured"]
           },
           "configurationPath": { "type": "string", "minLength": 3 },
+          "toolMappings": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["logical", "native"],
+              "properties": {
+                "logical": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$"
+                },
+                "native": { "type": "string", "minLength": 1 }
+              }
+            }
+          },
           "reason": { "type": "string", "minLength": 12 }
         }
       }

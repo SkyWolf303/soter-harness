@@ -68,11 +68,14 @@ function copyExternalPackArtifacts(sourceRoot, targetRoot) {
   }
 }
 
-function installSelftestConnectedProvider(root, sourceId, targetId) {
+function installSelftestConnectedProvider(root, sourceId, targetId, capabilityIds) {
   const sourcePath = path.join(root, 'soter/providers/' + sourceId + '.json');
   const provider = structuredClone(readJson(sourcePath));
   provider.id = targetId;
   provider.containment = 'connected';
+  provider.capabilities = provider.capabilities.filter((capability) => {
+    return capabilityIds.includes(capability.id);
+  });
   provider.runtime = {
     engine: 'mcp',
     module: provider.runtime.module,
@@ -81,9 +84,10 @@ function installSelftestConnectedProvider(root, sourceId, targetId) {
     probePrepareExport: 'prepareProbeMcp',
     probeCompleteExport: 'completeProbeMcp',
     server: 'notion',
-    tools: ['query_data_sources', 'create_pages', 'update_page'],
-    probeTools: ['query_data_sources']
+    tools: ['fetch', 'create_pages', 'update_page'],
+    probeTools: ['fetch']
   };
+  provider.mappings = [];
   provider.fixtures = [];
   provider.limitations = [
     'Selftest-only connected declaration used to validate probe aggregation without credentials or network access.'
@@ -152,7 +156,33 @@ function selftestProviderProbes(lock, providers) {
           state: 'passed',
           method: 'read-only',
           details: 'A schema-compatible read-only response was observed.'
-        },
+        }
+      ]
+    },
+    {
+      ...structuredClone(base),
+      id: 'probe.integration.notion-writes.connected-selftest',
+      provider: {
+        pack: providers.notionWrites.pack,
+        implementation: providers.notionWrites.id,
+        version: providers.notionWrites.version,
+        containment: 'connected'
+      },
+      credentials: [
+        {
+          secretRefId: 'secret-ref.notion',
+          state: 'passed',
+          details: 'The injected resolver reported an authenticated Notion identity.'
+        }
+      ],
+      authorities: [
+        {
+          id: 'authority.crm.instance',
+          state: 'passed',
+          details: 'The configured CRM instance authority was visible.'
+        }
+      ],
+      capabilities: [
         {
           id: 'crm.records.create',
           state: 'passed',
@@ -222,10 +252,15 @@ export async function selftest(root) {
     fs.cpSync(path.join(root, '.codex'), path.join(temp, '.codex'), { recursive: true });
     fs.cpSync(path.join(root, '.claude'), path.join(temp, '.claude'), { recursive: true });
     const connectedProviders = {
-      notion: installSelftestConnectedProvider(
+      notion: readJson(path.join(
+        temp,
+        'soter/providers/provider.integration.notion.mcp.json'
+      )),
+      notionWrites: installSelftestConnectedProvider(
         temp,
         'provider.integration.notion.fixture',
-        'provider.integration.notion.connected-selftest'
+        'provider.integration.notion.writes-connected-selftest',
+        ['crm.records.create', 'crm.records.update']
       ),
       otter: readJson(path.join(
         temp,
@@ -257,7 +292,8 @@ export async function selftest(root) {
       at: FIXTURE_TIME
     });
     if (preparedOtterProbe.call.state !== 'requested'
-      || preparedOtterProbe.call.transport.tool !== 'get_user_info'
+      || preparedOtterProbe.call.transport.operation !== 'get_user_info'
+      || preparedOtterProbe.call.transport.tool !== 'mcp__otter__get_user_info'
       || Object.keys(preparedOtterProbe.call.arguments).length !== 0
       || completedOtterProbe.call.state !== 'completed'
       || completedOtterProbe.probe?.reachability.state !== 'passed'
@@ -323,6 +359,48 @@ export async function selftest(root) {
     if (failedOtterProbe.state !== 'failed'
       || failedOtterProbe.error.kind !== 'unavailable') {
       failures.push('provider probe host failure was not normalized into the portable error vocabulary');
+    }
+
+    const preparedNotionProbe = await prepareProviderProbeCall({
+      root: temp,
+      lock,
+      providerImplementation: connectedProviders.notion.id,
+      callId: 'probecall.selftest.notion-identity',
+      probeId: 'probe.integration.notion.identity-selftest',
+      at: FIXTURE_TIME
+    });
+    const notionIdentityMarker = 'private-notion-identity-selftest-marker';
+    const completedNotionProbe = await completeProviderProbeCall({
+      root: temp,
+      lock,
+      call: preparedNotionProbe.call,
+      response: {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              metadata: { type: 'self' },
+              self: {
+                workspace: { id: 'workspace.selftest', name: notionIdentityMarker },
+                user: { id: 'user.selftest', name: notionIdentityMarker }
+              }
+            })
+          }
+        ],
+        isError: false
+      },
+      at: FIXTURE_TIME
+    });
+    if (preparedNotionProbe.call.state !== 'requested'
+      || preparedNotionProbe.call.transport.operation !== 'fetch'
+      || preparedNotionProbe.call.transport.tool !== 'mcp__codex_apps__notion_fetch'
+      || preparedNotionProbe.call.arguments.id !== 'self'
+      || completedNotionProbe.call.state !== 'completed'
+      || completedNotionProbe.probe?.reachability.state !== 'passed'
+      || completedNotionProbe.probe?.authorities.some((item) => item.state !== 'unknown')
+      || completedNotionProbe.probe?.capabilities.some((item) => item.state !== 'unknown')
+      || JSON.stringify(completedNotionProbe).includes(notionIdentityMarker)) {
+      failures.push('Notion identity probe did not preserve native routing, minimization, and honest unknown states');
     }
 
     const resolutionEvidence = createResolutionEvidence({
@@ -463,7 +541,7 @@ export async function selftest(root) {
       || connected.report.states.ready !== 'passed'
       || connected.report.states.verified !== 'unknown'
       || connected.report.states.healthy !== 'unknown'
-      || connected.report.providerProbeIds.length !== 2) {
+      || connected.report.providerProbeIds.length !== 3) {
       failures.push('connected doctor did not derive readiness without overstating verification or health');
     }
     const expiredProbes = structuredClone(probes);
@@ -555,37 +633,11 @@ export async function selftest(root) {
     if (prohibitedDecision[0].decision !== 'blocked') {
       failures.push('prohibited destructive effect was bypassed by an approval token');
     }
-    const syntheticNotionTranslator = {
-      prepareMcp({ capability, input }) {
-        if (capability !== 'crm.records.read') {
-          throw Object.assign(new Error('Selftest translator only prepares CRM reads.'), {
-            kind: 'validation'
-          });
-        }
-        return {
-          tool: 'query_data_sources',
-          arguments: {
-            data: {
-              mode: 'sql',
-              data_source_urls: ['collection://selftest'],
-              query: 'SELECT * FROM "collection://selftest" WHERE type = ?',
-              params: [input.recordTypes[0]]
-            }
-          }
-        };
-      },
-      completeMcp({ response, authority, at }) {
-        return {
-          records: response.records,
-          provenance: {
-            provider: 'notion-mcp-selftest',
-            authority
-          },
-          observedAt: at
-        };
-      }
+    const hostReadInput = {
+      recordTypes: ['meeting'],
+      ids: ['https://app.notion.com/meeting-selftest'],
+      limit: 1
     };
-    const hostReadInput = { recordTypes: ['account'] };
     const preparedHostRead = await prepareHostToolCall({
       root: temp,
       lock,
@@ -595,8 +647,7 @@ export async function selftest(root) {
       authority: 'authority.crm.instance',
       providerImplementation: connectedProviders.notion.id,
       input: hostReadInput,
-      at: FIXTURE_TIME,
-      translator: syntheticNotionTranslator
+      at: FIXTURE_TIME
     });
     const completedHostRead = await completeHostToolCall({
       root: temp,
@@ -604,25 +655,46 @@ export async function selftest(root) {
       call: preparedHostRead.call,
       input: hostReadInput,
       response: {
-        records: [
+        content: [
           {
-            type: 'account',
-            id: 'account.selftest',
-            fields: { name: 'Selftest account' }
+            type: 'text',
+            text: JSON.stringify({
+              results: [
+                {
+                  __soterType: 'meeting',
+                  __soterId: 'https://app.notion.com/meeting-selftest',
+                  __soterFields: JSON.stringify({
+                    title: 'Selftest meeting',
+                    meetingType: 'Project Sync',
+                    recordingUri: null,
+                    organizationUris: JSON.stringify(['https://app.notion.com/org-selftest']),
+                    participantIds: JSON.stringify(['user.selftest'])
+                  })
+                }
+              ],
+              has_more: false,
+              data_source_ids: ['selftest']
+            })
           }
         ],
+        isError: false,
         providerSecretMaterial: 'response-only-marker'
       },
-      at: FIXTURE_TIME,
-      translator: syntheticNotionTranslator
+      at: FIXTURE_TIME
     });
     if (preparedHostRead.call.state !== 'requested'
       || preparedHostRead.call.transport.server !== 'notion'
-      || preparedHostRead.call.transport.tool !== 'query_data_sources'
+      || preparedHostRead.call.transport.operation !== 'query_data_sources'
+      || preparedHostRead.call.transport.tool
+        !== 'mcp__codex_apps__notion_notion_query_data_sources'
       || completedHostRead.call.state !== 'completed'
-      || completedHostRead.output?.records[0]?.id !== 'account.selftest'
+      || completedHostRead.output?.records[0]?.id
+        !== 'https://app.notion.com/meeting-selftest'
+      || !completedHostRead.output?.records[0]?.version?.startsWith('sha256:')
+      || completedHostRead.output?.records[0]?.fields?.organizationUris?.[0]
+        !== 'https://app.notion.com/org-selftest'
       || JSON.stringify(completedHostRead.call).includes('response-only-marker')) {
-      failures.push('resumable MCP request/result bridge did not preserve typed dispatch and response minimization');
+      failures.push('Notion read bridge did not preserve mapped native dispatch, typed normalization, and response minimization');
     }
     const blockedHostWrite = await prepareHostToolCall({
       root: temp,
@@ -631,14 +703,13 @@ export async function selftest(root) {
       callId: 'toolcall.selftest.notion-write-blocked',
       capability: 'crm.records.create',
       authority: 'authority.crm.instance',
-      providerImplementation: connectedProviders.notion.id,
+      providerImplementation: connectedProviders.notionWrites.id,
       input: {
         recordType: 'meeting-summary',
         deduplicationKey: 'selftest:mcp-blocked',
         fields: { title: 'Blocked host write' }
       },
-      at: FIXTURE_TIME,
-      translator: syntheticNotionTranslator
+      at: FIXTURE_TIME
     });
     if (blockedHostWrite.call.state !== 'blocked'
       || blockedHostWrite.call.transport.tool !== null
@@ -666,7 +737,6 @@ export async function selftest(root) {
       input: hostReadInput,
       at: FIXTURE_TIME,
       translator: {
-        ...syntheticNotionTranslator,
         prepareMcp() {
           return {
             tool: 'query_data_sources',
@@ -721,7 +791,8 @@ export async function selftest(root) {
       at: FIXTURE_TIME
     });
     if (preparedOtterRead.call.state !== 'requested'
-      || preparedOtterRead.call.transport.tool !== 'fetch'
+      || preparedOtterRead.call.transport.operation !== 'fetch'
+      || preparedOtterRead.call.transport.tool !== 'mcp__otter__fetch'
       || preparedOtterRead.call.arguments.id !== 'conversation_selftest'
       || completedOtterRead.call.state !== 'completed'
       || completedOtterRead.output?.meetingId !== 'meeting.selftest'

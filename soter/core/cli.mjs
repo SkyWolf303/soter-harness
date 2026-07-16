@@ -217,8 +217,9 @@ async function main() {
     } else {
       process.stdout.write(
         'Prepared ' + prepared.checkpoint.id + ' in state ' + prepared.checkpoint.state + '.\n'
-          + 'Host request: ' + prepared.checkpoint.call.transport.server + '/'
-          + (prepared.checkpoint.call.transport.tool || 'none') + '\n'
+          + 'Provider operation: ' + prepared.checkpoint.call.transport.server + '/'
+          + (prepared.checkpoint.call.transport.operation || 'none') + '\n'
+          + 'Native host tool: ' + (prepared.checkpoint.call.transport.tool || 'none') + '\n'
           + 'Durable checkpoint: ' + prepared.checkpointPath + '\n'
           + 'Raw provider response persistence: disabled by Core\n'
           + (output ? 'Wrote: ' + output + '\n' : '')
@@ -283,8 +284,9 @@ async function main() {
       process.stdout.write(
         'Prepared ' + prepared.checkpoint.id + ' in state ' + prepared.checkpoint.state + '.\n'
           + (prepared.checkpoint.state === 'requested'
-            ? 'Host request: ' + prepared.checkpoint.call.transport.server + '/'
-              + prepared.checkpoint.call.transport.tool + '\n'
+            ? 'Provider operation: ' + prepared.checkpoint.call.transport.server + '/'
+              + prepared.checkpoint.call.transport.operation + '\n'
+              + 'Native host tool: ' + prepared.checkpoint.call.transport.tool + '\n'
             : 'Host request emitted: no\n')
           + 'Durable checkpoint: ' + prepared.checkpointPath + '\n'
           + 'Durable run: ' + prepared.runPath + '\n'

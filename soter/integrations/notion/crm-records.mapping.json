@@ -1,0 +1,87 @@
+{
+  "$contract": "soter://contracts/provider-mapping/v1",
+  "contractVersion": "1.0.0",
+  "id": "mapping.integration.notion.crm-records",
+  "pack": "integration.notion",
+  "provider": "provider.integration.notion.mcp",
+  "version": "0.1.0",
+  "settingsDefinition": "settings.integration.notion",
+  "capabilities": ["crm.records.read"],
+  "recordTypes": [
+    {
+      "id": "policy",
+      "target": "policies",
+      "fields": [
+        { "portable": "name", "provider": "Name", "decode": "scalar" }
+      ]
+    },
+    {
+      "id": "organization",
+      "target": "organizations",
+      "fields": [
+        { "portable": "name", "provider": "Name", "decode": "scalar" },
+        { "portable": "organizationType", "provider": "Type", "decode": "scalar" },
+        { "portable": "tags", "provider": "Tags", "decode": "json" }
+      ]
+    },
+    {
+      "id": "person",
+      "target": "contacts",
+      "fields": [
+        { "portable": "name", "provider": "Name", "decode": "scalar" },
+        { "portable": "email", "provider": "Email", "decode": "scalar" },
+        { "portable": "role", "provider": "Role", "decode": "scalar" },
+        { "portable": "status", "provider": "Status", "decode": "scalar" },
+        { "portable": "disposition", "provider": "Disposition", "decode": "scalar" },
+        { "portable": "authority", "provider": "Authority", "decode": "json" },
+        { "portable": "organizationUris", "provider": "Org", "decode": "json" }
+      ]
+    },
+    {
+      "id": "project",
+      "target": "projects",
+      "fields": [
+        { "portable": "name", "provider": "Name", "decode": "scalar" },
+        { "portable": "projectType", "provider": "Type", "decode": "scalar" },
+        { "portable": "status", "provider": "Status", "decode": "scalar" },
+        { "portable": "organizationUris", "provider": "Organization", "decode": "json" }
+      ]
+    },
+    {
+      "id": "task",
+      "target": "tasks",
+      "fields": [
+        { "portable": "title", "provider": "Name", "decode": "scalar" },
+        { "portable": "status", "provider": "Status", "decode": "scalar" },
+        { "portable": "context", "provider": "Context", "decode": "scalar" },
+        { "portable": "projectUris", "provider": "Project", "decode": "json" }
+      ]
+    },
+    {
+      "id": "meeting",
+      "target": "meetings",
+      "fields": [
+        { "portable": "title", "provider": "Meeting Name", "decode": "scalar" },
+        { "portable": "meetingType", "provider": "Type", "decode": "scalar" },
+        { "portable": "recordingUri", "provider": "Recording", "decode": "scalar" },
+        { "portable": "organizationUris", "provider": "Org", "decode": "json" },
+        { "portable": "participantIds", "provider": "Participants", "decode": "json" }
+      ]
+    },
+    {
+      "id": "meeting-summary",
+      "target": "documents",
+      "fields": [
+        { "portable": "title", "provider": "Name", "decode": "scalar" },
+        { "portable": "documentType", "provider": "Type", "decode": "scalar" },
+        { "portable": "description", "provider": "Description", "decode": "scalar" },
+        { "portable": "link", "provider": "Link", "decode": "scalar" }
+      ]
+    }
+  ],
+  "limitations": [
+    "Policy rows identify definition documents but do not load or interpret their page bodies; domain context assembly requires a separate bounded fetch step.",
+    "The mapping normalizes provider rows only. It does not infer missing project relationships or convert provider status vocabularies into domain decisions.",
+    "Schema compatibility is not established by this declaration; an exact-lock private probe must observe current target schemas."
+  ]
+}

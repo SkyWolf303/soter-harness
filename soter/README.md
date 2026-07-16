@@ -14,9 +14,11 @@ fields make that distinction mechanical.
 - packs contains one manifest for each selectable system.
 - capabilities contains provider-neutral integration capability contracts.
 - providers contains typed implementation declarations, containment levels,
-  host transport allowlists, and explicit limitations.
-- integrations contains provider-specific translators and contained runtimes;
-  automations never import these modules directly.
+  logical host-transport allowlists, provider mappings, and explicit
+  limitations.
+- integrations contains provider-specific translators, pack-owned settings
+  definitions, shareable field mappings, and contained runtimes; automations
+  never import these modules directly.
 - configurations contains explicit desired configurations.
 - hosts contains explicit adapter declarations and projection ownership.
 - scenarios contains behavior-level fixtures and expected evidence.
@@ -59,11 +61,19 @@ Otter provider now
 translates a canonical meeting URL into exact `fetch({id})` arguments and
 produces an identity-only `get_user_info({})` probe. That probe can pass
 authentication and reachability while leaving transcript compatibility
-unknown. Unobserved transcript response shapes fail closed. Notion has no
-connected provider yet, actual host dispatch is unproven, and the checked-in
-connected doctor therefore reports `ready=failed`. This increment does not
-fetch a user's meeting, prove provider transcript normalization, prove
-host-level agent judgment, or replace the existing processing-a-meeting guide.
+unknown. Unobserved transcript response shapes fail closed. The connected
+Notion provider now implements bounded CRM record reads using a pack-owned
+settings schema, a provider-owned field mapping, and exact native tool mappings
+for each host adapter. It returns deterministic versions for normalized
+records. Its identity probe proves only authentication and reachability;
+configured target access and schema/read compatibility remain unknown. Notion
+create and update implementations are intentionally absent until Soter models
+their multi-call deduplication, compare-before-write, exact approval, and
+read-after-write verification boundary. Actual host dispatch is unproven, and
+the checked-in connected doctor therefore still reports `ready=failed`. This
+increment does not fetch a user's meeting, prove provider transcript or Notion
+target conformance, prove host-level agent judgment, or replace the existing
+processing-a-meeting guide.
 
 ## Verify
 
@@ -88,14 +98,14 @@ Prove Core output contracts, stale-lock detection, and honest offline states:
     node soter/core/cli.mjs fixtures --check
     node soter/core/cli.mjs doctor --lock soter/fixtures/meeting-intake/meeting-intake.lock.json
 
-Inspect the expected missing-Notion and missing-probe diagnostics:
+Inspect the expected missing-write-implementation and missing-probe diagnostics:
 
     node soter/core/cli.mjs doctor --lock soter/fixtures/meeting-intake/meeting-intake.lock.json --level connected
 
-This exits nonzero by design. Otter has a connected declaration, but no private
-probe is checked in; Notion still lacks a connected declaration. Connected
-adapters pass one or more exact-lock `--probe PATH` artifacts; Core never
-accepts a fixture result as connected state.
+This exits nonzero by design. Otter and Notion have connected read
+declarations, but no private probes are checked in and Notion create/update are
+not declared. Connected adapters pass one or more exact-lock `--probe PATH`
+artifacts; Core never accepts a fixture result as connected state.
 
 Inspect the structured Otter probe request without calling the provider:
 
@@ -115,10 +125,12 @@ stale or incomplete checkpoint cannot contribute readiness observations.
 
 After `npm install`, both host projections can start the same local
 `soter-core` stdio server, bound to the launching host identity. Its prepare
-tools durably checkpoint and return logical provider requests; the host must
-execute exactly the requested provider tool through its separate
-authenticated MCP route and return the native result to the matching complete
-tool. The server does not call providers, persist raw responses, or authorize
+tools durably checkpoint provider-neutral operations resolved through the
+selected host adapter. The host may explain
+`checkpoint.call.transport.operation`, but must execute exactly the native
+`checkpoint.call.transport.tool` through its separate authenticated MCP route
+and return the native result to the matching complete tool. The server does
+not call providers, persist raw responses, or authorize
 confirmation-gated writes. Its stdio subprocess self-test establishes only the
 shared Core recovery projection, not live host or provider conformance. The
 self-test restarts the server with a call pending, rehydrates it, repairs planted

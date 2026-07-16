@@ -26,6 +26,8 @@
     { "path": "soter/contracts/evidence.schema.json", "role": "definition" },
     { "path": "soter/contracts/doctor-result.schema.json", "role": "definition" },
     { "path": "soter/contracts/capability-provider.schema.json", "role": "definition" },
+    { "path": "soter/contracts/pack-settings.schema.json", "role": "definition" },
+    { "path": "soter/contracts/provider-mapping.schema.json", "role": "definition" },
     { "path": "soter/contracts/provider-probe.schema.json", "role": "definition" },
     { "path": "soter/contracts/provider-probe-call.schema.json", "role": "definition" },
     { "path": "soter/contracts/host-tool-call.schema.json", "role": "definition" },

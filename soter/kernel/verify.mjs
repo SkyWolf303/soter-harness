@@ -163,6 +163,9 @@ function schemaErrors(value, schema, rootSchema = schema, at = '$') {
     if (schema.minItems !== undefined && value.length < schema.minItems) {
       errors.push({ path: at, message: 'must contain at least ' + schema.minItems + ' items' });
     }
+    if (schema.maxItems !== undefined && value.length > schema.maxItems) {
+      errors.push({ path: at, message: 'must contain at most ' + schema.maxItems + ' items' });
+    }
     if (schema.uniqueItems) {
       const serialized = value.map((item) => JSON.stringify(item));
       if (new Set(serialized).size !== serialized.length) {
@@ -390,6 +393,8 @@ function checkPackGraph(root, documents, out, census) {
   const evidence = new Map();
   const doctors = new Map();
   const providers = new Map();
+  const packSettings = new Map();
+  const providerMappings = new Map();
   const snapshots = new Map();
   const providerFixtures = new Map();
   const providerProbes = new Map();
@@ -476,6 +481,12 @@ function checkPackGraph(root, documents, out, census) {
     } else if (entry.contractId === 'soter://contracts/capability-provider/v1') {
       census.providers += 1;
       addUniqueRuntimeArtifact(providers, entry, 'provider');
+    } else if (entry.contractId === 'soter://contracts/pack-settings/v1') {
+      census.packSettings += 1;
+      addUniqueRuntimeArtifact(packSettings, entry, 'pack-settings');
+    } else if (entry.contractId === 'soter://contracts/provider-mapping/v1') {
+      census.providerMappings += 1;
+      addUniqueRuntimeArtifact(providerMappings, entry, 'provider-mapping');
     } else if (entry.contractId === 'soter://contracts/context-snapshot/v1') {
       census.contextSnapshots += 1;
       addUniqueRuntimeArtifact(snapshots, entry, 'context');
@@ -761,6 +772,21 @@ function checkPackGraph(root, documents, out, census) {
         ));
       }
       serverIds.add(server.id);
+      const logicalTools = new Set();
+      const nativeTools = new Set();
+      for (const mapping of server.toolMappings) {
+        if (logicalTools.has(mapping.logical) || nativeTools.has(mapping.native)) {
+          out.push(violation(
+            entry.file,
+            'SOTER_HOST_MCP_TOOL',
+            'MCP route ' + server.id + ' has an ambiguous logical or native tool mapping',
+            'Core must resolve one provider-neutral operation to one exact host tool in both directions',
+            'remove duplicate logical and native tool mapping entries'
+          ));
+        }
+        logicalTools.add(mapping.logical);
+        nativeTools.add(mapping.native);
+      }
       if (server.state === 'configured') {
         if (!server.configurationPath) {
           out.push(violation(
@@ -795,8 +821,9 @@ function checkPackGraph(root, documents, out, census) {
     }
   }
 
+  checkPackSettings(root, packSettings, packs, out);
   for (const config of configs) {
-    checkConfiguration(root, config, packs, capabilities, hosts, out);
+    checkConfiguration(root, config, packs, capabilities, hosts, packSettings, out);
   }
   for (const scenario of scenarios) {
     checkScenario(root, scenario, packs, capabilities, configs, out);
@@ -805,7 +832,17 @@ function checkPackGraph(root, documents, out, census) {
     checkMigration(root, migration, packs, out);
   }
 
-  checkCapabilityProviders(root, providers, providerFixtures, packs, capabilities, hosts, out);
+  checkCapabilityProviders(
+    root,
+    providers,
+    providerFixtures,
+    providerMappings,
+    packSettings,
+    packs,
+    capabilities,
+    hosts,
+    out
+  );
   checkRuntimeArtifacts(
     locks,
     runs,
@@ -818,6 +855,7 @@ function checkPackGraph(root, documents, out, census) {
     hostToolCalls,
     approvals,
     changeSets,
+    hosts,
     out
   );
 
@@ -833,6 +871,8 @@ function checkPackGraph(root, documents, out, census) {
     evidence,
     doctors,
     providers,
+    packSettings,
+    providerMappings,
     snapshots,
     providerFixtures,
     providerProbes,
@@ -843,7 +883,46 @@ function checkPackGraph(root, documents, out, census) {
   };
 }
 
-function checkCapabilityProviders(root, providers, providerFixtures, packs, capabilities, hosts, out) {
+function checkPackSettings(root, packSettings, packs, out) {
+  const byPack = new Set();
+  for (const entry of packSettings.values()) {
+    const pack = packs.get(entry.doc.pack);
+    const relative = path.relative(root, entry.file).split(path.sep).join('/');
+    if (byPack.has(entry.doc.pack)) {
+      out.push(violation(
+        entry.file,
+        'SOTER_PACK_SETTINGS_DUPLICATE',
+        'pack has more than one settings definition: ' + entry.doc.pack,
+        'one pack settings key must resolve to one mechanically enforced schema',
+        'merge the definitions or version the pack'
+      ));
+    }
+    byPack.add(entry.doc.pack);
+    if (!pack
+      || pack.doc.version !== entry.doc.version
+      || !pack.doc.artifacts.some((artifact) => artifact.path === relative)) {
+      out.push(violation(
+        entry.file,
+        'SOTER_PACK_SETTINGS_OWNER',
+        'settings definition is not owned by its exact pack version: ' + entry.doc.pack,
+        'user configuration schemas must evolve with the pack that interprets them',
+        'align the pack, version, and owned artifact path'
+      ));
+    }
+  }
+}
+
+function checkCapabilityProviders(
+  root,
+  providers,
+  providerFixtures,
+  providerMappings,
+  packSettings,
+  packs,
+  capabilities,
+  hosts,
+  out
+) {
   const implementations = new Set();
   const fixturesByPath = new Map([...providerFixtures.values()].map((entry) => {
     return [path.relative(root, entry.file).split(path.sep).join('/'), entry];
@@ -875,6 +954,7 @@ function checkCapabilityProviders(root, providers, providerFixtures, packs, capa
     const requiredPaths = [
       path.relative(root, entry.file).split(path.sep).join('/'),
       entry.doc.runtime.module,
+      ...entry.doc.mappings,
       ...entry.doc.fixtures
     ];
     for (const requiredPath of requiredPaths) {
@@ -951,7 +1031,8 @@ function checkCapabilityProviders(root, providers, providerFixtures, packs, capa
       }
       for (const hostName of pack.doc.compatibility.hosts) {
         const host = hosts.get('host.' + hostName);
-        if (!host?.doc.mcpServers.some((server) => server.id === entry.doc.runtime.server)) {
+        const route = host?.doc.mcpServers.find((server) => server.id === entry.doc.runtime.server);
+        if (!route) {
           out.push(violation(
             entry.file,
             'SOTER_PROVIDER_HOST_ROUTE',
@@ -959,6 +1040,25 @@ function checkCapabilityProviders(root, providers, providerFixtures, packs, capa
             'provider portability claims require every compatible host to realize the logical server identity',
             'add the host MCP route or narrow the integration pack compatibility claim'
           ));
+        } else {
+          const mapped = new Set(route.toolMappings.map((mapping) => mapping.logical));
+          const requiredTools = [
+            ...new Set([
+              ...entry.doc.runtime.tools,
+              ...(entry.doc.runtime.probeTools || [])
+            ])
+          ];
+          const missingTools = requiredTools.filter((tool) => !mapped.has(tool));
+          if (missingTools.length) {
+            out.push(violation(
+              entry.file,
+              'SOTER_PROVIDER_HOST_TOOL',
+              'compatible host ' + hostName + ' does not map logical tools '
+                + missingTools.join(', ') + ' for ' + entry.doc.runtime.server,
+              'provider-neutral operations must resolve to exact native tool names on every compatible host',
+              'add the host tool mappings or narrow the integration pack compatibility claim'
+            ));
+          }
         }
       }
     }
@@ -1013,6 +1113,67 @@ function checkCapabilityProviders(root, providers, providerFixtures, packs, capa
       }
     }
   }
+  for (const entry of providerMappings.values()) {
+    const provider = providers.get(entry.doc.provider);
+    const settings = packSettings.get(entry.doc.settingsDefinition);
+    const relative = path.relative(root, entry.file).split(path.sep).join('/');
+    if (!provider
+      || provider.doc.pack !== entry.doc.pack
+      || provider.doc.version !== entry.doc.version
+      || !provider.doc.mappings.includes(relative)) {
+      out.push(violation(
+        entry.file,
+        'SOTER_PROVIDER_MAPPING_OWNER',
+        'provider mapping is not owned by its exact declared implementation: ' + entry.doc.provider,
+        'provider translation cannot be discovered or versioned when its mapping is detached',
+        'align the provider, pack, version, and mappings path'
+      ));
+    }
+    if (!settings || settings.doc.pack !== entry.doc.pack) {
+      out.push(violation(
+        entry.file,
+        'SOTER_PROVIDER_MAPPING_SETTINGS',
+        'provider mapping settings definition does not resolve: ' + entry.doc.settingsDefinition,
+        'target identities must be validated before provider translation can use them',
+        'declare the pack-owned settings definition or correct the reference'
+      ));
+    }
+    const providerCapabilities = new Set(provider?.doc.capabilities.map((item) => item.id) || []);
+    for (const capability of entry.doc.capabilities) {
+      if (!providerCapabilities.has(capability)) {
+        out.push(violation(
+          entry.file,
+          'SOTER_PROVIDER_MAPPING_CAPABILITY',
+          'mapping declares capability outside its provider: ' + capability,
+          'a mapping cannot expand the implementation boundary by assertion',
+          'remove the capability or declare it on the provider only after it is implemented'
+        ));
+      }
+    }
+    const recordTypes = new Set();
+    for (const record of entry.doc.recordTypes) {
+      if (recordTypes.has(record.id)) {
+        out.push(violation(
+          entry.file,
+          'SOTER_PROVIDER_MAPPING_RECORD',
+          'mapping declares duplicate record type ' + record.id,
+          'one portable record type must resolve to one target mapping',
+          'merge or rename the duplicate record mapping'
+        ));
+      }
+      recordTypes.add(record.id);
+      const portableFields = record.fields.map((field) => field.portable);
+      if (new Set(portableFields).size !== portableFields.length) {
+        out.push(violation(
+          entry.file,
+          'SOTER_PROVIDER_MAPPING_FIELD',
+          'record mapping has duplicate portable fields: ' + record.id,
+          'normalization must assign each portable field exactly once',
+          'remove the duplicate field mapping'
+        ));
+      }
+    }
+  }
   for (const fixture of providerFixtures.values()) {
     const provider = providers.get(fixture.doc.provider);
     const fixturePath = path.relative(root, fixture.file).split(path.sep).join('/');
@@ -1040,9 +1201,17 @@ function checkRuntimeArtifacts(
   hostToolCalls,
   approvals,
   changeSets,
+  hosts,
   out
 ) {
   const lockByFingerprint = new Map();
+  const nativeToolFor = (lock, server, operation) => {
+    if (!lock || !operation) return null;
+    const host = hosts.get(lock.doc.host.adapter);
+    const route = host?.doc.mcpServers.find((candidate) => candidate.id === server);
+    const matches = route?.toolMappings.filter((mapping) => mapping.logical === operation) || [];
+    return matches.length === 1 ? matches[0].native : null;
+  };
   for (const entry of locks) {
     const fingerprint = fingerprintJson(entry.doc);
     lockByFingerprint.set(fingerprint, entry);
@@ -1236,8 +1405,11 @@ function checkRuntimeArtifacts(
       || provider.doc.containment !== entry.doc.provider.containment
       || provider.doc.runtime.engine !== 'mcp'
       || provider.doc.runtime.server !== entry.doc.transport.server
-      || (entry.doc.transport.tool
-        && !provider.doc.runtime.probeTools?.includes(entry.doc.transport.tool))) {
+      || (entry.doc.transport.operation
+        && !provider.doc.runtime.probeTools?.includes(entry.doc.transport.operation))
+      || (entry.doc.transport.operation
+        && nativeToolFor(lock, entry.doc.transport.server, entry.doc.transport.operation)
+          !== entry.doc.transport.tool)) {
       out.push(violation(
         entry.file,
         'SOTER_PROVIDER_PROBE_CALL_PROVIDER',
@@ -1279,7 +1451,8 @@ function checkRuntimeArtifacts(
         'regenerate the request or restore the original arguments'
       ));
     }
-    const requestedShape = entry.doc.transport.tool !== null
+    const requestedShape = entry.doc.transport.operation !== null
+      && entry.doc.transport.tool !== null
       && entry.doc.arguments !== null
       && entry.doc.argumentsFingerprint !== null;
     const validLifecycle = (entry.doc.state === 'requested'
@@ -1329,8 +1502,11 @@ function checkRuntimeArtifacts(
       || provider.doc.containment !== entry.doc.provider.containment
       || provider.doc.runtime.engine !== 'mcp'
       || provider.doc.runtime.server !== entry.doc.transport.server
-      || (entry.doc.transport.tool
-        && !provider.doc.runtime.tools.includes(entry.doc.transport.tool))) {
+      || (entry.doc.transport.operation
+        && !provider.doc.runtime.tools.includes(entry.doc.transport.operation))
+      || (entry.doc.transport.operation
+        && nativeToolFor(lock, entry.doc.transport.server, entry.doc.transport.operation)
+          !== entry.doc.transport.tool)) {
       out.push(violation(
         entry.file,
         'SOTER_HOST_TOOL_PROVIDER',
@@ -1371,7 +1547,8 @@ function checkRuntimeArtifacts(
       ));
     }
     const blockedByPolicy = entry.doc.policyDecisions.some((item) => item.decision === 'blocked');
-    const requestedShape = entry.doc.transport.tool !== null
+    const requestedShape = entry.doc.transport.operation !== null
+      && entry.doc.transport.tool !== null
       && entry.doc.arguments !== null
       && entry.doc.argumentsFingerprint !== null;
     const validLifecycle = (entry.doc.state === 'requested'
@@ -1566,7 +1743,7 @@ function checkRuntimeArtifacts(
   }
 }
 
-function checkConfiguration(root, entry, packs, capabilities, hosts, out) {
+function checkConfiguration(root, entry, packs, capabilities, hosts, packSettings, out) {
   const doc = entry.doc;
   const selectedIds = [doc.base.kernel, doc.base.core, ...doc.packs.map((selection) => selection.id)];
   const selected = new Set(selectedIds);
@@ -1662,6 +1839,33 @@ function checkConfiguration(root, entry, packs, capabilities, hosts, out) {
           'add the dependency visibly or remove the dependent pack'
         ));
       }
+    }
+  }
+
+  for (const settings of packSettings.values()) {
+    if (!selected.has(settings.doc.pack)) continue;
+    const configured = doc.settings[settings.doc.pack];
+    if (configured === undefined) {
+      if (settings.doc.required) {
+        out.push(violation(
+          entry.file,
+          'SOTER_PACK_SETTINGS_MISSING',
+          'selected pack requires settings: ' + settings.doc.pack,
+          'pack behavior cannot depend on defaults or prompt memory that are absent from desired configuration',
+          'add settings.' + settings.doc.pack + ' using ' + settings.doc.id
+        ));
+      }
+      continue;
+    }
+    const failures = schemaErrors(configured, settings.doc.schema);
+    for (const failure of failures.slice(0, 20)) {
+      out.push(violation(
+        entry.file,
+        'SOTER_PACK_SETTINGS_SCHEMA',
+        'settings.' + settings.doc.pack + ' ' + failure.path + ' ' + failure.message,
+        'selected pack settings must satisfy the schema owned by the exact pack version',
+        'correct the settings or select a compatible pack version'
+      ));
     }
   }
 
@@ -1966,6 +2170,8 @@ export function verifySoter(root = defaultRoot, options = {}) {
     evidence: 0,
     doctorResults: 0,
     providers: 0,
+    packSettings: 0,
+    providerMappings: 0,
     contextSnapshots: 0,
     providerFixtures: 0,
     providerProbes: 0,
@@ -2117,6 +2323,8 @@ function report(resultValue, json) {
       + c.locks + ' locks, ' + c.runEnvelopes + ' run envelopes, '
       + c.evidence + ' evidence records, ' + c.doctorResults + ' doctor results, '
       + c.providers + ' providers, ' + c.contextSnapshots + ' context snapshots, '
+      + c.packSettings + ' pack settings definitions, '
+      + c.providerMappings + ' provider mappings, '
       + c.providerFixtures + ' provider fixtures, ' + c.providerProbes + ' provider probes, '
       + c.providerProbeCalls + ' provider probe calls, '
       + c.hostToolCalls + ' host tool calls, '
@@ -2192,12 +2400,22 @@ function selftest(root) {
     required: ['mode', 'items'],
     properties: {
       mode: { enum: ['safe'] },
-      items: { type: 'array', minItems: 2, uniqueItems: true, items: { type: 'string' } }
+      items: {
+        type: 'array',
+        minItems: 2,
+        maxItems: 2,
+        uniqueItems: true,
+        items: { type: 'string' }
+      }
     }
   };
   const plantedSchemaErrors = schemaErrors({ mode: 'unsafe', items: ['x', 'x'], extra: true }, schema);
   if (plantedSchemaErrors.length < 3) {
     failures.push('schema validator missed enum, uniqueness, minimum, or additional-property failures');
+  }
+  if (!schemaErrors({ mode: 'safe', items: ['x', 'y', 'z'] }, schema)
+    .some((item) => item.message.includes('at most 2'))) {
+    failures.push('schema validator missed maximum-item failure');
   }
   if (!satisfies('0.1.5', '^0.1.0') || satisfies('0.2.0', '^0.1.0') || !satisfies('1.9.0', '^1.2.0')) {
     failures.push('semantic version range checks are incorrect');
@@ -2223,16 +2441,59 @@ function selftest(root) {
     }
 
     const configFile = path.join(temp, 'soter', 'configurations', 'meeting-intake.config.json');
-    const config = JSON.parse(fs.readFileSync(configFile, 'utf8'));
-    config.bindings[0].providerPack = 'integration.missing';
+    const originalConfigText = fs.readFileSync(configFile, 'utf8');
+    const config = JSON.parse(originalConfigText);
+    delete config.settings['integration.notion'].targets.meetings;
     fs.writeFileSync(configFile, JSON.stringify(config, null, 2) + '\n');
+    const badPackSettings = verifySoter(temp);
+    if (!badPackSettings.violations.some((item) => item.code === 'SOTER_PACK_SETTINGS_SCHEMA')) {
+      failures.push('planted missing pack setting was not detected');
+    }
+    fs.writeFileSync(configFile, originalConfigText);
+
+    const hostFile = path.join(temp, 'soter', 'hosts', 'codex', 'adapter.json');
+    const originalHostText = fs.readFileSync(hostFile, 'utf8');
+    const host = JSON.parse(originalHostText);
+    const notionRoute = host.mcpServers.find((item) => item.id === 'notion');
+    notionRoute.toolMappings = notionRoute.toolMappings.filter((item) => {
+      return item.logical !== 'query_data_sources';
+    });
+    fs.writeFileSync(hostFile, JSON.stringify(host, null, 2) + '\n');
+    const badHostTool = verifySoter(temp);
+    if (!badHostTool.violations.some((item) => item.code === 'SOTER_PROVIDER_HOST_TOOL')) {
+      failures.push('planted missing native host tool mapping was not detected');
+    }
+    fs.writeFileSync(hostFile, originalHostText);
+
+    const mappingFile = path.join(
+      temp,
+      'soter',
+      'integrations',
+      'notion',
+      'crm-records.mapping.json'
+    );
+    const originalMappingText = fs.readFileSync(mappingFile, 'utf8');
+    const mapping = JSON.parse(originalMappingText);
+    mapping.provider = 'provider.integration.missing';
+    fs.writeFileSync(mappingFile, JSON.stringify(mapping, null, 2) + '\n');
+    const badProviderMapping = verifySoter(temp);
+    if (!badProviderMapping.violations.some((item) => item.code === 'SOTER_PROVIDER_MAPPING_OWNER')) {
+      failures.push('planted detached provider mapping was not detected');
+    }
+    fs.writeFileSync(mappingFile, originalMappingText);
+
+    const restoredConfig = JSON.parse(originalConfigText);
+    const badBindingConfig = structuredClone(restoredConfig);
+    const configBinding = badBindingConfig.bindings[0];
+    configBinding.providerPack = 'integration.missing';
+    fs.writeFileSync(configFile, JSON.stringify(badBindingConfig, null, 2) + '\n');
     const badBinding = verifySoter(temp);
     if (!badBinding.violations.some((item) => item.code === 'SOTER_BINDING')) {
       failures.push('planted missing provider binding was not detected');
     }
 
-    config.host.adapter = 'host.missing';
-    fs.writeFileSync(configFile, JSON.stringify(config, null, 2) + '\n');
+    badBindingConfig.host.adapter = 'host.missing';
+    fs.writeFileSync(configFile, JSON.stringify(badBindingConfig, null, 2) + '\n');
     const badHost = verifySoter(temp);
     if (!badHost.violations.some((item) => item.code === 'SOTER_HOST')) {
       failures.push('planted missing host adapter was not detected');
@@ -2269,7 +2530,7 @@ function selftest(root) {
     failures.forEach((failure) => console.error('SELFTEST FAIL: ' + failure));
     return false;
   }
-  console.log('SELFTEST PASS: schema, version, clean graph, binding, host, malformed JSON, unknown-contract, and malformed-contract checks fired as expected.');
+  console.log('SELFTEST PASS: schema, version, clean graph, pack settings, provider mapping, native host tool, binding, host, malformed JSON, unknown-contract, and malformed-contract checks fired as expected.');
   return true;
 }
 

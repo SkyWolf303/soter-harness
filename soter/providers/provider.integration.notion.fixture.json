@@ -20,6 +20,7 @@
     { "role": "instance", "subject": "crm.records" }
   ],
   "effects": ["read", "disclosure", "write"],
+  "mappings": [],
   "fixtures": [
     "soter/fixtures/providers/notion/crm-records.json"
   ],
