@@ -141,13 +141,15 @@ The main remaining gaps are structural and behavioral:
   context assembly, exact-scope approvals, transactional fixture writes,
   rollback, read-after-write verification, scoped evidence, and offline
   diagnosis, and the policy-bound request/result state machine for resumable
-  host-dispatched MCP calls. The first connected Otter declaration now emits an
+  host-dispatched MCP calls. A shared Core service now projects that resumable
+  handshake through both the CLI and a local stdio MCP server configured for
+  Codex and Claude. The first connected Otter declaration now emits an
   exact `fetch({id})` request and an identity-only `get_user_info({})` probe
   request through separate resumable contracts. The probe can establish
   authentication and reachability while mechanically leaving transcript
   compatibility unknown. Notion translation, observed Otter response-shape
-  conformance, automatic host dispatch, and host-level agent behavior remain
-  unproven.
+  conformance, actual provider dispatch by either host, and host-level agent
+  behavior remain unproven.
 - Legacy provider behavior remains mixed into automations. The target now
   separates fixture reads and writes behind typed capabilities, but connected
   implementations and legacy migration remain.
@@ -156,11 +158,12 @@ The main remaining gaps are structural and behavioral:
 - Evidence does not yet support complete transitive freshness and health claims.
 - Claude-specific realization is more mature than Codex or other host adapters.
 
-The target host projections are now explicitly MCP-aware. Claude retains its
-existing Notion plugin and Otter project MCP configuration. Codex declares the
-Notion app connector and registers Otter's official remote MCP server in
-`.codex/config.toml`. MCP is the authenticated host transport; Soter capability
-contracts remain the stable automation interface.
+The target host projections are now explicitly MCP-aware. Both hosts register
+the same local Soter Core server; Claude retains its existing Notion plugin and
+Otter project MCP configuration, while Codex declares the Notion app connector
+and registers Otter's official remote MCP server in `.codex/config.toml`. MCP
+is the authenticated host transport; Soter capability contracts remain the
+stable automation interface.
 
 We are evolving the existing codebase rather than assuming its current shape is
 the target. Migration will proceed in small vertical slices, with compatibility
@@ -265,6 +268,33 @@ current Otter producer intentionally reports `meeting.transcript.read=unknown`
 because `get_user_info` does not read a transcript. Treat response files as
 private transient runtime state and keep them outside the repository.
 
+Install the pinned local MCP runtime and verify the stdio protocol path:
+
+    npm install
+    npm run soter:mcp:selftest
+
+Codex and Claude both load `soter/core/mcp/server.mjs` as a local stdio MCP
+server bound to that host's identity. A host cannot consume a lock resolved for
+another host. Its tools follow one explicit sequence:
+
+1. Call `soter_prepare_provider_probe` or
+   `soter_prepare_capability_call`.
+2. Continue only when the returned call state is `requested`.
+3. Invoke exactly the returned logical provider server/tool with the returned
+   arguments through the host's separately authenticated provider MCP route.
+4. Pass the native response unchanged to the matching Soter completion tool,
+   or close the request with `soter_fail_host_call`.
+
+The local server never calls Otter, Notion, or another provider itself. Its MCP
+self-test launches the stdio server and supplies synthetic provider results,
+proving the shared projection and minimization behavior only. It does not prove that Codex
+or Claude started the server, authenticated a provider, selected the right tool,
+or completed a real run. The server returns exact call records but does not yet
+checkpoint them to durable run state, so compaction-safe resume remains a
+separate required slice. The equivalent file-oriented CLI commands are
+`capability-prepare`, `capability-complete`, and `host-fail`; response files are
+a debugging fallback and remain private transient runtime state.
+
 For Codex, trust the project and authenticate the declared Otter server once:
 
     codex mcp login otter
@@ -300,9 +330,10 @@ runtime is connected or ready.
    mapping.
 3. Finish the connected integration slice: add the Notion MCP translator and
    safe probe producer, validate Otter transcript response normalization with
-   an explicitly authorized private meeting fixture, and connect host dispatch
-   to the resumable Core calls. Then add durable provider checkpoints and the
-   separately authorized canary doctor level.
+   an explicitly authorized private meeting fixture, and prove actual Codex and
+   Claude dispatch through the configured resumable Core service. Then add
+   durable provider checkpoints and the separately authorized canary doctor
+   level.
 4. Prove the full judgment and orchestration slice through both Claude and
    Codex host adapters rather than treating deterministic fixture mechanics as
    agent behavior evidence.

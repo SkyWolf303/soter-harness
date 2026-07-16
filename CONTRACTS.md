@@ -715,6 +715,21 @@ output fingerprints rather than the raw provider body. A retry, resume, or
 handoff therefore cannot substitute a different lock, provider, input, tool,
 or response without detection.
 
+All interactive projections must use the same Core execution service. The
+reference CLI and local Soter MCP server are transports over that service; they
+must not reimplement lock freshness, run-envelope matching, policy evaluation,
+provider selection, argument allowlisting, normalization, or failure
+recording. The local Soter MCP server is a host interface, not a provider route:
+it emits a logical provider request and accepts a native result, but never
+invokes a provider tool itself.
+
+The initial connected service accepts no caller-supplied approval set.
+Consequently, a capability whose resolved effects require confirmation produces
+a blocked call with no tool or arguments. A future write interface may proceed
+only after Core validates an approval bound to the exact generated operation
+batch and change-set fingerprint; host approval prompts alone are not reusable
+Soter authorization.
+
 Provider readiness uses a separate `provider-probe-call/v1` state machine. Core
 derives its probe plan from the exact lock and desired configuration, including
 the selected provider, secret-reference identifiers, authorities, and

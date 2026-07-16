@@ -13,9 +13,9 @@
   },
   "configurationLock": {
     "path": "soter/fixtures/meeting-intake/meeting-intake.lock.json",
-    "fingerprint": "sha256:f8a5f3e88e0a6f49ffa006ff6983d783d88e6bc37f5c9c9cc5a9a70dec8b6a20"
+    "fingerprint": "sha256:08b7e070a088ac018cfa283734bf2e64f763447ea530f8f62111ea62d2499c90"
   },
-  "graphFingerprint": "sha256:5973490328e0c6c9bb6649228fefad4dafeb029019e3cade2d34fcf865af55b9",
+  "graphFingerprint": "sha256:993e8c59e3709c510d1a821d05920e509f45cc739a5f6dbd4af28b87cfa86813",
   "context": [
     {
       "subject": "crm.records",
@@ -44,7 +44,7 @@
       "uri": "notion://configured-user",
       "declarationFingerprint": "sha256:0567ff10843e26a53e85ffa7d609867226b00615288193983c4e6f9384050032",
       "status": "declared",
-      "provenance": "configuration-lock:sha256:f8a5f3e88e0a6f49ffa006ff6983d783d88e6bc37f5c9c9cc5a9a70dec8b6a20",
+      "provenance": "configuration-lock:sha256:08b7e070a088ac018cfa283734bf2e64f763447ea530f8f62111ea62d2499c90",
       "freshness": "unknown"
     },
     {
@@ -64,7 +64,7 @@
       "uri": "soter-state://runs",
       "declarationFingerprint": "sha256:6f39e99f1ebc86fe11ee09cc7170824ac4c11a6fc88371edb673bd2379dacdc8",
       "status": "declared",
-      "provenance": "configuration-lock:sha256:f8a5f3e88e0a6f49ffa006ff6983d783d88e6bc37f5c9c9cc5a9a70dec8b6a20",
+      "provenance": "configuration-lock:sha256:08b7e070a088ac018cfa283734bf2e64f763447ea530f8f62111ea62d2499c90",
       "freshness": "unknown"
     }
   ],
@@ -129,7 +129,7 @@
     "id": "codex",
     "adapter": "host.codex",
     "version": "0.1.0",
-    "manifestFingerprint": "sha256:97a997f51e9b633799333e7917ac6cb81e10ba2b641baf0681ffacb55a51f832"
+    "manifestFingerprint": "sha256:83279076c5a2ea97a0eca5f68f051d247c4f5eee97182a3d0ad7e34a02da94e3"
   },
   "effectPolicies": {
     "read": {
@@ -164,7 +164,7 @@
       "decision": "approved",
       "scope": {
         "changeSetId": "changeset.meeting-intake.transaction-fixture",
-        "fingerprint": "sha256:645bc4d65a5fba811fd51185646b700f6243b6d7e658f741c6c4d83e2aa7b0e7",
+        "fingerprint": "sha256:dffce61d76b5ada806a4919e4a582c427e5988b45a331469c25ab2a56a126ff6",
         "effects": [
           "write"
         ]
@@ -208,12 +208,12 @@
     {
       "id": "context.meeting-intake.transaction-fixture",
       "type": "context-snapshot",
-      "fingerprint": "sha256:545c3071934ea214b8fe0c75302ce0808aa267c963379c1549ba273ba3fe02b2"
+      "fingerprint": "sha256:98b1eb9c4deb82e94236166966247747a7853a7e70297ec707926349f11180bc"
     },
     {
       "id": "changeset.meeting-intake.transaction-fixture",
       "type": "change-set",
-      "fingerprint": "sha256:fc134e35d44f92cd44db3b83976a85f9f2b5f69658889902586aecf6fcf36e31"
+      "fingerprint": "sha256:0b4886279619d7f2d1d29140fd914a7d809b36d64711ef422f5d2b7f76aaff41"
     }
   ],
   "effects": [

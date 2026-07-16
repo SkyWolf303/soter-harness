@@ -14,7 +14,7 @@
     "id": "codex",
     "adapter": "host.codex",
     "version": "0.1.0",
-    "manifestFingerprint": "sha256:97a997f51e9b633799333e7917ac6cb81e10ba2b641baf0681ffacb55a51f832"
+    "manifestFingerprint": "sha256:83279076c5a2ea97a0eca5f68f051d247c4f5eee97182a3d0ad7e34a02da94e3"
   },
   "packs": [
     {
@@ -120,7 +120,7 @@
         {
           "path": "soter/kernel/verify.mjs",
           "role": "implementation",
-          "fingerprint": "sha256:97268ca74eeb0aa5ac86e19aa45a0d75cda1d21c14da9c568571f2f3b7a3890e"
+          "fingerprint": "sha256:53e199730ecde8bdae1b68d7b3e3875bba21c4629b3cc6a38695d21c246a2ce6"
         }
       ]
     },
@@ -131,9 +131,19 @@
       "releaseStage": "experimental",
       "evidenceMaturity": "declared",
       "source": "base",
-      "reason": "Required core foundation: Provides configuration resolution, context assembly, capability binding, effect policy, evidence, and health.",
-      "manifestFingerprint": "sha256:5efd9e6c69c886b8b6f87c18505b9b7f568a40bdbd07dd536c30e465c44fa8df",
+      "reason": "Required core foundation: Provides configuration resolution, context assembly, capability binding, effect policy, host execution services, evidence, and health.",
+      "manifestFingerprint": "sha256:d43593e63bb03de796f63a8390c428c6697f84b7d679c4b4209e4241b27ceace",
       "artifacts": [
+        {
+          "path": "package-lock.json",
+          "role": "implementation",
+          "fingerprint": "sha256:09decc3d3e1584595979804a970fd587ce4a0526374add304a608f4d35da128d"
+        },
+        {
+          "path": "package.json",
+          "role": "implementation",
+          "fingerprint": "sha256:ef6eaccae0842570b0dbc6f480cb33ea68d91c964568297a14c24e454322b46a"
+        },
         {
           "path": "soter/core/capabilities.mjs",
           "role": "implementation",
@@ -142,7 +152,7 @@
         {
           "path": "soter/core/cli.mjs",
           "role": "implementation",
-          "fingerprint": "sha256:a6a60afb706423da3eeb47a4697a3bd6eb1c2fa325edcb443bde5970090d4ea8"
+          "fingerprint": "sha256:beb744c1d7d34953dbe810963b581611cd85881195b9cd76c7b73b574e26851e"
         },
         {
           "path": "soter/core/context.mjs",
@@ -180,6 +190,21 @@
           "fingerprint": "sha256:0f62c44964c9597aea3389e64e409685d65ac5187ffa27eeeb2a81283a210e02"
         },
         {
+          "path": "soter/core/mcp/selftest.mjs",
+          "role": "evaluation",
+          "fingerprint": "sha256:b1c492e2b44dd1f3310a7207066cc1d1bb1133b1dcf11fdb387766e7b1ec25ae"
+        },
+        {
+          "path": "soter/core/mcp/server.mjs",
+          "role": "implementation",
+          "fingerprint": "sha256:6819cfb708f4d0c65f48d755b11323f25619b15610c6d0cb39f1903bb59f3443"
+        },
+        {
+          "path": "soter/core/mcp/tools.mjs",
+          "role": "implementation",
+          "fingerprint": "sha256:c22cd43d4a57c3fc7488654761062f53c36df3a819138b4fa0b242e2e201252d"
+        },
+        {
           "path": "soter/core/provider-probes.mjs",
           "role": "implementation",
           "fingerprint": "sha256:9d2d10d764e9ab9a4f91a9eb0c296660a7bb44647b0541f22380baef6e1c2736"
@@ -197,7 +222,12 @@
         {
           "path": "soter/core/selftest.mjs",
           "role": "evaluation",
-          "fingerprint": "sha256:f26ba506e98fa7e8d2d45e9e17486d22f081bb14733689a8d39b5ff21dde0f02"
+          "fingerprint": "sha256:8a426f5c10ee551c69da70cd4bbfbf79409da12b71a6eb0acc26a728510e0572"
+        },
+        {
+          "path": "soter/core/service.mjs",
+          "role": "implementation",
+          "fingerprint": "sha256:2231398a4e24c836476024ea15d92b84ffc383beb719e1f53ce53939e5378282"
         },
         {
           "path": "soter/core/transaction.mjs",
@@ -526,7 +556,7 @@
     {
       "path": ".codex/config.toml",
       "role": "tools",
-      "fingerprint": "sha256:7d6ddd2fde8ea4ddbd3c0092104dfd80b04c6e3aea7793fbeea914cac0549432"
+      "fingerprint": "sha256:b0b37a03eb431206235de5c55043202f3a7c3d19de500cc50224e209ccff908d"
     },
     {
       "path": "AGENTS.md",
@@ -534,5 +564,5 @@
       "fingerprint": "sha256:6acbd2de2c911d2b257547c5586e718701319f9f3d24927e813726ea733ede5f"
     }
   ],
-  "graphFingerprint": "sha256:5973490328e0c6c9bb6649228fefad4dafeb029019e3cade2d34fcf865af55b9"
+  "graphFingerprint": "sha256:993e8c59e3709c510d1a821d05920e509f45cc739a5f6dbd4af28b87cfa86813"
 }

@@ -13,6 +13,13 @@
   ],
   "mcpServers": [
     {
+      "id": "soter",
+      "delivery": "project",
+      "state": "configured",
+      "configurationPath": ".codex/config.toml",
+      "reason": "The trusted project config exposes the provider-neutral Core service through a local stdio MCP server."
+    },
+    {
       "id": "notion",
       "delivery": "connector",
       "state": "declared",
@@ -40,6 +47,6 @@
     "scenarios": []
   },
   "limitations": [
-    "Instructions and Otter MCP configuration are projected, but connector authentication, pack skills, lifecycle enforcement, and behavior conformance are not proven."
+    "The local Core MCP service and Otter route are configured, but Codex startup, connector authentication, provider tool dispatch, durable call checkpointing, lifecycle judgment, and end-to-end behavior conformance are not proven."
   ]
 }

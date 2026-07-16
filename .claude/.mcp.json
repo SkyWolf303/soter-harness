@@ -1,5 +1,14 @@
 {
   "mcpServers": {
+    "soter": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "soter/core/mcp/server.mjs",
+        "--host",
+        "claude"
+      ]
+    },
     "otter": {
       "type": "http",
       "url": "https://mcp.otter.ai/mcp"

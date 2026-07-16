@@ -281,6 +281,27 @@ graphical interfaces, and automation triggers. Business rules, graph
 resolution, effect policy, and health calculations live in core so interfaces
 cannot drift.
 
+The current reference projection realizes that rule with one Core service and
+two thin interfaces: structured CLI commands and a local stdio MCP server. The
+MCP server is not an integration provider and does not proxy credentials or
+provider traffic. It lets a host prepare an exact logical request, execute that
+request through its separately configured provider tool, and return the native
+result for exact-lock validation and normalization. Codex and Claude configure
+the same server rather than reimplementing policy or translation. Each launch
+binds the server to its active host identity, so a Claude projection cannot
+consume a lock resolved for Codex or vice versa. A later UI must call this same
+service boundary as well.
+
+This projection deliberately exposes no generic way to attach connected-write
+approval. Reads and probes can cross the seam when their resolved policy allows
+them; confirmation-gated writes remain blocked until a durable run checkpoint
+can bind a user's approval to the exact operation-batch fingerprint.
+
+The current MCP projection returns exact call records to its caller but does not
+yet checkpoint them in shared durable run state. Its stdio self-test therefore
+proves the protocol boundary, host binding, and normalization behavior—not
+compaction-safe resume or a completed host automation run.
+
 ### Verification
 
 Verification progresses from static and graph validation through fixtures,

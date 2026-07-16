@@ -16,9 +16,12 @@ import { readJson, resolveRepoPath, writeJson } from './lib/canonical-json.mjs';
 import { fingerprintLock, resolveConfiguration } from './resolve.mjs';
 import { prepareRunEnvelope } from './run.mjs';
 import {
-  completeProviderProbeCall,
-  prepareProviderProbeCall
-} from './provider-probes.mjs';
+  completeCapabilityExecution,
+  completeProviderProbeExecution,
+  failHostExecution,
+  prepareCapabilityExecution,
+  prepareProviderProbeExecution
+} from './service.mjs';
 import { runContainedMeetingIntakeTransaction } from './transaction.mjs';
 
 const defaultRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -189,17 +192,13 @@ async function main() {
 
   if (command === 'probe-prepare') {
     const lockPath = requiredOption(args, '--lock');
-    const lock = readJson(resolveRepoPath(root, lockPath));
     const providerImplementation = requiredOption(args, '--provider');
-    const providerIdPart = providerImplementation.startsWith('provider.')
-      ? providerImplementation.slice('provider.'.length)
-      : providerImplementation;
-    const prepared = await prepareProviderProbeCall({
+    const prepared = await prepareProviderProbeExecution({
       root,
-      lock,
+      lockPath,
       providerImplementation,
-      callId: option(args, '--call-id', 'probecall.' + lock.configuration.name + '.' + idPart),
-      probeId: option(args, '--probe-id', 'probe.' + providerIdPart + '.' + idPart),
+      callId: option(args, '--call-id'),
+      probeId: option(args, '--probe-id'),
       at: createdAt,
       validForSeconds: Number(option(args, '--valid-for-seconds', '300'))
     });
@@ -221,12 +220,12 @@ async function main() {
   }
 
   if (command === 'probe-complete') {
-    const lock = readJson(resolveRepoPath(root, requiredOption(args, '--lock')));
+    const lockPath = requiredOption(args, '--lock');
     const call = readJson(resolveRepoPath(root, requiredOption(args, '--call')));
     const response = readJson(resolveRepoPath(root, requiredOption(args, '--response')));
-    const completed = await completeProviderProbeCall({
+    const completed = await completeProviderProbeExecution({
       root,
-      lock,
+      lockPath,
       call,
       response,
       at: createdAt
@@ -252,6 +251,88 @@ async function main() {
       );
     }
     if (completed.call.state !== 'completed') process.exitCode = 1;
+    return;
+  }
+
+  if (command === 'capability-prepare') {
+    const prepared = await prepareCapabilityExecution({
+      root,
+      lockPath: requiredOption(args, '--lock'),
+      runPath: requiredOption(args, '--run'),
+      capability: requiredOption(args, '--capability'),
+      authority: requiredOption(args, '--authority'),
+      providerImplementation: requiredOption(args, '--provider'),
+      input: readJson(resolveRepoPath(root, requiredOption(args, '--input'))),
+      callId: option(args, '--call-id'),
+      at: createdAt
+    });
+    const output = option(args, '--output');
+    if (output) writeJson(resolveRepoPath(root, output), prepared.call);
+    if (json) {
+      print(prepared);
+    } else {
+      process.stdout.write(
+        'Prepared ' + prepared.call.id + ' in state ' + prepared.call.state + '.\n'
+          + (prepared.call.state === 'requested'
+            ? 'Host request: ' + prepared.call.transport.server + '/'
+              + prepared.call.transport.tool + '\n'
+            : 'Host request emitted: no\n')
+          + 'Connected write approval accepted by this command: no\n'
+          + (output ? 'Wrote: ' + output + '\n' : '')
+      );
+    }
+    if (prepared.call.state !== 'requested') process.exitCode = 1;
+    return;
+  }
+
+  if (command === 'capability-complete') {
+    const completed = await completeCapabilityExecution({
+      root,
+      lockPath: requiredOption(args, '--lock'),
+      runPath: requiredOption(args, '--run'),
+      call: readJson(resolveRepoPath(root, requiredOption(args, '--call'))),
+      input: readJson(resolveRepoPath(root, requiredOption(args, '--input'))),
+      response: readJson(resolveRepoPath(root, requiredOption(args, '--response'))),
+      at: createdAt
+    });
+    const callOutput = option(args, '--call-output');
+    const output = option(args, '--output');
+    if (callOutput) writeJson(resolveRepoPath(root, callOutput), completed.call);
+    if (output && completed.output) writeJson(resolveRepoPath(root, output), completed.output);
+    if (json) {
+      print(completed);
+    } else {
+      process.stdout.write(
+        'Completed ' + completed.call.id + ' in state ' + completed.call.state + '.\n'
+          + 'Raw provider response persisted by Core: no\n'
+          + (callOutput ? 'Wrote call: ' + callOutput + '\n' : '')
+          + (output && completed.output ? 'Wrote output: ' + output + '\n' : '')
+      );
+    }
+    if (completed.call.state !== 'completed') process.exitCode = 1;
+    return;
+  }
+
+  if (command === 'host-fail') {
+    const failed = failHostExecution({
+      root,
+      lockPath: requiredOption(args, '--lock'),
+      runPath: option(args, '--run'),
+      call: readJson(resolveRepoPath(root, requiredOption(args, '--call'))),
+      errorKind: requiredOption(args, '--kind'),
+      message: requiredOption(args, '--message'),
+      at: createdAt
+    });
+    const output = option(args, '--output');
+    if (output) writeJson(resolveRepoPath(root, output), failed.call);
+    if (json) {
+      print(failed);
+    } else {
+      process.stdout.write(
+        'Recorded ' + failed.call.id + ' in state ' + failed.call.state + '.\n'
+          + (output ? 'Wrote: ' + output + '\n' : '')
+      );
+    }
     return;
   }
 
@@ -403,7 +484,7 @@ async function main() {
   }
 
   throw new Error(
-    'Usage: node soter/core/cli.mjs <resolve|prepare|context|transaction|doctor|probe-prepare|probe-complete|fixtures|selftest> [options]\n'
+    'Usage: node soter/core/cli.mjs <resolve|prepare|context|transaction|doctor|probe-prepare|probe-complete|capability-prepare|capability-complete|host-fail|fixtures|selftest> [options]\n'
       + '  resolve [--config PATH] [--output PATH] [--json]\n'
       + '  prepare --lock PATH [--scenario PATH] [--output PATH] [--evidence-dir PATH] [--json]\n'
       + '  context --lock PATH --meeting-id ID --recording-uri URI [--scenario PATH] [--json]\n'
@@ -411,6 +492,9 @@ async function main() {
       + '  doctor --lock PATH [--level offline|connected] [--probe PATH ...] [--config PATH] [--json]\n'
       + '  probe-prepare --lock PATH --provider ID [--output PATH] [--json]\n'
       + '  probe-complete --lock PATH --call PATH --response PATH [--probe-output PATH] [--json]\n'
+      + '  capability-prepare --lock PATH --run PATH --capability ID --authority ID --provider ID --input PATH [--output PATH] [--json]\n'
+      + '  capability-complete --lock PATH --run PATH --call PATH --input PATH --response PATH [--output PATH] [--json]\n'
+      + '  host-fail --lock PATH [--run PATH] --call PATH --kind KIND --message TEXT [--output PATH] [--json]\n'
       + '  fixtures <--check|--update> [--json]'
   );
 }

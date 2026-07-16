@@ -6,7 +6,7 @@
   "layer": "core",
   "releaseStage": "experimental",
   "evidenceMaturity": "declared",
-  "summary": "Provides configuration resolution, context assembly, capability binding, effect policy, evidence, and health.",
+  "summary": "Provides configuration resolution, context assembly, capability binding, effect policy, host execution services, evidence, and health.",
   "dependencies": [
     {
       "pack": "kernel.soter",
@@ -24,6 +24,8 @@
   ],
   "effects": [],
   "artifacts": [
+    { "path": "package.json", "role": "implementation" },
+    { "path": "package-lock.json", "role": "implementation" },
     { "path": "soter/core/lib/canonical-json.mjs", "role": "implementation" },
     { "path": "soter/core/resolve.mjs", "role": "implementation" },
     { "path": "soter/core/run.mjs", "role": "implementation" },
@@ -33,6 +35,10 @@
     { "path": "soter/core/host-runtime.mjs", "role": "implementation" },
     { "path": "soter/core/host-tools.mjs", "role": "implementation" },
     { "path": "soter/core/provider-probes.mjs", "role": "implementation" },
+    { "path": "soter/core/service.mjs", "role": "implementation" },
+    { "path": "soter/core/mcp/tools.mjs", "role": "implementation" },
+    { "path": "soter/core/mcp/server.mjs", "role": "implementation" },
+    { "path": "soter/core/mcp/selftest.mjs", "role": "evaluation" },
     { "path": "soter/core/context.mjs", "role": "implementation" },
     { "path": "soter/core/transaction.mjs", "role": "implementation" },
     { "path": "soter/core/fixtures.mjs", "role": "implementation" },

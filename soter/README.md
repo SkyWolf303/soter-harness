@@ -23,9 +23,10 @@ fields make that distinction mechanical.
 - migrations maps prototype artifacts to their target ownership and state.
 - kernel contains the target verifier shared by every future host projection.
 - core contains provider-neutral resolution, preflight, evidence, offline and
-  connected doctor operations, a shared host-runtime boundary, and separate
-  resumable capability-call and provider-probe bridges consumed by CLI and
-  future agent and graphical interfaces.
+  connected doctor operations, a shared execution service, and separate
+  resumable capability-call and provider-probe bridges. The CLI and local Soter
+  MCP server are thin interfaces over that service; future graphical interfaces
+  must consume the same boundary.
 - fixtures contains generated, cross-linked examples of exact locks, run
   envelopes, evidence, and doctor results. These are runtime-state examples,
   not pack source artifacts.
@@ -49,12 +50,14 @@ exact-scope approvals, transactional in-memory writes, rollback proof,
 read-after-write verification, scoped evidence, and an offline doctor report.
 It also validates and aggregates short-lived provider probes into an honest
 connected-readiness result and proves the state machine for policy-bound MCP
-dispatch with synthetic host results. The connected Otter provider now
+dispatch with synthetic host results. A local stdio MCP projection exposes that
+same Core service to both Codex and Claude without becoming a provider proxy or
+accepting generic connected-write approvals. The connected Otter provider now
 translates a canonical meeting URL into exact `fetch({id})` arguments and
 produces an identity-only `get_user_info({})` probe. That probe can pass
 authentication and reachability while leaving transcript compatibility
 unknown. Unobserved transcript response shapes fail closed. Notion has no
-connected provider yet, host dispatch is not automatic, and the checked-in
+connected provider yet, actual host dispatch is unproven, and the checked-in
 connected doctor therefore reports `ready=failed`. This increment does not
 fetch a user's meeting, prove provider transcript normalization, prove
 host-level agent judgment, or replace the existing processing-a-meeting guide.
@@ -78,6 +81,7 @@ Prove the verifier catches planted failures:
 Prove Core output contracts, stale-lock detection, and honest offline states:
 
     node soter/core/cli.mjs selftest
+    npm run soter:mcp:selftest
     node soter/core/cli.mjs fixtures --check
     node soter/core/cli.mjs doctor --lock soter/fixtures/meeting-intake/meeting-intake.lock.json
 
@@ -99,6 +103,17 @@ resume it through `probe-complete` using private transient response input. Core
 persists only fingerprints and the normalized probe, and the probe leaves
 `meeting.transcript.read` unknown until a specifically authorized transcript
 response proves the adapter shape.
+
+After `npm install`, both host projections can start the same local
+`soter-core` stdio server, bound to the launching host identity. Its prepare
+tools return logical provider requests;
+the host must execute exactly the requested provider tool through its separate
+authenticated MCP route and return the native result to the matching complete
+tool. The server does not call providers, persist raw responses, or authorize
+confirmation-gated writes. Its stdio subprocess self-test establishes only the
+shared Core projection, not live host or provider conformance. Exact call
+records are returned to the caller but are not yet checkpointed into shared
+durable run state.
 
 The Codex projection registers Otter in `.codex/config.toml`. After trusting
 the project, authenticate once with `codex mcp login otter` or through Codex

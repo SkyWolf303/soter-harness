@@ -39,6 +39,35 @@ import {
 
 const FIXTURE_TIME = '2026-07-15T12:00:00.000Z';
 
+function copyExternalPackArtifacts(sourceRoot, targetRoot) {
+  const packDir = path.join(sourceRoot, 'soter', 'packs');
+  for (const entry of fs.readdirSync(packDir, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const manifestPath = path.join(packDir, entry.name, 'pack.json');
+    if (!fs.existsSync(manifestPath)) continue;
+    const pack = readJson(manifestPath);
+    for (const artifact of pack.artifacts || []) {
+      const source = path.resolve(sourceRoot, artifact.path);
+      const relative = path.relative(sourceRoot, source);
+      if (relative === '..' || relative.startsWith('..' + path.sep) || path.isAbsolute(relative)
+        || relative === 'soter' || relative.startsWith('soter' + path.sep)
+        || !fs.existsSync(source)) {
+        continue;
+      }
+      const target = path.resolve(targetRoot, artifact.path);
+      const targetRelative = path.relative(targetRoot, target);
+      if (targetRelative === '..' || targetRelative.startsWith('..' + path.sep)
+        || path.isAbsolute(targetRelative)) continue;
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      if (fs.statSync(source).isDirectory()) {
+        fs.cpSync(source, target, { recursive: true });
+      } else {
+        fs.copyFileSync(source, target);
+      }
+    }
+  }
+}
+
 function installSelftestConnectedProvider(root, sourceId, targetId) {
   const sourcePath = path.join(root, 'soter/providers/' + sourceId + '.json');
   const provider = structuredClone(readJson(sourcePath));
@@ -187,6 +216,7 @@ export async function selftest(root) {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'soter-core-'));
   try {
     fs.cpSync(path.join(root, 'soter'), path.join(temp, 'soter'), { recursive: true });
+    copyExternalPackArtifacts(root, temp);
     fs.copyFileSync(path.join(root, 'AGENTS.md'), path.join(temp, 'AGENTS.md'));
     fs.copyFileSync(path.join(root, 'CLAUDE.md'), path.join(temp, 'CLAUDE.md'));
     fs.cpSync(path.join(root, '.codex'), path.join(temp, '.codex'), { recursive: true });

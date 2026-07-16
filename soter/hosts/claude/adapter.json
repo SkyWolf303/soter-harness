@@ -17,6 +17,13 @@
   ],
   "mcpServers": [
     {
+      "id": "soter",
+      "delivery": "project",
+      "state": "configured",
+      "configurationPath": ".claude/.mcp.json",
+      "reason": "The project config exposes the provider-neutral Core service through a local stdio MCP server."
+    },
+    {
       "id": "notion",
       "delivery": "plugin",
       "state": "configured",
@@ -45,6 +52,6 @@
     "scenarios": []
   },
   "limitations": [
-    "Prototype mechanisms exist, but they have not passed the target host conformance scenarios or clean-install proof."
+    "Prototype mechanisms and the local Core MCP service are configured, but provider dispatch, durable call checkpointing, and clean installation have not passed target host conformance scenarios."
   ]
 }

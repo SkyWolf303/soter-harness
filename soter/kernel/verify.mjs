@@ -2157,6 +2157,32 @@ function copyMigrationSources(sourceRoot, targetRoot) {
   }
 }
 
+function copyExternalPackArtifacts(sourceRoot, targetRoot) {
+  const packDir = path.join(sourceRoot, 'soter', 'packs');
+  for (const file of walkFiles(packDir, (candidate) => candidate.endsWith('pack.json'))) {
+    const pack = JSON.parse(fs.readFileSync(file, 'utf8'));
+    for (const artifact of pack.artifacts || []) {
+      const source = path.resolve(sourceRoot, artifact.path);
+      const relative = path.relative(sourceRoot, source);
+      if (relative === '..' || relative.startsWith('..' + path.sep) || path.isAbsolute(relative)
+        || relative === 'soter' || relative.startsWith('soter' + path.sep)
+        || !fs.existsSync(source)) {
+        continue;
+      }
+      const target = path.resolve(targetRoot, artifact.path);
+      const targetRelative = path.relative(targetRoot, target);
+      if (targetRelative === '..' || targetRelative.startsWith('..' + path.sep)
+        || path.isAbsolute(targetRelative)) continue;
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      if (fs.statSync(source).isDirectory()) {
+        fs.cpSync(source, target, { recursive: true });
+      } else {
+        fs.copyFileSync(source, target);
+      }
+    }
+  }
+}
+
 function selftest(root) {
   const failures = [];
   const schema = {
@@ -2188,6 +2214,7 @@ function selftest(root) {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'soter-verifier-'));
   try {
     fs.cpSync(path.join(root, 'soter'), path.join(temp, 'soter'), { recursive: true });
+    copyExternalPackArtifacts(root, temp);
     copyMigrationSources(root, temp);
     const clean = verifySoter(temp);
     if (clean.health.valid !== 'passed') {

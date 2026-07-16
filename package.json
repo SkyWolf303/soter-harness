@@ -1,0 +1,20 @@
+{
+  "name": "soter-harness",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "soter:verify": "node soter/kernel/verify.mjs",
+    "soter:selftest": "node soter/core/cli.mjs selftest",
+    "soter:mcp:codex": "node soter/core/mcp/server.mjs --host codex",
+    "soter:mcp:claude": "node soter/core/mcp/server.mjs --host claude",
+    "soter:mcp:selftest": "node soter/core/mcp/selftest.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "zod": "4.4.3"
+  }
+}
