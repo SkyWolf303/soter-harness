@@ -18,15 +18,21 @@ discipline itself (ecosystem words are context — this card is where they legit
 live, ADR-0026).
 
 ## Mechanisms
-- None yet — decreed ahead of its pieces (ADR-0026). Sky-specific mechanisms (e.g.
-  Atlas-citation resolution, star-scoped captures) are forged here as real need emerges,
-  staged through the loop.
+- consulting-sky-intel (staged) — pulls current Sky/Laniakea state from the org's live
+  intelligence sources instead of model recall. Forged on an observed RED baseline:
+  this card's own registry shipped a stale Laniakea classification, and recall-based
+  answers reproduce exactly that class of drift.
 
 ## Components
-- None yet — the concepts below are the system's substance until mechanisms arrive.
+- `.claude/skills/consulting-sky-intel/SKILL.md` — the guide, and the harness home of the live-source map:
+  the Laniakea tracker's status snapshot and signal pages, the Sky Intelligence
+  Briefs, and the structured data feeds (all operated outside the harness in the
+  org's intel repos; the guide points, never copies)
 
 ## Concepts
 Sky ecosystem · Atlas · spell · MSC · star · Prime Agent · NFAT ·
+Laniakea · PAU · Diamond PAU · capital-flow layers · Halo · LCTS ·
+Configurator · beacon · Synome · CRR · Laniakea Agent ·
 Distribution Rewards · Integration Boost ·
 Governance Accessibility Rewards · Pioneer Chain Rewards ·
 Admin & Internal Ops · Legal & Compliance · Business Development ·

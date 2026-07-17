@@ -132,9 +132,20 @@ table below is the banned list.
 | Atlas | sky | the Sky Atlas — the ecosystem's governance rulebook; articles cited as A.x.y links (sky-atlas.io) |
 | spell | sky | a governance/protocol action executed on-chain as a spell |
 | MSC | sky | the Monthly Settlement Cycle — the Sky ecosystem's monthly financial settlement: PnL methodology, debt mint mechanics, ER calculations, settlement reporting (the Docs Category value "Monthly Settlement Cycle (MSC)" maps here) |
-| star | sky | a semi-autonomous sub-organization of the Sky ecosystem (e.g. Laniakea), onboarded via the Star Onboarding process |
+| star | sky | a semi-autonomous sub-organization of the Sky ecosystem (e.g. Spark, Grove), onboarded via the Star Onboarding process — Laniakea is NOT a star (it is core ecosystem infrastructure; see Laniakea) |
 | Prime Agent | sky | an agent-organization rank in the ecosystem's agent framework — an org Type in [DB] Orgs and the Tasks `Prime Agent` select (Spark · Skybase · Grove · Keel) |
-| NFAT | sky | the NFAT product line — Beacon · Configurator · Relay |
+| NFAT | sky | Non-Fungible Allocation Token — the ERC-721 standard binding one bespoke Prime→Halo term deal; "NFAT" also names the product line built on it in older material (Beacon · Configurator · Relay) — the token standard is the canonical sense |
+| Laniakea | sky | Sky's core infrastructure for automated capital deployment — the ecosystem's data, compliance, and risk layer, built with Stablewatch as a Core Contributor; core infrastructure, never a star; current build state lives in the tracker's status snapshot (see `/consulting-sky-intel`) |
+| PAU | sky | Parallelized Allocation Unit — Laniakea's building block for capital allocation (Controller + ALMProxy + RateLimits); every capital-flow layer deploys PAUs ("Prime Allocation Unit" is a superseded expansion — do not use) |
+| Diamond PAU | sky | a PAU built as an EIP-2535 faceted (diamond) proxy — the universal PAU form Laniakea Phase 1 deploys |
+| capital-flow layers | sky | Laniakea's four-layer architecture — Generator (creates USDS) → Prime (capital allocators) → Halo (products, e.g. term deals via NFAT) → Foreign (cross-chain) |
+| Halo | sky | the product layer of the capital-flow architecture — a deployed product a Prime allocates into (a term Halo is bound by an NFAT) |
+| LCTS | sky | Liquidity Constrained Token Standard — queue-based conversion standard (srUSDS path) in the later Laniakea phases |
+| Configurator | sky | Laniakea's spell-less rate-limit management component — parameter changes without a full governance spell |
+| beacon | sky | a Laniakea monitoring/execution agent formation — LPLA (monitoring), LPHA (execution), HPHA (sentinel) classes |
+| Synome | sky | Laniakea's operational-infrastructure component, deployed alongside beacons in Phase 1 |
+| CRR | sky | Capital Reserve Requirement — the per-Prime reserve requirement in Laniakea's Basel III-inspired risk framework |
+| Laniakea Agent | sky | an agent organization operating within Laniakea's framework — Soter Labs is LA5, the GovOps Laniakea Agent (spell coordination, Atlas edits, MSC settlement, Prime Agent incubation) |
 | Distribution Rewards | sky | (DR) Sky incentive program rewarding partners for distributing Sky products (USDS et al.) to end users — tracking, calculation, and payout material |
 | Integration Boost | sky | (IB) Sky incentive program rewarding platforms for integrating Sky assets — eligibility, tracking, payouts |
 | Governance Accessibility Rewards | sky | (GAR) Sky incentive program rewarding work that makes Sky governance accessible and participatory |
