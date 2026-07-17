@@ -240,6 +240,8 @@ The remaining `diff*`/`markdown*`/`syntax*` keys derive from these six defs (aeg
 
 **`/about`.** A bundled command (`commands/about.md`) whose body renders: banner + tagline, Soter version + OpenCode pin, the non-affiliation notice, the MIT notice for OpenCode, the pointer to `soter check` and the guide index, and support contact.
 
+**Known limit — the TUI start-screen wordmark.** The zero-state home screen renders an "opencode" wordmark drawn by the compiled (codesigned) binary; 1.18.3 exposes no config for it (verified: the schema's `tui` block carries only scroll/diff settings), and patching or forking the binary is out per this spec's distribution stance. Brandable surfaces today: the pre-launch splash, `/about`, the theme (the wordmark renders in theme colors), and the injected Soter identity. Upstream signal: the `snapshot-tui-plugins` dist-tag and the plugin type's `tui?: never` placeholder indicate TUI-side plugins are coming — revisit at the next pin bump.
+
 ## MCP wiring
 
 Bridged from `.claude/.mcp.json` (one server today) into the generated `opencode.json`:
