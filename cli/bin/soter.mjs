@@ -97,8 +97,12 @@ const opencodeEnv = () => {
       `- The enforcement root for this session: ${projectDir}\n`)
     instructions.push(ctxFile)
   } catch { /* notes are additive — never block a launch */ }
-  if (!existsSync(path.join(projectDir, 'CLAUDE.md'))) instructions.push(path.join(CONFIG_DIR, 'CLAUDE.md'))
-  if (instructions.length) env.OPENCODE_CONFIG_CONTENT = JSON.stringify({ instructions })
+  // load-exactly-once: the launcher is the single composer of instructions (the
+  // generated opencode.json deliberately carries none) — project CLAUDE.md when
+  // the repo has one, the bundled product copy when it doesn't, never both
+  const projectClaudeMd = path.join(projectDir, 'CLAUDE.md')
+  instructions.push(existsSync(projectClaudeMd) ? projectClaudeMd : path.join(CONFIG_DIR, 'CLAUDE.md'))
+  env.OPENCODE_CONFIG_CONTENT = JSON.stringify({ instructions })
   return env
 }
 

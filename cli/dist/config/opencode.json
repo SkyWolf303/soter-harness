@@ -1,9 +1,6 @@
 {
   "$schema": "https://opencode.ai/config.json",
   "theme": "soter",
-  "instructions": [
-    "CLAUDE.md"
-  ],
   "mcp": {
     "otter": {
       "type": "remote",

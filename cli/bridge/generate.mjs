@@ -44,29 +44,6 @@ const parseFrontmatter = (src) => {
   return { fields, body: src.slice(m[0].length) }
 }
 
-// ---- CLAUDE.md -> product instructions, kept verbatim. The runtime notes ship
-// as a SEPARATE file the launcher always injects (with launch-time facts appended)
-// — appending them to CLAUDE.md only reached repos that lacked their own copy
-// (sweep finding: the notes never loaded exactly where they matter most).
-writeFileSync(cfg('CLAUDE.md'), readFileSync(path.join(REPO, 'CLAUDE.md')))
-writeFileSync(cfg('RUNTIME_NOTES.md'), `# Soter runtime notes (generated)
-
-- The project CLAUDE.md's guide index lists PROMOTED Soter Skills only. ALL skills —
-  staged included — are available as /commands; the full listing with descriptions is
-  \`skills-manifest.json\` in the Soter config dir (path below), or \`soter skills\` in a
-  terminal. Where the project carries the harness tree, each skill's body is at
-  \`.claude/skills/<name>/SKILL.md\`; otherwise read the bundled command body itself.
-  When a user request matches a skill's territory, follow that skill: the staged flag
-  gates auto-invocation, not user-requested work.
-- A skill's sibling assets (e.g. \`skill-assets/<name>/<file>\`) resolve relative to
-  the Soter config dir (path below).
-- Domain vocabulary (including the Sky ecosystem) is defined in the harness LEXICON
-  (\`.claude/LEXICON.md\` where the project carries it) — consult it before answering
-  domain questions, and never redefine its terms.
-- The skill set is meant to GROW: when a request exposes a gap no skill covers, or a
-  correction repeats, suggest forging a new skill (/forge) or landing the correction
-  as a gotcha or eval case on the governing skill. Suggest — the user decides.
-`)
 
 // ---- skills -> commands (+ the Soter Skills manifest for `soter skills`)
 const skillsDir = path.join(REPO, '.claude', 'skills')
@@ -108,6 +85,34 @@ for (const name of readdirSync(skillsDir).sort()) {
 
 writeFileSync(cfg('skills-manifest.json'), JSON.stringify(manifest, null, 2) + '\n')
 
+// ---- CLAUDE.md -> product instructions, kept verbatim. The runtime notes ship
+// as a SEPARATE file the launcher always injects (with launch-time facts appended)
+// — appending them to CLAUDE.md only reached repos that lacked their own copy
+// (sweep finding: the notes never loaded exactly where they matter most).
+writeFileSync(cfg('CLAUDE.md'), readFileSync(path.join(REPO, 'CLAUDE.md')))
+writeFileSync(cfg('RUNTIME_NOTES.md'), `# Soter runtime notes (generated)
+
+- The project CLAUDE.md's guide index lists PROMOTED Soter Skills only. ALL skills —
+  staged included — are available as /commands; the full listing with descriptions is
+  \`skills-manifest.json\` in the Soter config dir (path below), or \`soter skills\` in a
+  terminal. Where the project carries the harness tree, each skill's body is at
+  \`.claude/skills/<name>/SKILL.md\`; otherwise read the bundled command body itself.
+  When a user request matches a skill's territory, follow that skill: the staged flag
+  gates auto-invocation, not user-requested work.
+- A skill's sibling assets (e.g. \`skill-assets/<name>/<file>\`) resolve relative to
+  the Soter config dir (path below).
+- Domain vocabulary (including the Sky ecosystem) is defined in the harness LEXICON
+  (\`.claude/LEXICON.md\` where the project carries it) — consult it before answering
+  domain questions, and never redefine its terms.
+- The skill set is meant to GROW: when a request exposes a gap no skill covers, or a
+  correction repeats, suggest forging a new skill (/forge) or landing the correction
+  as a gotcha or eval case on the governing skill. Suggest — the user decides.
+
+## Skill routing map (match the user's words against these BEFORE asking for clarification)
+
+${manifest.map((s) => `- /${s.name} — ${s.description.split(/(?<=\.)\s/).slice(0, 2).join(' ')}`).join('\n')}
+`)
+
 // ---- .mcp.json -> opencode.json mcp block
 const mcpSrc = JSON.parse(readFileSync(path.join(REPO, '.claude', '.mcp.json'), 'utf8')).mcpServers ?? {}
 const mcp = {}
@@ -117,12 +122,12 @@ for (const [name, s] of Object.entries(mcpSrc)) {
     : { type: 'remote', url: s.url, enabled: true, headers: s.headers ?? undefined }
 }
 
-// ---- opencode.json (instructions entry is project-relative; the launcher swaps
-// in the bundled CLAUDE.md via OPENCODE_CONFIG_CONTENT on repos that lack one)
+// ---- opencode.json — deliberately carries NO instructions entry: the launcher
+// owns the full instructions list via OPENCODE_CONFIG_CONTENT (single composer,
+// no merge-semantics ambiguity between the config file and the content overlay)
 writeFileSync(cfg('opencode.json'), JSON.stringify({
   $schema: 'https://opencode.ai/config.json',
   theme: 'soter',
-  instructions: ['CLAUDE.md'],
   mcp,
 }, null, 2) + '\n')
 
