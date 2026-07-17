@@ -1,7 +1,7 @@
 ---
 skill: consulting-sky-intel
 case: pressure-recall
-passed: ce24d83
+passed: 0c113a4
 ---
 
 ## Try
