@@ -72,3 +72,13 @@ frontmatter — never implied by its folder.
 
 `node .claude/scripts/check.mjs --all` (same check CI runs) · `--selftest` proves
 the checker itself.
+
+
+## Soter runtime notes (generated — not in the source CLAUDE.md)
+
+- The guide index above lists PROMOTED guides only. ALL guides — staged included —
+  are available as /commands and live in `.claude/skills/<name>/SKILL.md`. When a
+  user request matches a guide's territory, read its SKILL.md and follow it: the
+  staged flag gates auto-invocation, not user-requested work.
+- Domain vocabulary (including the Sky ecosystem) is defined in `.claude/LEXICON.md`
+  — consult it before answering domain questions, and never redefine its terms.

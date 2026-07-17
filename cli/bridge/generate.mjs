@@ -44,9 +44,24 @@ const parseFrontmatter = (src) => {
   return { fields, body: src.slice(m[0].length) }
 }
 
-// ---- CLAUDE.md -> product instructions (verbatim; the guide index's /name forms
-// are already OpenCode's command syntax)
-writeFileSync(cfg('CLAUDE.md'), readFileSync(path.join(REPO, 'CLAUDE.md')))
+// ---- CLAUDE.md -> product instructions: source verbatim, plus a generated
+// runtime appendix. The appendix restates the harness's own staged-guide rule
+// (authoring.md: "a staged piece still governs when the user explicitly asks for
+// its work") — without it, sessions can't know unpromoted guides exist, since the
+// guide index lists promoted pieces only (observed live: a Sky-ecosystem question
+// went unanswered while the governing staged guide sat on disk).
+const RUNTIME_NOTES = `
+
+## Soter runtime notes (generated — not in the source CLAUDE.md)
+
+- The guide index above lists PROMOTED guides only. ALL guides — staged included —
+  are available as /commands and live in \`.claude/skills/<name>/SKILL.md\`. When a
+  user request matches a guide's territory, read its SKILL.md and follow it: the
+  staged flag gates auto-invocation, not user-requested work.
+- Domain vocabulary (including the Sky ecosystem) is defined in \`.claude/LEXICON.md\`
+  — consult it before answering domain questions, and never redefine its terms.
+`
+writeFileSync(cfg('CLAUDE.md'), readFileSync(path.join(REPO, 'CLAUDE.md'), 'utf8') + RUNTIME_NOTES)
 
 // ---- skills -> commands
 const skillsDir = path.join(REPO, '.claude', 'skills')
