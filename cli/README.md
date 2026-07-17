@@ -37,7 +37,7 @@ zero keys. macOS/Linux only; Windows is refused with a clear error.
 |---|---|
 | `soter run "<msg>" [...]` | non-interactive session; `--auto` is refused without `--i-know-what-auto-means` (side-effecting skills must not run unattended) |
 | `soter check [files\|--all]` | run the harness checker against the project (project's own checker wins over the vendored copy) |
-| `soter init [dir]` | install the harness scaffold (never overwrites) |
+| `soter init [dir] [--refresh]` | install the harness scaffold (never overwrites; `--refresh` updates drifted scaffold-owned files — review with `git diff`) |
 | `soter skills` | list loaded Soter Skills — proven vs staged |
 | `soter doctor` | environment + integrity report; exits 1 on failures |
 | `soter auth\|mcp\|models\|attach\|session\|export\|stats` | passthrough to the pinned opencode with Soter env applied |
@@ -70,5 +70,5 @@ zero keys. macOS/Linux only; Windows is refused with a clear error.
   (upstream TUI plugins are in flight; revisit at the next pin bump)
 - E4 (turn gate) is a workaround over `session.idle` + SDK re-prompt; its live
   efficacy bar (spec: 3 scenarios × 3 runs, ≥7/9) has not been formally run
-- Already-scaffolded repos keep their checker copy (`soter init` never overwrites);
-  `soter doctor` reports skew — refresh by deleting and re-running init for now
+- Already-scaffolded repos keep their checker copy by default; `soter doctor`
+  reports skew and `soter init --refresh` updates scaffold-owned files in place

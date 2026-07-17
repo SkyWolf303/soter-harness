@@ -129,7 +129,7 @@ const usage = () => {
   console.log(`usage: soter [dir]                  interactive session (the TUI)
        soter run "<message>" [...]  non-interactive; --auto requires --i-know-what-auto-means
        soter check [files|--all]    run the harness checker against the project
-       soter init [dir]             install the harness scaffold (never overwrites)
+       soter init [dir] [--refresh] install the harness scaffold; --refresh updates drifted files
        soter skills                 list loaded Soter Skills
        soter doctor                 environment + integrity report
        soter auth|mcp|models|...    passthrough to the pinned opencode
@@ -157,24 +157,34 @@ if (sub === 'check') {
 
 if (sub === 'init') {
   const rest = argvRaw.slice(1)
-  const flags = rest.filter((a) => a.startsWith('-'))
-  if (flags.length) { console.error(`soter init: unknown option ${flags[0]}`); usage(); process.exit(1) }
-  if (rest.length > 1) { console.error('soter init: at most one target directory'); usage(); process.exit(1) }
-  const target = rest[0] ? path.resolve(rest[0]) : projectDir
-  if (rest[0] && !isDir(target)) { console.error(`soter init: ${target} is not a directory`); process.exit(1) }
+  const refresh = rest.includes('--refresh')
+  const positional = rest.filter((a) => !a.startsWith('-'))
+  const unknownFlags = rest.filter((a) => a.startsWith('-') && a !== '--refresh')
+  if (unknownFlags.length) { console.error(`soter init: unknown option ${unknownFlags[0]}`); usage(); process.exit(1) }
+  if (positional.length > 1) { console.error('soter init: at most one target directory'); usage(); process.exit(1) }
+  const target = positional[0] ? path.resolve(positional[0]) : projectDir
+  if (positional[0] && !isDir(target)) { console.error(`soter init: ${target} is not a directory`); process.exit(1) }
   const scaffold = path.join(CLI, 'dist', 'scaffold')
   if (!isDir(scaffold)) { console.error('soter init: package payload missing (dist/scaffold) — reinstall @soterlabs/soter'); process.exit(1) }
-  let installed = 0, skipped = 0
+  let installed = 0, skipped = 0, refreshed = 0
+  const refreshedFiles = []
   const walk = (src, dst) => {
     for (const e of readdirSync(src, { withFileTypes: true })) {
       const s = path.join(src, e.name), d = path.join(dst, e.name)
       if (e.isDirectory()) { mkdirSync(d, { recursive: true }); walk(s, d) }
-      else if (existsSync(d)) skipped++
-      else { mkdirSync(path.dirname(d), { recursive: true }); cpSync(s, d); installed++ }
+      else if (existsSync(d)) {
+        if (refresh && !readFileSync(s).equals(readFileSync(d))) {
+          cpSync(s, d); refreshed++; refreshedFiles.push(path.relative(target, d))
+        } else skipped++
+      } else { mkdirSync(path.dirname(d), { recursive: true }); cpSync(s, d); installed++ }
     }
   }
   walk(scaffold, target)
-  console.log(`soter init: ${installed} file(s) installed into ${target}, ${skipped} already present (never overwritten)`)
+  console.log(`soter init: ${installed} file(s) installed into ${target}, ${skipped} unchanged${refresh ? `, ${refreshed} refreshed` : ' (never overwritten; --refresh updates drifted scaffold files)'}`)
+  if (refreshed) {
+    for (const f of refreshedFiles.slice(0, 20)) console.log(dim(`  refreshed: ${f}`))
+    console.log(dim('  Review with `git diff` — refresh overwrites scaffold-owned files, and git is the undo.'))
+  }
   process.exit(0)
 }
 
