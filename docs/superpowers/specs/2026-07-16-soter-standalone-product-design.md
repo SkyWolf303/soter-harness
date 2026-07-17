@@ -192,7 +192,7 @@ The wizard is resumable and idempotent: every step re-checks actual state (auth 
 
 **Name and disclaimers.** Product name "Soter" — no "opencode" in the product or package name, which sidesteps the upstream README's naming request entirely; the non-affiliation note ("Soter is built on OpenCode and is not built by or affiliated with the OpenCode team") appears in the README, the splash, and `/about` regardless, since the trademark status of "OpenCode" is unverified. Soter's own code is proprietary (matching the plugin's `UNLICENSED` stance); the redistributed OpenCode is MIT, and its copyright + permission notice ships verbatim in `NOTICE` and `/about` (the MIT retention condition).
 
-**Banner — PROVISIONAL.** The block below is a reconstruction (the agreed banner/tagline payload from the design conversation did not reach this spec — see Open questions) and must be reconciled against the design-conversation record **before M1 ships `/about`**, which is the first shipped rendering of it; the splash follows unchanged in M2. Rendered in aegean blue, tagline in gold:
+**Banner** (reconciled against the design-conversation record, 2026-07-16 — user-approved art and tagline). Rendered in aegean blue, tagline in gold:
 
 ```
   ███████╗ ██████╗ ████████╗███████╗██████╗
@@ -201,7 +201,9 @@ The wizard is resumable and idempotent: every step re-checks actual state (auth 
   ╚════██║██║   ██║   ██║   ██╔══╝  ██╔══██╗
   ███████║╚██████╔╝   ██║   ███████╗██║  ██║
   ╚══════╝ ╚═════╝    ╚═╝   ╚══════╝╚═╝  ╚═╝
-              the harness holds.
+           H  A  R  N  E  S  S
+
+           nothing goes unguarded
 ```
 
 **Theme.** `themes/soter.json`, selected via `tui.json` `{"theme": "soter"}`. Verified format: `defs` block, hex or dark/light variant values, key groups `primary/secondary/accent/…`, `text*`, `background*`, `border*`, `diff*`, `markdown*`, `syntax*`; truecolor required. Normative palette anchors:
@@ -322,4 +324,4 @@ Governing rule, inherited from `check.mjs`: **fail open everywhere except a succ
 12. **Subagent/transcript mechanics** for the `running-evals` override: OpenCode's equivalent of `subagents/agent-a<name>-*.jsonl` transcript paths, and how `subtask: true` sessions surface artifacts.
 13. **Instructions path resolution**: confirm project-relative `"instructions"` entries resolve against the project in all launch modes (TUI from subdirectory, `run` with `[dir]`); confirm absolute-path entries injected via `OPENCODE_CONFIG_CONTENT` load as expected; confirm behavior when a listed instructions file is absent (the launcher's stat-based selection should make this moot, but verify the failure mode).
 14. **MCP replacements for the `notion`/`slack` marketplace-plugin dependencies**: which concrete MCP servers (URLs, auth mode) restore that capability, and whether they enter the bundled config or stay wizard-added per user.
-15. **Banner/tagline reconciliation**: the design-decision payload did not reach this spec's author (it arrived empty), so the ASCII banner and tagline in the Branding section are a PROVISIONAL reconstruction consistent with the decided splash/aegean-gold direction — confirm them against the design-conversation record before M1 ships `/about` (the first shipped rendering); the splash follows in M2 unchanged. No other section of this spec depends on that payload; everything else is grounded in the verified OpenCode facts and the repo coupling inventory.
+15. **Banner/tagline reconciliation** — RESOLVED 2026-07-16: the Branding section's banner and tagline ("nothing goes unguarded") now carry the user-approved art from the design-conversation record; no verification remains.
