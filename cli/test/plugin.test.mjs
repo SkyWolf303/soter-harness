@@ -65,6 +65,13 @@ test('E4: red repo on session.idle triggers one gate re-prompt, then stands down
   rmSync(path.dirname(bad), { recursive: true, force: true })
 })
 
+test('identity: system transform injects Soter identity', async () => {
+  const output = { system: [] }
+  await hooks['experimental.chat.system.transform']({ model: {} }, output)
+  assert.equal(output.system.length, 1)
+  assert.match(output.system[0], /You are Soter/)
+})
+
 test('E4: green repo on session.idle stays silent', async () => {
   prompts.length = 0
   await hooks.event({ event: { type: 'session.idle', properties: { sessionID: 's10' } } })

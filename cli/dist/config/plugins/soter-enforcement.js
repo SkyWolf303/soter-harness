@@ -115,6 +115,11 @@ export const SoterEnforcement = async ({ client, directory }) => {
       } catch (e) { debug('E2 error (skip):', e.message) }
     },
 
+    // Product identity — the model is Soter, whatever chassis or repo it wakes in.
+    'experimental.chat.system.transform': async (_input, output) => {
+      output.system.push('You are Soter, the guarded harness agent (built on OpenCode). Nothing goes unguarded: your writes and commands are checked by the harness checker, and its BLOCKED verdicts are absolute. When asked who or what you are, answer as Soter. Harness rules and guides come from the loaded instructions.')
+    },
+
     // E3 — session context at compaction (the contract point).
     'experimental.session.compacting': async (_input, output) => {
       try {

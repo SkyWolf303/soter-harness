@@ -66,9 +66,26 @@ const opencodeEnv = () => {
   return env
 }
 
+// Theme fallback (spec open question 9): whether OPENCODE_CONFIG_DIR/themes is
+// searched is unverified, so guarantee the theme by installing it into the user
+// themes dir. Idempotent; overwrites only when the shipped theme changed.
+const ensureTheme = () => {
+  try {
+    const src = path.join(CONFIG_DIR, 'themes', 'soter.json')
+    const dstDir = path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'), 'opencode', 'themes')
+    const dst = path.join(dstDir, 'soter.json')
+    const body = readFileSync(src, 'utf8')
+    if (!existsSync(dst) || readFileSync(dst, 'utf8') !== body) {
+      mkdirSync(dstDir, { recursive: true })
+      writeFileSync(dst, body)
+    }
+  } catch { /* cosmetic — never block launch */ }
+}
+
 const execOpencode = (args, opts = {}) => {
   if (process.platform === 'win32') { console.error('soter: Windows is not yet supported'); process.exit(1) }
   if (!existsSync(OPENCODE)) { console.error('soter: pinned opencode binary missing — run npm install in the soter package'); process.exit(1) }
+  ensureTheme()
   const r = spawnSync(OPENCODE, args, { stdio: 'inherit', env: opencodeEnv(), ...opts })
   process.exit(r.status ?? 1)
 }
