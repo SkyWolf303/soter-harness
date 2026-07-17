@@ -1,6 +1,7 @@
 ---
 skill: consulting-sky-intel
 case: happy-path
+passed: ce24d83
 ---
 
 ## Try

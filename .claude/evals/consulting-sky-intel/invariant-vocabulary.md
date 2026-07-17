@@ -1,6 +1,7 @@
 ---
 skill: consulting-sky-intel
 case: invariant-vocabulary
+passed: ce24d83
 ---
 
 ## Try
