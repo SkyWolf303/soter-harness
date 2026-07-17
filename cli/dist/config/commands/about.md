@@ -21,5 +21,5 @@ in a code block), then stop — no tool calls, no additions.
 - Soter is built on OpenCode and is not built by or affiliated with the OpenCode team.
 - OpenCode is MIT-licensed; its copyright and permission notice ship in `NOTICE` in the Soter package.
 - The harness content (guides, molds, rules) is governed in the soter-harness repo; run `soter check --all` to verify any repo against the harness bar.
-- Guide index: type `/` to browse the harness guides (forge, writing-adrs, pushing-to-notion, …).
+- Soter Skills: type `/` to browse (forge, writing-adrs, consulting-sky-intel, …), or run `soter skills` in a terminal for the full listing with staged/proven status. New skills are forged (`/forge`), proven by evals, and promoted by real use.
 - Health check: run `soter doctor` in a terminal.

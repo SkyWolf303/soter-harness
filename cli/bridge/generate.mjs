@@ -54,23 +54,36 @@ const RUNTIME_NOTES = `
 
 ## Soter runtime notes (generated — not in the source CLAUDE.md)
 
-- The guide index above lists PROMOTED guides only. ALL guides — staged included —
-  are available as /commands and live in \`.claude/skills/<name>/SKILL.md\`. When a
-  user request matches a guide's territory, read its SKILL.md and follow it: the
-  staged flag gates auto-invocation, not user-requested work.
+- The guide index above lists PROMOTED Soter Skills only. ALL skills — staged
+  included — are available as /commands and live in \`.claude/skills/<name>/SKILL.md\`
+  (full listing: \`skills-manifest.json\` in the Soter config dir, or \`soter skills\`
+  in a terminal). When a user request matches a skill's territory, read its SKILL.md
+  and follow it: the staged flag gates auto-invocation, not user-requested work.
 - Domain vocabulary (including the Sky ecosystem) is defined in \`.claude/LEXICON.md\`
   — consult it before answering domain questions, and never redefine its terms.
+- The skill set is meant to GROW: when a request exposes a gap no skill covers, or a
+  correction repeats, suggest forging a new skill (/forge) or landing the correction
+  as a gotcha or eval case on the governing skill. Suggest — the user decides.
 `
 writeFileSync(cfg('CLAUDE.md'), readFileSync(path.join(REPO, 'CLAUDE.md'), 'utf8') + RUNTIME_NOTES)
 
-// ---- skills -> commands
+// ---- skills -> commands (+ the Soter Skills manifest for `soter skills`)
 const skillsDir = path.join(REPO, '.claude', 'skills')
+const sourceClaudeMd = readFileSync(path.join(REPO, 'CLAUDE.md'), 'utf8')
+const manifest = []
 let generated = 0, held = 0
 for (const name of readdirSync(skillsDir).sort()) {
   const skillPath = path.join(skillsDir, name, 'SKILL.md')
   if (!existsSync(skillPath)) continue
   const { fields, body } = parseFrontmatter(readFileSync(skillPath, 'utf8'))
   if (fields['promotion-hold']) { held++; continue } // held = not shipped
+  manifest.push({
+    name,
+    description: fields.description || '',
+    system: fields.system || '',
+    // promoted = listed in the source CLAUDE.md guide index; everything else is staged
+    status: sourceClaudeMd.includes('`/' + name + '`') ? 'promoted' : 'staged',
+  })
   let outBody = body
   // sibling files travel to skill-assets/<name>/ (NOT commands/ — every .md there
   // would become a command); bare references in the body are rewritten
@@ -86,6 +99,8 @@ for (const name of readdirSync(skillsDir).sort()) {
   writeFileSync(cfg('commands', `${name}.md`), `---\ndescription: "${desc}"\n---\n${outBody}`)
   generated++
 }
+
+writeFileSync(cfg('skills-manifest.json'), JSON.stringify(manifest, null, 2) + '\n')
 
 // ---- .mcp.json -> opencode.json mcp block
 const mcpSrc = JSON.parse(readFileSync(path.join(REPO, '.claude', '.mcp.json'), 'utf8')).mcpServers ?? {}

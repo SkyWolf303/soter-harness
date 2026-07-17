@@ -120,6 +120,24 @@ if (sub === 'init') {
   process.exit(0)
 }
 
+if (sub === 'skills') {
+  const manifest = JSON.parse(readFileSync(path.join(CONFIG_DIR, 'skills-manifest.json'), 'utf8'))
+  const promoted = manifest.filter((s) => s.status === 'promoted')
+  const staged = manifest.filter((s) => s.status === 'staged')
+  console.log(gold('\nSoter Skills') + dim(` · ${manifest.length} loaded (${promoted.length} proven, ${staged.length} staged)\n`))
+  const show = (list, tag) => {
+    for (const s of list) {
+      const firstSentence = s.description.split(/(?<=\.)\s/)[0]
+      console.log(`  ${aegean('/' + s.name)} ${tag ? dim(`[${tag}] `) : ''}${dim('(' + s.system + ')')}`)
+      console.log(`    ${firstSentence}\n`)
+    }
+  }
+  show(promoted, '')
+  show(staged, 'staged')
+  console.log(dim('  Invoke any skill as a /command inside a session. Staged skills are user-invoke\n  only until real use earns promotion. Create new ones with /forge.\n'))
+  process.exit(0)
+}
+
 if (sub === 'doctor') {
   const ok = (b) => (b ? '✓' : '✗')
   const vendoredSkew = existsSync(projectChecker) && existsSync(VENDORED_CHECKER)
