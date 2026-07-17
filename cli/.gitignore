@@ -1,0 +1,4 @@
+node_modules/
+dist/config/node_modules/
+dist/config/package-lock.json
+dist/config/bun.lock

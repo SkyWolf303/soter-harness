@@ -1,0 +1,23 @@
+{
+  "name": "@soterlabs/soter",
+  "version": "0.1.0",
+  "description": "Soter — the harness as a product. Nothing goes unguarded.",
+  "type": "module",
+  "bin": {
+    "soter": "bin/soter.mjs"
+  },
+  "scripts": {
+    "build": "node bridge/generate.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "opencode-ai": "1.18.3"
+  },
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "@opencode-ai/plugin": "^1.18.3"
+  }
+}
