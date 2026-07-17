@@ -33,3 +33,22 @@ jobs:
           node-version: 22
       - run: npm install -g @anthropic-ai/claude-code
       - run: claude plugin validate .
+
+  # Soter product (cli/): adapter tests + the bridge drift check. Only meaningful
+  # on branches that carry cli/; the `if` guard keeps upstream-main runs green.
+  soter-cli:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - id: has-cli
+        run: test -d cli && echo "present=true" >> "$GITHUB_OUTPUT" || echo "present=false" >> "$GITHUB_OUTPUT"
+      - if: steps.has-cli.outputs.present == 'true'
+        run: cd cli && npm ci
+      - if: steps.has-cli.outputs.present == 'true'
+        run: cd cli && npm test
+      # dist/ is generated — regenerating must produce a byte-identical tree
+      - if: steps.has-cli.outputs.present == 'true'
+        run: cd cli && node bridge/generate.mjs && git -C .. diff --exit-code cli/dist

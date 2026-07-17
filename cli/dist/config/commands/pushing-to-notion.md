@@ -15,13 +15,13 @@ correctly, the write confirmed by a human first, and the created page verified.
   deleting them; stores other than Notion (a different binding).
 
 ## Steps
-1. **Resolve the target.** Look it up by name in `skill-assets/pushing-to-notion/targets.md (relative to the Soter config dir; ask `soter doctor` for its location)` (this folder), or ask for
+1. **Resolve the target.** Look it up by name in `skill-assets/pushing-to-notion/targets.md` (this folder), or ask for
    the database id (the UUID from the database URL). FLEX: ask if neither is given.
 2. **Fetch the live schema — never guess a type from a field name.** Retrieve the
    database object and read each property's REAL type and, for `select`/`status`, its
    real option names. (Baseline: guessing `select` vs `status`, or assuming an option
    named "Done" exists, is rejected by the API or silently creates a junk option.)
-   Reconcile against `skill-assets/pushing-to-notion/targets.md (relative to the Soter config dir; ask `soter doctor` for its location)`.
+   Reconcile against `skill-assets/pushing-to-notion/targets.md`.
 3. **Type each field.** Notion types: `title` (exactly one) · `rich_text` · `number` ·
    `select` · `status` · `multi_select` · `date` · `people` · `url` · `checkbox` ·
    `email` · `phone_number` · `relation`. Resolve `people` fields to real Notion user

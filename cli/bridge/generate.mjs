@@ -44,32 +44,36 @@ const parseFrontmatter = (src) => {
   return { fields, body: src.slice(m[0].length) }
 }
 
-// ---- CLAUDE.md -> product instructions: source verbatim, plus a generated
-// runtime appendix. The appendix restates the harness's own staged-guide rule
-// (authoring.md: "a staged piece still governs when the user explicitly asks for
-// its work") — without it, sessions can't know unpromoted guides exist, since the
-// guide index lists promoted pieces only (observed live: a Sky-ecosystem question
-// went unanswered while the governing staged guide sat on disk).
-const RUNTIME_NOTES = `
+// ---- CLAUDE.md -> product instructions, kept verbatim. The runtime notes ship
+// as a SEPARATE file the launcher always injects (with launch-time facts appended)
+// — appending them to CLAUDE.md only reached repos that lacked their own copy
+// (sweep finding: the notes never loaded exactly where they matter most).
+writeFileSync(cfg('CLAUDE.md'), readFileSync(path.join(REPO, 'CLAUDE.md')))
+writeFileSync(cfg('RUNTIME_NOTES.md'), `# Soter runtime notes (generated)
 
-## Soter runtime notes (generated — not in the source CLAUDE.md)
-
-- The guide index above lists PROMOTED Soter Skills only. ALL skills — staged
-  included — are available as /commands and live in \`.claude/skills/<name>/SKILL.md\`
-  (full listing: \`skills-manifest.json\` in the Soter config dir, or \`soter skills\`
-  in a terminal). When a user request matches a skill's territory, read its SKILL.md
-  and follow it: the staged flag gates auto-invocation, not user-requested work.
-- Domain vocabulary (including the Sky ecosystem) is defined in \`.claude/LEXICON.md\`
-  — consult it before answering domain questions, and never redefine its terms.
+- The project CLAUDE.md's guide index lists PROMOTED Soter Skills only. ALL skills —
+  staged included — are available as /commands; the full listing with descriptions is
+  \`skills-manifest.json\` in the Soter config dir (path below), or \`soter skills\` in a
+  terminal. Where the project carries the harness tree, each skill's body is at
+  \`.claude/skills/<name>/SKILL.md\`; otherwise read the bundled command body itself.
+  When a user request matches a skill's territory, follow that skill: the staged flag
+  gates auto-invocation, not user-requested work.
+- A skill's sibling assets (e.g. \`skill-assets/<name>/<file>\`) resolve relative to
+  the Soter config dir (path below).
+- Domain vocabulary (including the Sky ecosystem) is defined in the harness LEXICON
+  (\`.claude/LEXICON.md\` where the project carries it) — consult it before answering
+  domain questions, and never redefine its terms.
 - The skill set is meant to GROW: when a request exposes a gap no skill covers, or a
   correction repeats, suggest forging a new skill (/forge) or landing the correction
   as a gotcha or eval case on the governing skill. Suggest — the user decides.
-`
-writeFileSync(cfg('CLAUDE.md'), readFileSync(path.join(REPO, 'CLAUDE.md'), 'utf8') + RUNTIME_NOTES)
+`)
 
 // ---- skills -> commands (+ the Soter Skills manifest for `soter skills`)
 const skillsDir = path.join(REPO, '.claude', 'skills')
 const sourceClaudeMd = readFileSync(path.join(REPO, 'CLAUDE.md'), 'utf8')
+// promotion status scans the Guide index SECTION only — a prose mention of a
+// staged skill elsewhere must not read as a promotion decision
+const guideIndexSection = (sourceClaudeMd.match(/## Guide index\n[\s\S]*?(?=\n## )/) || [''])[0]
 const manifest = []
 let generated = 0, held = 0
 for (const name of readdirSync(skillsDir).sort()) {
@@ -82,7 +86,7 @@ for (const name of readdirSync(skillsDir).sort()) {
     description: fields.description || '',
     system: fields.system || '',
     // promoted = listed in the source CLAUDE.md guide index; everything else is staged
-    status: sourceClaudeMd.includes('`/' + name + '`') ? 'promoted' : 'staged',
+    status: guideIndexSection.includes('`/' + name + '`') ? 'promoted' : 'staged',
   })
   let outBody = body
   // sibling files travel to skill-assets/<name>/ (NOT commands/ — every .md there
@@ -92,10 +96,12 @@ for (const name of readdirSync(skillsDir).sort()) {
     mkdirSync(cfg('skill-assets', name), { recursive: true })
     for (const f of siblings) {
       cpSync(path.join(skillsDir, name, f), cfg('skill-assets', name, f))
-      outBody = outBody.split(f).join(`skill-assets/${name}/${f} (relative to the Soter config dir; ask \`soter doctor\` for its location)`)
+      // short replacement only — verbose parentheticals mangled inline code spans;
+      // the runtime notes tell sessions where skill-assets/ resolves
+      outBody = outBody.split(f).join(`skill-assets/${name}/${f}`)
     }
   }
-  const desc = (fields.description || '').replace(/"/g, '\\"')
+  const desc = (fields.description || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"')
   writeFileSync(cfg('commands', `${name}.md`), `---\ndescription: "${desc}"\n---\n${outBody}`)
   generated++
 }

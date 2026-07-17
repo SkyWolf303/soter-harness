@@ -72,17 +72,3 @@ frontmatter — never implied by its folder.
 
 `node .claude/scripts/check.mjs --all` (same check CI runs) · `--selftest` proves
 the checker itself.
-
-
-## Soter runtime notes (generated — not in the source CLAUDE.md)
-
-- The guide index above lists PROMOTED Soter Skills only. ALL skills — staged
-  included — are available as /commands and live in `.claude/skills/<name>/SKILL.md`
-  (full listing: `skills-manifest.json` in the Soter config dir, or `soter skills`
-  in a terminal). When a user request matches a skill's territory, read its SKILL.md
-  and follow it: the staged flag gates auto-invocation, not user-requested work.
-- Domain vocabulary (including the Sky ecosystem) is defined in `.claude/LEXICON.md`
-  — consult it before answering domain questions, and never redefine its terms.
-- The skill set is meant to GROW: when a request exposes a gap no skill covers, or a
-  correction repeats, suggest forging a new skill (/forge) or landing the correction
-  as a gotcha or eval case on the governing skill. Suggest — the user decides.
