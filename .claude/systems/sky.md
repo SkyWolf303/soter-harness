@@ -24,6 +24,10 @@ live, ADR-0026).
   answers reproduce exactly that class of drift.
 
 ## Components
+- `.claude/standards/sky-sources.md` — the sources registry: every source the org's
+  intel apparatus consults (endpoint, auth var name, question classes, technique,
+  operating home, preferred precomputed feed) plus the fetch discipline; the registry
+  points, never copies live facts
 - `.claude/skills/consulting-sky-intel/SKILL.md` — the guide, and the harness home of the live-source map:
   the Laniakea tracker's status snapshot and signal pages, the Sky Intelligence
   Briefs, and the structured data feeds (all operated outside the harness in the
